@@ -1,0 +1,350 @@
+[
+  {
+    "id": "TC-AUTH-001",
+    "pass": true,
+    "code": 200,
+    "detail": "test1 login, mustChangePassword=true"
+  },
+  {
+    "id": "TC-AUTH-002",
+    "pass": true,
+    "code": 200,
+    "detail": "sysadmin login, mustChangePassword=true"
+  },
+  {
+    "id": "TC-AUTH-003",
+    "pass": true,
+    "code": 401,
+    "detail": "nonexistent user"
+  },
+  {
+    "id": "TC-AUTH-004",
+    "pass": true,
+    "code": 401,
+    "detail": "wrong password"
+  },
+  {
+    "id": "TC-AUTH-005",
+    "pass": true,
+    "code": 423,
+    "detail": "5 fails then lock"
+  },
+  {
+    "id": "TC-AUTH-007",
+    "pass": true,
+    "code": 200,
+    "detail": "3 fails then success (counter reset)"
+  },
+  {
+    "id": "TC-AUTH-010a",
+    "pass": true,
+    "code": 400,
+    "defect": false,
+    "detail": "empty username"
+  },
+  {
+    "id": "TC-AUTH-010b",
+    "pass": true,
+    "code": 400,
+    "defect": false,
+    "detail": "empty password"
+  },
+  {
+    "id": "TC-AUTH-011",
+    "pass": true,
+    "code": 200,
+    "detail": "system login, roles=admin"
+  },
+  {
+    "id": "TC-PWD-001",
+    "pass": false,
+    "code": 401,
+    "detail": "change pwd success"
+  },
+  {
+    "id": "TC-PWD-002",
+    "pass": false,
+    "code": 401,
+    "detail": "short pwd (4 chars)"
+  },
+  {
+    "id": "TC-PWD-003",
+    "pass": false,
+    "code": 401,
+    "detail": "exactly 8 chars"
+  },
+  {
+    "id": "TC-PWD-004",
+    "pass": false,
+    "code": 401,
+    "detail": "no uppercase"
+  },
+  {
+    "id": "TC-PWD-005",
+    "pass": false,
+    "code": 401,
+    "detail": "no lowercase"
+  },
+  {
+    "id": "TC-PWD-006",
+    "pass": false,
+    "code": 401,
+    "detail": "no digit"
+  },
+  {
+    "id": "TC-PWD-007",
+    "pass": false,
+    "code": 401,
+    "detail": "no special char"
+  },
+  {
+    "id": "TC-PWD-008",
+    "pass": false,
+    "code": 401,
+    "detail": "wrong current pwd"
+  },
+  {
+    "id": "TC-PWD-009",
+    "pass": false,
+    "code": 401,
+    "detail": "same as old"
+  },
+  {
+    "id": "TC-ROLE-005",
+    "pass": false,
+    "code": 401,
+    "detail": "common user cannot view operlog"
+  },
+  {
+    "id": "TC-LOG-003",
+    "pass": [
+      {
+        "operId": 68,
+        "title": "登录日志",
+        "logType": "login",
+        "businessType": 6,
+        "method": "POST /auth/login",
+        "requestMethod": "POST",
+        "operUrl": "/auth/login",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"username\":\"test4\"}",
+        "jsonResult": "{\"success\":false}",
+        "status": 1,
+        "errorMsg": "invalid_credentials",
+        "operUserName": "test4",
+        "operTime": "2026-08-30T13:00:12.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      },
+      {
+        "operId": 67,
+        "title": "登录日志",
+        "logType": "login",
+        "businessType": 6,
+        "method": "POST /auth/login",
+        "requestMethod": "POST",
+        "operUrl": "/auth/login",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"username\":\"system\"}",
+        "jsonResult": "{\"success\":true}",
+        "status": 0,
+        "errorMsg": "",
+        "operUserName": "system",
+        "operTime": "2026-08-30T13:00:12.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      },
+      {
+        "operId": 66,
+        "title": "登录日志",
+        "logType": "login",
+        "businessType": 6,
+        "method": "POST /auth/login",
+        "requestMethod": "POST",
+        "operUrl": "/auth/login",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"username\":\"test3\"}",
+        "jsonResult": "{\"success\":true}",
+        "status": 0,
+        "errorMsg": "",
+        "operUserName": "test3",
+        "operTime": "2026-08-30T13:00:12.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      },
+      {
+        "operId": 65,
+        "title": "登录日志",
+        "logType": "login",
+        "businessType": 6,
+        "method": "POST /auth/login",
+        "requestMethod": "POST",
+        "operUrl": "/auth/login",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"username\":\"test3\"}",
+        "jsonResult": "{\"success\":false}",
+        "status": 1,
+        "errorMsg": "invalid_credentials",
+        "operUserName": "test3",
+        "operTime": "2026-08-30T13:00:12.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      },
+      {
+        "operId": 64,
+        "title": "登录日志",
+        "logType": "login",
+        "businessType": 6,
+        "method": "POST /auth/login",
+        "requestMethod": "POST",
+        "operUrl": "/auth/login",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"username\":\"test3\"}",
+        "jsonResult": "{\"success\":false}",
+        "status": 1,
+        "errorMsg": "invalid_credentials",
+        "operUserName": "test3",
+        "operTime": "2026-08-30T13:00:11.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      }
+    ],
+    "code": 200,
+    "detail": "auditadmin can view logs"
+  },
+  {
+    "id": "TC-LOG-004",
+    "pass": true,
+    "code": 200,
+    "detail": "authadmin only login logs (hasOperation=false)"
+  },
+  {
+    "id": "TC-LOG-005",
+    "pass": true,
+    "code": 200,
+    "detail": "sysadmin only operation logs (hasLogin=false)"
+  },
+  {
+    "id": "TC-APPR-004",
+    "pass": true,
+    "code": 403,
+    "detail": "sysadmin cannot approve user ops"
+  },
+  {
+    "id": "TC-GRP-001",
+    "pass": 4,
+    "code": 201,
+    "detail": "create group, groupId=4"
+  },
+  {
+    "id": "TC-GRP-004",
+    "pass": [
+      {
+        "groupId": 4,
+        "groupName": "test-group-api",
+        "memberCount": 1,
+        "createdAt": "2026-08-30T13:00:13.000Z"
+      },
+      {
+        "groupId": 3,
+        "groupName": "test-group-api",
+        "memberCount": 1,
+        "createdAt": "2026-08-30T12:58:48.000Z"
+      }
+    ],
+    "code": 200,
+    "detail": "group list"
+  },
+  {
+    "id": "TC-GRP-013",
+    "pass": true,
+    "code": 400,
+    "defect": false,
+    "detail": "empty group name"
+  },
+  {
+    "id": "TC-GRP-015",
+    "pass": true,
+    "code": 400,
+    "defect": false,
+    "detail": "51 char group name"
+  },
+  {
+    "id": "TC-APP-001",
+    "pass": false,
+    "code": 400,
+    "defect": false,
+    "detail": "submit app, appId=undefined, body={\"error\":\"validation_error\",\"details\":[{\"path\":\"priority\",\"message\":\"Invalid enum value. Expected '高' | '中' | '低', received 'high'\",\"code\":\"invalid_enum_value\"}]}"
+  },
+  {
+    "id": "TC-APP-007",
+    "pass": true,
+    "code": 403,
+    "detail": "common user cannot approve"
+  },
+  {
+    "id": "TC-APP-012",
+    "pass": true,
+    "code": 400,
+    "defect": false,
+    "detail": "invalid priority"
+  },
+  {
+    "id": "TC-APP-009",
+    "pass": [],
+    "code": 200,
+    "detail": "user app list"
+  },
+  {
+    "id": "TC-APP-003",
+    "pass": false,
+    "code": 0,
+    "detail": "SKIP - no appId"
+  },
+  {
+    "id": "TC-APP-010",
+    "pass": false,
+    "code": 0,
+    "detail": "SKIP - no appId"
+  },
+  {
+    "id": "TC-APP-005",
+    "pass": false,
+    "code": 0,
+    "detail": "SKIP - no appId"
+  },
+  {
+    "id": "TC-SYS-001",
+    "pass": true,
+    "code": 200,
+    "detail": "system hidden in user list (found=false)"
+  },
+  {
+    "id": "TC-SYS-002",
+    "pass": true,
+    "code": 200,
+    "detail": "system has admin role=true"
+  },
+  {
+    "id": "TC-INV-006",
+    "pass": true,
+    "code": 200,
+    "detail": "invite nonexistent user, invited=0"
+  },
+  {
+    "id": "TC-E2E-005",
+    "pass": true,
+    "code": 423,
+    "detail": "5 fails then lock"
+  }
+]

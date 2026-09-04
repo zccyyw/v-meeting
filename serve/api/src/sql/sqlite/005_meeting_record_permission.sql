@@ -1,0 +1,3 @@
+-- Placeholder: applied via migrate.ts pragma table_info.
+-- Adds meetings.record_allowed INTEGER NOT NULL DEFAULT 0 when missing.
+-- 0 = 录制关闭（仅主持人可录制）, 1 = 开启录制（所有人可录制）

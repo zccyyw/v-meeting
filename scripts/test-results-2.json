@@ -1,0 +1,593 @@
+[
+  {
+    "id": "TC-AUTH-001",
+    "pass": true,
+    "code": 200,
+    "detail": "test1 login OK, mustChangePassword=true",
+    "defect": false
+  },
+  {
+    "id": "TC-AUTH-002",
+    "pass": true,
+    "code": 200,
+    "detail": "sysadmin login, mustChangePassword=true",
+    "defect": false
+  },
+  {
+    "id": "TC-AUTH-003",
+    "pass": true,
+    "code": 401,
+    "detail": "nonexistent user",
+    "defect": false
+  },
+  {
+    "id": "TC-AUTH-004",
+    "pass": true,
+    "code": 401,
+    "detail": "wrong password",
+    "defect": false
+  },
+  {
+    "id": "TC-AUTH-005",
+    "pass": true,
+    "code": 423,
+    "detail": "5 fails then locked (423)",
+    "defect": false
+  },
+  {
+    "id": "TC-AUTH-007",
+    "pass": true,
+    "code": 200,
+    "detail": "3 fails then success (counter reset)",
+    "defect": false
+  },
+  {
+    "id": "TC-AUTH-008",
+    "pass": false,
+    "code": 200,
+    "detail": "disabled user login (status=1) -> {\"userId\":7,\"sessionId\":\"cOAOahgyMAZ7ngVDuu15ufTldRlteo_n\",\"displayName\":\"测试用户1\",\"username\":\"test1\",\"roles\":[\"common\"],\"permissions\":[],\"mustChangePassword\":true,\"passwordExpired\":false}",
+    "defect": false
+  },
+  {
+    "id": "TC-AUTH-010a",
+    "pass": false,
+    "code": 500,
+    "detail": "empty username (DEFECT: returns 500)",
+    "defect": true
+  },
+  {
+    "id": "TC-AUTH-010b",
+    "pass": false,
+    "code": 500,
+    "detail": "empty password (DEFECT: returns 500)",
+    "defect": true
+  },
+  {
+    "id": "TC-AUTH-011",
+    "pass": true,
+    "code": 200,
+    "detail": "system login, roles=admin",
+    "defect": false
+  },
+  {
+    "id": "TC-PWD-001",
+    "pass": true,
+    "code": 200,
+    "detail": "change pwd success",
+    "defect": false
+  },
+  {
+    "id": "TC-PWD-002",
+    "pass": true,
+    "code": 400,
+    "detail": "short pwd (4 chars)",
+    "defect": false
+  },
+  {
+    "id": "TC-PWD-003",
+    "pass": true,
+    "code": 200,
+    "detail": "exactly 8 chars",
+    "defect": false
+  },
+  {
+    "id": "TC-PWD-004",
+    "pass": true,
+    "code": 400,
+    "detail": "no uppercase",
+    "defect": false
+  },
+  {
+    "id": "TC-PWD-005",
+    "pass": true,
+    "code": 400,
+    "detail": "no lowercase",
+    "defect": false
+  },
+  {
+    "id": "TC-PWD-006",
+    "pass": true,
+    "code": 400,
+    "detail": "no digit",
+    "defect": false
+  },
+  {
+    "id": "TC-PWD-007",
+    "pass": false,
+    "code": 200,
+    "detail": "no special char (DEFECT: returns 200)",
+    "defect": true
+  },
+  {
+    "id": "TC-PWD-008",
+    "pass": true,
+    "code": 400,
+    "detail": "wrong current pwd",
+    "defect": false
+  },
+  {
+    "id": "TC-PWD-009",
+    "pass": true,
+    "code": 400,
+    "detail": "same as old",
+    "defect": false
+  },
+  {
+    "id": "TC-ROLE-005",
+    "pass": true,
+    "code": 403,
+    "detail": "common user cannot view operlog",
+    "defect": false
+  },
+  {
+    "id": "TC-LOG-003",
+    "pass": [
+      {
+        "operId": 20,
+        "title": "登录日志",
+        "logType": "login",
+        "businessType": 6,
+        "method": "POST /auth/login",
+        "requestMethod": "POST",
+        "operUrl": "/auth/login",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"username\":\"test4\"}",
+        "jsonResult": "{\"success\":true}",
+        "status": 0,
+        "errorMsg": "",
+        "operUserName": "test4",
+        "operTime": "2026-08-29T07:30:45.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      },
+      {
+        "operId": 19,
+        "title": "登录日志",
+        "logType": "login",
+        "businessType": 6,
+        "method": "POST /auth/login",
+        "requestMethod": "POST",
+        "operUrl": "/auth/login",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"username\":\"system\"}",
+        "jsonResult": "{\"success\":true}",
+        "status": 0,
+        "errorMsg": "",
+        "operUserName": "system",
+        "operTime": "2026-08-29T07:30:44.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      },
+      {
+        "operId": 18,
+        "title": "用户管理",
+        "logType": "operation",
+        "businessType": 2,
+        "method": "PATCH /sys-user/4",
+        "requestMethod": "PATCH",
+        "operUrl": "/sys-user/4",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"status\":0}",
+        "jsonResult": "{\"code\":500}",
+        "status": 1,
+        "errorMsg": "HTTP 500",
+        "operUserName": "admin",
+        "operTime": "2026-08-29T07:30:44.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      },
+      {
+        "operId": 17,
+        "title": "登录日志",
+        "logType": "login",
+        "businessType": 6,
+        "method": "POST /auth/login",
+        "requestMethod": "POST",
+        "operUrl": "/auth/login",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"username\":\"test1\"}",
+        "jsonResult": "{\"success\":true}",
+        "status": 0,
+        "errorMsg": "",
+        "operUserName": "test1",
+        "operTime": "2026-08-29T07:30:44.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      },
+      {
+        "operId": 16,
+        "title": "用户管理",
+        "logType": "operation",
+        "businessType": 2,
+        "method": "PATCH /sys-user/4",
+        "requestMethod": "PATCH",
+        "operUrl": "/sys-user/4",
+        "operIp": "127.0.0.1",
+        "operLocation": "",
+        "operParam": "{\"status\":1}",
+        "jsonResult": "{\"code\":500}",
+        "status": 1,
+        "errorMsg": "HTTP 500",
+        "operUserName": "admin",
+        "operTime": "2026-08-29T07:30:44.000Z",
+        "costTime": 0,
+        "operObject": "",
+        "classification": "公开"
+      }
+    ],
+    "code": 200,
+    "detail": "auditadmin can view logs",
+    "defect": false
+  },
+  {
+    "id": "TC-LOG-004",
+    "pass": true,
+    "code": 200,
+    "detail": "authadmin only login logs (hasOperation=false)",
+    "defect": false
+  },
+  {
+    "id": "TC-LOG-005",
+    "pass": true,
+    "code": 200,
+    "detail": "sysadmin only operation logs (hasLogin=false)",
+    "defect": false
+  },
+  {
+    "id": "TC-LOG-011",
+    "pass": true,
+    "code": 403,
+    "detail": "common user cannot view operlog",
+    "defect": false
+  },
+  {
+    "id": "TC-APPR-004",
+    "pass": true,
+    "code": 403,
+    "detail": "sysadmin cannot approve user ops",
+    "defect": false
+  },
+  {
+    "id": "TC-GRP-001",
+    "pass": 5,
+    "code": 201,
+    "detail": "create group, groupId=5",
+    "defect": false
+  },
+  {
+    "id": "TC-GRP-002",
+    "pass": true,
+    "code": 201,
+    "detail": "create group by dept, body={\"groupId\":6,\"groupName\":\"dept-group\",\"members\":[],\"deptMembers\":[]}",
+    "defect": false
+  },
+  {
+    "id": "TC-GRP-004",
+    "pass": [
+      {
+        "groupId": 5,
+        "groupName": "test-group-1",
+        "memberCount": 2,
+        "createdAt": "2026-08-29T07:30:46.000Z"
+      },
+      {
+        "groupId": 6,
+        "groupName": "dept-group",
+        "memberCount": 1,
+        "createdAt": "2026-08-29T07:30:46.000Z"
+      },
+      {
+        "groupId": 4,
+        "groupName": "test-group-api",
+        "memberCount": 1,
+        "createdAt": "2026-08-29T07:17:45.000Z"
+      },
+      {
+        "groupId": 3,
+        "groupName": "test-group-1",
+        "memberCount": 1,
+        "createdAt": "2026-08-29T07:05:00.000Z"
+      }
+    ],
+    "code": 200,
+    "detail": "group list",
+    "defect": false
+  },
+  {
+    "id": "TC-GRP-005",
+    "pass": true,
+    "code": 200,
+    "detail": "search group by name",
+    "defect": false
+  },
+  {
+    "id": "TC-GRP-006",
+    "pass": true,
+    "code": 200,
+    "detail": "group detail",
+    "defect": false
+  },
+  {
+    "id": "TC-GRP-007",
+    "pass": true,
+    "code": 200,
+    "detail": "add member",
+    "defect": false
+  },
+  {
+    "id": "TC-GRP-008",
+    "pass": true,
+    "code": 200,
+    "detail": "remove member",
+    "defect": false
+  },
+  {
+    "id": "TC-GRP-009",
+    "pass": true,
+    "code": 200,
+    "detail": "rename group",
+    "defect": false
+  },
+  {
+    "id": "TC-GRP-013",
+    "pass": false,
+    "code": 500,
+    "detail": "empty group name (DEFECT: returns 500)",
+    "defect": true
+  },
+  {
+    "id": "TC-GRP-015",
+    "pass": false,
+    "code": 500,
+    "detail": "51 char name (DEFECT: returns 500)",
+    "defect": true
+  },
+  {
+    "id": "TC-GRP-010",
+    "pass": false,
+    "code": 400,
+    "detail": "delete group",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-001",
+    "pass": 1,
+    "code": 201,
+    "detail": "submit app (priority=高), appId=1",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-002",
+    "pass": true,
+    "code": 201,
+    "detail": "default priority=中, appId=2",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-007",
+    "pass": true,
+    "code": 403,
+    "detail": "common user cannot approve",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-012",
+    "pass": false,
+    "code": 500,
+    "detail": "invalid priority (DEFECT: returns 500)",
+    "defect": true
+  },
+  {
+    "id": "TC-APP-009",
+    "pass": [
+      {
+        "appId": 1,
+        "title": "年度总结会",
+        "applicantId": 7,
+        "meetingTime": "2026-09-01T06:00:00.000Z",
+        "endTime": "",
+        "location": "一号会议室",
+        "deptCount": 5,
+        "priority": "高",
+        "status": "pending",
+        "approverId": null,
+        "approveTime": "",
+        "meetingId": null,
+        "createdAt": "2026-08-29T07:30:47.000Z",
+        "remark": ""
+      },
+      {
+        "appId": 2,
+        "title": "普通会议",
+        "applicantId": 7,
+        "meetingTime": "2026-09-01T07:00:00.000Z",
+        "endTime": "",
+        "location": "",
+        "deptCount": 0,
+        "priority": "中",
+        "status": "pending",
+        "approverId": null,
+        "approveTime": "",
+        "meetingId": null,
+        "createdAt": "2026-08-29T07:30:47.000Z",
+        "remark": ""
+      }
+    ],
+    "code": 200,
+    "detail": "user app list",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-008",
+    "pass": [
+      {
+        "appId": 1,
+        "title": "年度总结会",
+        "applicantId": 7,
+        "meetingTime": "2026-09-01T06:00:00.000Z",
+        "endTime": "",
+        "location": "一号会议室",
+        "deptCount": 5,
+        "priority": "高",
+        "status": "pending",
+        "approverId": null,
+        "approveTime": "",
+        "meetingId": null,
+        "createdAt": "2026-08-29T07:30:47.000Z",
+        "remark": ""
+      },
+      {
+        "appId": 2,
+        "title": "普通会议",
+        "applicantId": 7,
+        "meetingTime": "2026-09-01T07:00:00.000Z",
+        "endTime": "",
+        "location": "",
+        "deptCount": 0,
+        "priority": "中",
+        "status": "pending",
+        "approverId": null,
+        "approveTime": "",
+        "meetingId": null,
+        "createdAt": "2026-08-29T07:30:47.000Z",
+        "remark": ""
+      }
+    ],
+    "code": 200,
+    "detail": "authadmin app list (sorted by priority)",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-003",
+    "pass": true,
+    "code": 200,
+    "detail": "approve app, status=approved",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-010",
+    "pass": true,
+    "code": 400,
+    "detail": "duplicate approve",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-005",
+    "pass": 1,
+    "code": 200,
+    "detail": "start approved meeting, meetingId=1",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-004",
+    "pass": true,
+    "code": 200,
+    "detail": "reject app, status=rejected",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-006",
+    "pass": true,
+    "code": 400,
+    "detail": "start rejected meeting (expect 400)",
+    "defect": false
+  },
+  {
+    "id": "TC-APP-013",
+    "pass": false,
+    "code": 401,
+    "detail": "non-applicant start (expect 403)",
+    "defect": false
+  },
+  {
+    "id": "TC-SYS-001",
+    "pass": true,
+    "code": 200,
+    "detail": "system hidden in user list (found=false)",
+    "defect": false
+  },
+  {
+    "id": "TC-SYS-002",
+    "pass": true,
+    "code": 200,
+    "detail": "system has admin role=true",
+    "defect": false
+  },
+  {
+    "id": "TC-INV-006",
+    "pass": true,
+    "code": 200,
+    "detail": "invite nonexistent user, invited=0",
+    "defect": false
+  },
+  {
+    "id": "TC-INV-005",
+    "pass": false,
+    "code": 200,
+    "detail": "duplicate invite (first=1, second=1)",
+    "defect": false
+  },
+  {
+    "id": "TC-INV-003",
+    "pass": true,
+    "code": 200,
+    "detail": "view invitation list",
+    "defect": false
+  },
+  {
+    "id": "TC-E2E-005",
+    "pass": true,
+    "code": 423,
+    "detail": "5 fails then lock",
+    "defect": false
+  },
+  {
+    "id": "TC-E2E-003a",
+    "pass": 1,
+    "code": 201,
+    "detail": "sysadmin submit create user approval, approvalId=1",
+    "defect": false
+  },
+  {
+    "id": "TC-E2E-003b",
+    "pass": true,
+    "code": 200,
+    "detail": "authadmin approve user creation",
+    "defect": false
+  },
+  {
+    "id": "TC-E2E-003c",
+    "pass": false,
+    "code": 500,
+    "detail": "new user login after approval, body={\"statusCode\":500,\"error\":\"Internal Server Error\",\"message\":\"pwdUpdateDate.endsWith is not a functio",
+    "defect": false
+  }
+]

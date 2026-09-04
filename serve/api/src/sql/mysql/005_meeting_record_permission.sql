@@ -1,0 +1,2 @@
+-- Placeholder: applied via migrate.ts INFORMATION_SCHEMA.
+-- Adds meetings.record_allowed TINYINT(1) NOT NULL DEFAULT 0

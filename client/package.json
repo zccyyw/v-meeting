@@ -1,0 +1,6 @@
+{
+  "name": "@meeting/client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Placeholder for future native clients — not used in P0"
+}

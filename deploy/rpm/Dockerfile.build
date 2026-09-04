@@ -1,0 +1,66 @@
+# RPM Build Environment for Meet
+#
+# This image provides: Node.js (from base) + Ruby + fpm + rpm tools
+# The project source is mounted at runtime (not baked into the image).
+#
+# Build args (all optional, for mirror configuration):
+#   BASE_IMAGE   – Docker base image (default: node:22-bullseye)
+#   APT_MIRROR   – apt mirror domain, e.g. mirrors.aliyun.com
+#   GEM_MIRROR   – RubyGems mirror URL, e.g. https://gems.ruby-china.com
+#   NPM_REGISTRY – npm registry URL, e.g. https://registry.npmmirror.com
+#
+# Usage:
+#   docker build -t meeting-rpm-builder -f deploy/rpm/Dockerfile.build .
+#
+#   # With China mirrors:
+#   docker build -t meeting-rpm-builder -f deploy/rpm/Dockerfile.build \
+#     --build-arg BASE_IMAGE=docker.m.daocloud.io/library/node:22-bullseye \
+#     --build-arg APT_MIRROR=mirrors.aliyun.com \
+#     --build-arg GEM_MIRROR=https://gems.ruby-china.com \
+#     --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+#     .
+
+ARG BASE_IMAGE=node:22-bullseye
+FROM ${BASE_IMAGE}
+
+# ─── Configure apt mirror (optional) ───
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then \
+      # Bullseye uses /etc/apt/sources.list; Bookworm uses deb822 in sources.list.d
+      if [ -f /etc/apt/sources.list ]; then \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list; \
+        sed -i "s|security.debian.org|$APT_MIRROR|g" /etc/apt/sources.list; \
+      fi; \
+      if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+      fi; \
+    fi
+
+# ─── Install Ruby, fpm, rpm, and build tools ───
+# node:20-bullseye (full) already includes build-essential, python3, curl, git.
+# We add ruby + rpm tools for fpm-based RPM creation.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ruby \
+      ruby-dev \
+      rpm \
+      curl \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ─── Configure RubyGems mirror (optional) ───
+ARG GEM_MIRROR=""
+RUN if [ -n "$GEM_MIRROR" ]; then \
+      gem sources --remove https://rubygems.org/ 2>/dev/null || true; \
+      gem sources --remove https://gems.ruby-china.com/ 2>/dev/null || true; \
+      gem sources -a "$GEM_MIRROR"; \
+    fi
+
+RUN gem install fpm --no-document
+
+# ─── Configure npm registry (optional) ───
+ARG NPM_REGISTRY=""
+RUN if [ -n "$NPM_REGISTRY" ]; then \
+      npm config set registry "$NPM_REGISTRY"; \
+    fi
+
+WORKDIR /workspace

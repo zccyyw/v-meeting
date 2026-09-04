@@ -1,0 +1,177 @@
+[
+  {
+    "id": "TC-QS-001",
+    "pass": true,
+    "code": 200,
+    "detail": "quick start with title, meetingId=6, invited=3",
+    "defect": false
+  },
+  {
+    "id": "TC-QS-002",
+    "pass": true,
+    "code": 200,
+    "detail": "default title from group name, title=quick-start-group",
+    "defect": false
+  },
+  {
+    "id": "TC-QS-003",
+    "pass": true,
+    "code": 200,
+    "detail": "quick start with waiting room",
+    "defect": false
+  },
+  {
+    "id": "TC-QS-004",
+    "pass": true,
+    "code": 200,
+    "detail": "empty group quick start, invited=0",
+    "defect": false
+  },
+  {
+    "id": "TC-QS-005",
+    "pass": true,
+    "code": 403,
+    "detail": "non-owner quick start (expect 403)",
+    "defect": false
+  },
+  {
+    "id": "TC-CFG-003",
+    "pass": 600,
+    "code": 200,
+    "detail": "public config, idleTimeout=600",
+    "defect": false
+  },
+  {
+    "id": "TC-LMT-004a",
+    "pass": true,
+    "code": 200,
+    "detail": "admin view config list",
+    "defect": false
+  },
+  {
+    "id": "TC-LMT-004b",
+    "pass": false,
+    "code": 404,
+    "detail": "update maxUsers=50, body={\"message\":\"Route PUT:/sys-config not found\",\"error\":\"Not Found\",\"statusCode\":404}",
+    "defect": false
+  },
+  {
+    "id": "TC-INV-004",
+    "pass": true,
+    "code": 200,
+    "detail": "admin online meetings, items=9",
+    "defect": false
+  },
+  {
+    "id": "TC-LOG-007",
+    "pass": true,
+    "code": 200,
+    "detail": "CSV export, bodyLen=5981",
+    "defect": false
+  },
+  {
+    "id": "TC-LOG-006",
+    "pass": true,
+    "code": 200,
+    "detail": "filtered log query",
+    "defect": false
+  },
+  {
+    "id": "TC-LOG-009",
+    "pass": true,
+    "code": 200,
+    "detail": "log has audit fields",
+    "defect": false
+  },
+  {
+    "id": "TC-APPR-009",
+    "pass": true,
+    "code": 400,
+    "detail": "weak password in approval (DEFECT: returns 400)",
+    "defect": false
+  },
+  {
+    "id": "TC-APPR-001",
+    "pass": 2,
+    "code": 201,
+    "detail": "submit create user approval, approvalId=2",
+    "defect": false
+  },
+  {
+    "id": "TC-APPR-010",
+    "pass": [
+      {
+        "approvalId": 2,
+        "requestType": "create",
+        "targetUserId": null,
+        "requesterId": 3,
+        "requesterData": {
+          "userName": "newuser2",
+          "nickName": "新用户2",
+          "password": "Abcd@123",
+          "deptId": 1
+        },
+        "status": "pending",
+        "approverId": null,
+        "approveTime": "",
+        "rejectReason": "",
+        "createTime": "2026-08-29T07:37:46.000Z"
+      },
+      {
+        "approvalId": 1,
+        "requestType": "create",
+        "targetUserId": null,
+        "requesterId": 3,
+        "requesterData": {
+          "userName": "newuser_e2e",
+          "nickName": "E2E新用户",
+          "password": "Abcd@123",
+          "deptId": 1
+        },
+        "status": "approved",
+        "approverId": 4,
+        "approveTime": "2026-08-29T07:30:48.000Z",
+        "rejectReason": "",
+        "createTime": "2026-08-29T07:30:48.000Z"
+      }
+    ],
+    "code": 200,
+    "detail": "approval list pagination",
+    "defect": false
+  },
+  {
+    "id": "TC-APPR-011",
+    "pass": true,
+    "code": 200,
+    "detail": "sysadmin approval list (own only)",
+    "defect": false
+  },
+  {
+    "id": "TC-APPR-002",
+    "pass": true,
+    "code": 200,
+    "detail": "authadmin approve user creation",
+    "defect": false
+  },
+  {
+    "id": "TC-APPR-002b",
+    "pass": false,
+    "code": 500,
+    "detail": "new user login after approval, body={\"statusCode\":500,\"error\":\"Internal Server Error\",\"message\":\"pwdUpdateDate.endsWith is not a function\"}",
+    "defect": false
+  },
+  {
+    "id": "TC-APPR-003",
+    "pass": true,
+    "code": 200,
+    "detail": "reject user creation, status=rejected",
+    "defect": false
+  },
+  {
+    "id": "TC-APPR-005",
+    "pass": true,
+    "code": 400,
+    "detail": "duplicate approve (expect 400)",
+    "defect": false
+  }
+]

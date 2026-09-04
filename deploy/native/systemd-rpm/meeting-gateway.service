@@ -1,0 +1,24 @@
+[Unit]
+Description=Meeting HTTP/HTTPS Gateway
+After=network-online.target meeting-api.service meeting-realtime.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meeting
+Group=meeting
+WorkingDirectory=/opt/meeting
+EnvironmentFile=-/opt/meeting/conf/.env
+Environment=FRONT_ROOT=/opt/meeting/app/front
+Environment=API_UPSTREAM=http://127.0.0.1:8080
+Environment=WS_UPSTREAM=http://127.0.0.1:8082
+Environment=CERT_DIR=/opt/meeting/certs
+ExecStart=/opt/meeting/runtime/bin/node /opt/meeting/bin/gateway.mjs
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+StandardOutput=append:/opt/meeting/logs/gateway.log
+StandardError=append:/opt/meeting/logs/gateway.err.log
+
+[Install]
+WantedBy=multi-user.target

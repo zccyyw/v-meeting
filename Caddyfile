@@ -1,0 +1,24 @@
+# File-based TLS. Generate certs first:
+#   bash deploy/docker/gen-selfsigned.sh <public-ip-or-dns>
+#
+# IMPORTANT: use https:// (not bare :443) so Caddy actually terminates TLS.
+# With `auto_https off` + `:443`, port 443 may speak plain HTTP → curl TLS alert.
+
+https:// {
+	tls /certs/fullchain.pem /certs/privkey.pem
+
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy api:8080
+	}
+	handle /ws {
+		reverse_proxy realtime:8082
+	}
+	handle {
+		reverse_proxy web:80
+	}
+}
+
+http:// {
+	redir https://{host}{uri} permanent
+}

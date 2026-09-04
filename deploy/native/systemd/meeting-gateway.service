@@ -1,0 +1,23 @@
+[Unit]
+Description=Meeting HTTP Gateway (static + /api + /ws)
+After=network-online.target meeting-api.service meeting-realtime.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@GROUP@
+WorkingDirectory=@PREFIX@
+EnvironmentFile=-@PREFIX@/conf/.env
+Environment=FRONT_ROOT=@PREFIX@/app/front
+Environment=API_UPSTREAM=http://127.0.0.1:8080
+Environment=WS_UPSTREAM=http://127.0.0.1:8082
+ExecStart=@NODE@ @PREFIX@/bin/gateway.mjs
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+StandardOutput=append:@PREFIX@/logs/gateway.log
+StandardError=append:@PREFIX@/logs/gateway.err.log
+
+[Install]
+WantedBy=multi-user.target

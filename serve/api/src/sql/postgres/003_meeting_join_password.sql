@@ -1,0 +1,2 @@
+-- Placeholder: applied via migrate.ts information_schema.
+-- Adds meetings.join_password_hash when missing.

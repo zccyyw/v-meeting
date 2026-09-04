@@ -1,0 +1,167 @@
+# Production / staging only. Do NOT use for local development.
+# Docs: docs/项目打包与部署说明.md
+#
+# MySQL (default):
+#   docker compose -f docker-compose.prod.yml --profile mysql --env-file .env up -d --build
+# PostgreSQL:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.postgres.yml --profile postgres --env-file .env up -d --build
+
+services:
+  mysql:
+    image: mysql:8.4
+    profiles: ["mysql"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
+      MYSQL_USER: ${MYSQL_USER:-meeting}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command: ["--character-set-server=utf8mb4"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres:
+    image: postgres:12-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-meeting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meetingpass}
+      POSTGRES_DB: ${POSTGRES_DB:-meeting}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-meeting} -d ${POSTGRES_DB:-meeting}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: serve/api/Dockerfile
+    image: ${MEETING_API_IMAGE:-meeting-api:latest}
+    environment:
+      DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-meeting}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-meeting}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-meetingpass}
+      PGDATABASE: ${POSTGRES_DB:-meeting}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      API_PORT: 8080
+      RECORDINGS_DIR: ${RECORDINGS_DIR:-/app/data/recordings}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+        required: false
+      postgres:
+        condition: service_healthy
+        required: false
+    expose:
+      - "8080"
+    volumes:
+      - meeting-data:/app/data
+
+  realtime:
+    build:
+      context: .
+      dockerfile: serve/realtime/Dockerfile
+    image: ${MEETING_REALTIME_IMAGE:-meeting-realtime:latest}
+    environment:
+      DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-meeting}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-meeting}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-meetingpass}
+      PGDATABASE: ${POSTGRES_DB:-meeting}
+      WS_PORT: 8082
+      MEDIASOUP_LISTEN_IP: ${MEDIASOUP_LISTEN_IP:-0.0.0.0}
+      MEDIASOUP_ANNOUNCED_IP: ${MEDIASOUP_ANNOUNCED_IP}
+      RTC_MIN_PORT: 40000
+      RTC_MAX_PORT: 40100
+    depends_on:
+      mysql:
+        condition: service_healthy
+        required: false
+      postgres:
+        condition: service_healthy
+        required: false
+    ports:
+      - "40000-40100:40000-40100/udp"
+    expose:
+      - "8082"
+    volumes:
+      - meeting-data:/app/data
+
+  web:
+    build:
+      context: .
+      dockerfile: front/Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-/api}
+        VITE_WS_URL: ${VITE_WS_URL:-auto}
+        VITE_APP_NAME: ${VITE_APP_NAME:-Meeting}
+        VITE_APP_LOGO: ${VITE_APP_LOGO:-/favicon.svg}
+    image: ${MEETING_WEB_IMAGE:-meeting-web:latest}
+    # CentOS 7 (kernel 3.10) overlayfs pwrite() bug causes nginx PID write to
+    # fail with EPERM. Mount /run as tmpfs to bypass the overlay filesystem.
+    tmpfs:
+      - /run
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/docker/certs:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+      - realtime
+      - web
+
+volumes:
+  mysql-data:
+  postgres-data:
+  redis-data:
+  meeting-data:
+  caddy-data:
+  caddy-config:

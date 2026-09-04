@@ -1,0 +1,787 @@
+/* ============================================================
+ * index.css — 全局基础样式 + 会议页面专属样式
+ *
+ * 颜色和主题由 Ant Design ConfigProvider + theme 管理，
+ * 此文件定义 CSS 变量供非 antd 组件使用。
+ *
+ * 保留内容：
+ *   1. 全局重置 + CSS 变量
+ *   2. 会议页面（MeetingPage 及其子组件）样式
+ *   3. 自定义 Modal（MeetingPage 使用）
+ *   4. Toast（ui/toast.ts 使用）
+ *   5. 管理端 Ant Design 微调
+ *   6. MemberPicker 样式
+ *   7. 移动端响应式（会议相关）
+ * ============================================================ */
+
+/* —— CSS 变量：颜色/主题 —— */
+:root {
+  --color-primary: #1278ff;
+  --color-primary-hover: #1a8bff;
+  --color-primary-light: #e8f3ff;
+  --color-danger: #e34d59;
+  --color-danger-light: #fdecee;
+  --color-success: #18a058;
+  --color-warning: #f0a020;
+  --color-text: #333;
+  --color-text-secondary: #8f959e;
+  --color-border: #e0e0e6;
+  --color-bg: #fff;
+  --color-bg-secondary: #f5f7fa;
+}
+
+/* —— 暗色模式 CSS 变量覆盖 —— */
+[data-theme="dark"] {
+  --color-primary: #1668dc;
+  --color-primary-hover: #3c8eff;
+  --color-primary-light: #111b2f;
+  --color-danger: #e34d59;
+  --color-danger-light: #2a1a1d;
+  --color-success: #18a058;
+  --color-warning: #f0a020;
+  --color-text: #e0e0e6;
+  --color-text-secondary: #8f959e;
+  --color-border: #3a3a3a;
+  --color-bg: #141414;
+  --color-bg-secondary: #1f1f1f;
+}
+
+/* —— 全局重置 —— */
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* antd App wrapper — 不阻断 flex/height 链 */
+.ant-app { height: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.5;
+}
+
+input[type="text"]:not(.ant-input),
+input[type="password"]:not(.ant-input),
+input[type="datetime-local"]:not(.ant-input),
+input[type="tel"]:not(.ant-input),
+input:not([type]):not(.ant-input),
+select,
+textarea {
+  font-size: 16px;
+}
+
+code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+body.meeting-active {
+  overflow: hidden;
+  height: 100%;
+}
+
+/* —— Toast（ui/toast.ts 使用） —— */
+.app-toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  z-index: 10000;
+  max-width: min(90vw, 360px);
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: rgba(31, 35, 41, 0.92);
+  color: #fff;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.app-toast.is-show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* —— 自定义 Modal（MeetingPage 使用） —— */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(31, 35, 41, 0.45);
+}
+
+.modal {
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e5e6eb;
+  box-shadow: 0 12px 40px rgba(31, 35, 41, 0.16);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem 0.5rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-close {
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.modal-close:hover {
+  background: #f5f6f7;
+  color: #1f2329;
+}
+
+.modal-body {
+  padding: 0.75rem 1.25rem 1rem;
+}
+
+.modal-footer {
+  padding: 0 1.25rem 1.25rem;
+}
+
+.modal-footer .btn-primary,
+.modal-footer button {
+  width: 100%;
+}
+
+.modal-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.modal-footer-actions button {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 6.5rem;
+}
+
+.modal-backdrop--dark {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.modal--dark {
+  background: #2b2e33;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f5f6f7;
+}
+
+.modal--dark .modal-header h2 {
+  color: #f5f6f7;
+}
+
+.modal--dark .modal-close {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.modal--dark .modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.modal--dark .modal-body,
+.modal--dark .modal-body label,
+.modal--dark .form label {
+  color: #f5f6f7;
+}
+
+.modal--dark .muted {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.modal--dark input,
+.modal--dark .meeting-code {
+  color: #f5f6f7;
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.modal--dark .meeting-code-copy {
+  color: #f5f6f7;
+  background: transparent;
+  border: none;
+}
+
+.modal--dark .meeting-code-copy:hover {
+  background: transparent;
+  opacity: 1;
+}
+
+.modal--dark .btn-secondary {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f6f7;
+}
+
+/* —— 按钮（MeetingPage 使用） —— */
+.btn-primary {
+  font: inherit;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  font: inherit;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #e5e6eb;
+  background: #f5f6f7;
+  color: #1f2329;
+  cursor: pointer;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #e8eaed;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  font: inherit;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-danger);
+  background: var(--color-danger);
+  color: #fff;
+  cursor: pointer;
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* —— 按钮基础样式（class 化，避免影响 antd 按钮）—— */
+.btn {
+  font: inherit;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn.ghost {
+  background: transparent;
+  color: var(--color-primary);
+}
+
+.btn.danger {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: #fff;
+}
+
+/* 兼容：页面中仍使用原生 button 且非 antd 的元素 */
+button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]) {
+  font: inherit;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+button:not(.ant-btn):not([class*="ant-"]):disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+button.ghost:not(.ant-btn) {
+  background: transparent;
+  color: var(--color-primary);
+}
+
+button.danger:not(.ant-btn) {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: #fff;
+}
+
+/* —— 会议页面通用样式 —— */
+.muted {
+  color: var(--color-text-secondary);
+  margin: 0.25rem 0 1rem;
+}
+
+.error {
+  color: var(--color-danger);
+  background: var(--color-danger-light);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin: 0 0 1rem;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #e5e6eb;
+  border-radius: 16px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.form label.checkbox,
+label.checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+input[type="text"]:not(.ant-input),
+input[type="password"]:not(.ant-input),
+input[type="datetime-local"]:not(.ant-input),
+input:not([type]):not(.ant-input) {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  font: inherit;
+  color: #1f2329;
+  background: #ffffff;
+}
+
+input:not(.ant-input):focus {
+  outline: 2px solid #e8f1ff;
+  border-color: var(--color-primary);
+}
+
+.form select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  font: inherit;
+  color: #1f2329;
+  background: #ffffff;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.5rem 1rem;
+  background: #ffffff;
+  border: 1px solid #e5e6eb;
+  border-radius: 16px;
+  padding: 1rem;
+}
+
+.kv dt {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.kv dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+/* —— Meeting Page —— */
+.meeting-page {
+  --meeting-bg: #1a1d21;
+  --meeting-bar: #2b2e33;
+  --meeting-bar-border: rgba(255, 255, 255, 0.08);
+  --meeting-text: #f5f6f7;
+  --meeting-muted: rgba(255, 255, 255, 0.55);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  inset: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--meeting-bg);
+  color: var(--meeting-text);
+}
+
+.meeting-page .muted { color: var(--meeting-muted); }
+.meeting-page .panel {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--meeting-bar-border);
+  color: var(--meeting-text);
+}
+.meeting-page .error { margin: 0.75rem 1rem 0; }
+
+.meeting-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-shrink: 0;
+  padding: 0.65rem 1rem;
+  background: rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid var(--meeting-bar-border);
+}
+.meeting-header-info h1 { margin: 0; font-size: 0.95rem; font-weight: 600; color: var(--meeting-text); }
+.meeting-header-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.15rem 0 0; font-size: 0.8rem; color: var(--meeting-muted); }
+.meeting-header-actions { display: flex; align-items: center; gap: 0.5rem; }
+.meeting-header-btn { font: inherit; padding: 0.4rem 0.75rem; border-radius: 8px; border: 1px solid var(--meeting-bar-border); background: rgba(255, 255, 255, 0.06); color: var(--meeting-text); cursor: pointer; font-size: 0.85rem; }
+.meeting-header-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.meeting-header-btn.is-active { border-color: var(--color-primary); color: #fff; background: rgba(18, 120, 255, 0.25); }
+
+.meeting-settings { position: relative; }
+.meeting-settings-popover { position: absolute; top: calc(100% + 0.4rem); right: 0; z-index: 40; width: min(280px, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 0.75rem; padding: 0.9rem; background: #32353b; border: 1px solid var(--meeting-bar-border); border-radius: 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
+.meeting-settings-popover .control-select { flex-direction: column; align-items: stretch; gap: 0.35rem; color: var(--meeting-muted); font-size: 0.8rem; }
+.meeting-settings-popover .control-select select { max-width: none; width: 100%; color: var(--meeting-text); background: rgba(0, 0, 0, 0.25); border-color: var(--meeting-bar-border); }
+.meeting-settings-popover .danmu-toggle-row { justify-content: flex-start; font-size: 0.82rem; color: var(--meeting-text); padding: 0.2rem 0; }
+
+.meeting-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0.75rem 1rem 0; overflow: hidden; }
+.meeting-code-row { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; max-width: 100%; }
+.meeting-code { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; color: var(--meeting-text); font-weight: 600; white-space: nowrap; }
+.meeting-code-copy { font: inherit; display: inline-flex; align-items: center; justify-content: center; padding: 0.2rem; border: none; background: transparent; color: var(--meeting-text); cursor: pointer; line-height: 0; border-radius: 8px; opacity: 0.7; transition: opacity 0.15s ease; }
+.meeting-code-copy:hover { background: transparent; opacity: 1; }
+.meeting-connecting, .meeting-ended { margin-bottom: 0.75rem; }
+.meeting-main { position: relative; flex: 1; min-height: 0; display: flex; gap: 0.75rem; overflow: hidden; }
+.meeting-videos { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* —— 弹幕 —— */
+.danmu-overlay { position: absolute; top: 0; left: 0; right: 0; height: 25%; overflow: hidden; pointer-events: none; z-index: 5; }
+.danmu-item { position: absolute; left: 100%; display: inline-block; max-width: 50%; padding: 0.3rem 0.7rem; border-radius: 999px; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 0.82rem; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: danmu-fly 24s linear forwards; backdrop-filter: blur(2px); }
+.danmu-overlay:hover .danmu-item { animation-play-state: paused; }
+.danmu-item--self { background: rgba(18, 120, 255, 0.78); }
+@keyframes danmu-fly { 0% { transform: translateX(0); opacity: 0; } 5% { opacity: 1; } 95% { opacity: 1; } 100% { transform: translateX(-160vw); opacity: 0; } }
+
+/* —— 会议侧边栏 —— */
+.meeting-side { flex: 0 0 min(320px, 36vw); display: flex; flex-direction: column; gap: 0.75rem; min-height: 0; overflow: hidden; }
+
+/* 邀请名单面板 */
+.invite-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; background: #26292e; border: 1px solid var(--meeting-bar-border); border-radius: 16px; overflow: hidden; }
+.invite-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.85rem 1rem 0.5rem; }
+.invite-panel-header h3 { margin: 0; font-size: 0.95rem; color: #e8e8e8; }
+.invite-panel-close { border: none; background: transparent; color: var(--meeting-muted); font-size: 1.25rem; line-height: 1; padding: 0.15rem 0.35rem; cursor: pointer; border-radius: 8px; }
+.invite-panel-close:hover { background: rgba(255,255,255,0.08); }
+.invite-panel-body { flex: 1; overflow-y: auto; padding: 0.5rem 1rem 0.85rem; }
+.invite-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.invite-list-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.25rem; border-radius: 8px; }
+.invite-list-item:hover { background: rgba(255,255,255,0.04); }
+.invite-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.invite-status-dot.online { background: #52c41a; box-shadow: 0 0 4px rgba(82,196,26,0.5); }
+.invite-status-dot.offline { background: #8c8c8c; }
+.invite-list-name { flex: 1; font-size: 0.875rem; color: #d9d9d9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invite-list-status { font-size: 0.75rem; color: var(--meeting-muted); white-space: nowrap; }
+.invite-panel-floating { position: fixed; top: 50%; right: 1.5rem; transform: translateY(-50%); width: 280px; max-height: 60vh; z-index: 1000; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+.btn-invite-toggle { border: 1px solid var(--meeting-bar-border); background: #26292e; color: #e8e8e8; font-size: 0.8rem; padding: 0.35rem 0.85rem; border-radius: 8px; cursor: pointer; margin-top: 0.5rem; }
+.btn-invite-toggle:hover { background: rgba(255,255,255,0.08); }
+.btn-invite-toggle.is-active { background: var(--meeting-accent, #1668dc); border-color: var(--meeting-accent, #1668dc); color: #fff; }
+.meeting-connecting-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; }
+.meeting-waiting-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; }
+.side-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; background: #26292e; border: 1px solid var(--meeting-bar-border); border-radius: 16px; padding: 0.85rem; }
+.side-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.75rem; }
+.side-panel-header h2 { margin: 0; font-size: 0.95rem; }
+.side-panel-close { border: none; background: transparent; color: var(--meeting-muted); font-size: 1.25rem; line-height: 1; padding: 0.15rem 0.35rem; cursor: pointer; border-radius: 8px; }
+.side-panel-close:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.remote-audios { position: absolute; width: 0; height: 0; overflow: hidden; clip: rect(0, 0, 0, 0); pointer-events: none; }
+
+/* —— 视频网格 —— */
+.video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 0.75rem; flex: 1; min-height: 0; height: 100%; margin-bottom: 0; align-content: stretch; grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
+.video-grid--grid { display: flex; flex-wrap: wrap; justify-content: center; align-content: center; }
+.video-grid--grid .video-tile { width: clamp(240px, 17vw, 320px); aspect-ratio: 16 / 9; min-height: 0; height: auto; flex-shrink: 0; }
+.video-grid--grid[data-cols="4"] .video-tile { width: clamp(220px, calc((100% - 3 * 0.75rem) / 4), 320px); }
+.video-grid--grid[data-cols="6"] .video-tile { width: clamp(180px, calc((100% - 5 * 0.75rem) / 6), 280px); }
+.avatar-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+.avatar-stage-row { display: flex; flex-wrap: wrap; gap: 1.75rem 2.25rem; align-items: flex-start; justify-content: center; max-width: 56rem; }
+.avatar-person { display: flex; flex-direction: column; align-items: center; gap: 0.65rem; width: 7.5rem; }
+.avatar-circle { position: relative; width: 5.5rem; height: 5.5rem; border-radius: 50%; display: grid; place-items: center; font-size: 1.85rem; font-weight: 600; color: #fff; background: linear-gradient(145deg, #3d8bfd 0%, #1a5fd0 100%); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); user-select: none; }
+.avatar-hand { position: absolute; top: -0.15rem; right: -0.15rem; font-size: 1rem; line-height: 1; background: rgba(0, 0, 0, 0.45); border-radius: 999px; padding: 0.2rem 0.3rem; }
+.avatar-name { color: rgba(255, 255, 255, 0.92); font-size: 0.85rem; text-align: center; line-height: 1.3; word-break: break-word; }
+.video-grid--speaker { grid-template-columns: 1fr; }
+.video-grid--training { display: flex; flex-direction: row; gap: 0.75rem; flex: 1; min-height: 0; overflow: hidden; }
+.video-grid--training .video-side-main { flex: 4 1 0; }
+.video-grid--training .video-sidelist { flex: 2 1 0; min-width: 10rem; max-width: 20rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; align-content: start; }
+.video-grid--training .video-sidelist .video-tile { min-height: 5rem; aspect-ratio: 16 / 10; flex-shrink: 0; }
+.video-tile--focusable { cursor: pointer; transition: outline 0.15s, box-shadow 0.15s; outline: 2px solid transparent; }
+.video-tile--focusable:hover { outline-color: rgba(18, 120, 255, 0.6); box-shadow: 0 0 0 2px rgba(18, 120, 255, 0.3); }
+.video-tile--focusable:focus-visible { outline-color: rgba(18, 120, 255, 0.8); }
+.video-tile--focus.video-tile--focusable { outline-color: rgba(18, 120, 255, 0.7); box-shadow: 0 0 0 3px rgba(18, 120, 255, 0.25); }
+.video-grid--side { display: flex; flex-direction: row; gap: 0.75rem; flex: 1; min-height: 0; overflow: hidden; align-content: stretch; }
+.video-side-main { flex: 3 1 0; min-width: 0; min-height: 0; display: flex; }
+.video-side-main .video-tile { flex: 1; min-height: 0; aspect-ratio: auto; height: 100%; }
+.video-sidelist { flex: 1 1 0; min-width: 7.5rem; max-width: 14rem; display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.video-sidelist .video-tile, .video-tile--compact { min-height: 5.5rem; aspect-ratio: 16 / 10; flex-shrink: 0; }
+
+/* 可拖动的侧边列表 */
+.video-sidelist--floating { width: 14rem; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.12); padding: 0.25rem; }
+.video-sidelist-drag-handle { height: 6px; cursor: grab; display: flex; align-items: center; justify-content: center; margin-bottom: 0.25rem; }
+.video-sidelist-drag-handle:active { cursor: grabbing; }
+.video-sidelist-drag-icon { width: 28px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); }
+.video-tile--avatar { display: flex; align-items: center; justify-content: center; background: #1a1f27; border: 1px solid rgba(255, 255, 255, 0.06); opacity: 0.75; }
+.video-tile-avatar { width: 3.25rem; height: 3.25rem; border-radius: 50%; display: grid; place-items: center; font-size: 1.25rem; font-weight: 600; color: #fff; background: linear-gradient(145deg, #3d8bfd 0%, #1a5fd0 100%); user-select: none; }
+.video-grid--grid .video-tile-avatar { width: 2rem; height: 2rem; font-size: 0.85rem; }
+.video-side-main .video-tile-avatar { width: 5.5rem; height: 5.5rem; font-size: 1.85rem; }
+.video-filmstrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; }
+.video-filmstrip .video-tile { min-height: 100px; aspect-ratio: 16 / 10; }
+.video-tile--focus { min-height: 0; }
+.video-tile { position: relative; background: #111; border-radius: 16px; overflow: hidden; min-height: 100px; aspect-ratio: 16 / 10; }
+.video-tile video { width: 100%; height: 100%; max-width: none; max-height: none; object-fit: cover; display: block; background: #1a1a1a; }
+.video-label { position: absolute; left: 0.5rem; bottom: 0.5rem; padding: 0.2rem 0.5rem; border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 0.8rem; }
+.video-label--cam-off::before { content: "🔒"; font-size: 0.65rem; margin-right: 0.2rem; }
+
+/* —— 音频指示器 —— */
+.audio-indicator { position: absolute; left: 0.5rem; bottom: 2.1rem; display: flex; align-items: center; justify-content: center; height: 1.4rem; z-index: 3; }
+.audio-indicator-muted { width: 1.05rem; height: 1.05rem; color: rgba(255, 255, 255, 0.7); filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
+.audio-indicator-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 1.1rem; padding: 0 3px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
+.audio-indicator-bar { width: 3px; height: 100%; background: #22c55e; border-radius: 2px; transform-origin: bottom; animation: audio-bar-bounce 0.9s ease-in-out infinite; }
+.audio-indicator-bar:nth-child(2) { animation-delay: 0.15s; }
+.audio-indicator-bar:nth-child(3) { animation-delay: 0.3s; }
+@keyframes audio-bar-bounce { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
+.audio-indicator--avatar { position: absolute; left: 50%; bottom: -0.4rem; transform: translateX(-50%); }
+.audio-indicator--avatar .audio-indicator-muted { color: rgba(255, 255, 255, 0.85); }
+
+/* —— 屏幕共享 —— */
+.screen-share-hint { position: absolute; top: 0.5rem; left: 50%; transform: translateX(-50%); max-width: calc(100% - 2rem); padding: 0.4rem 0.75rem; border-radius: 8px; background: rgba(18, 120, 255, 0.92); color: #fff; font-size: 0.78rem; line-height: 1.3; text-align: center; pointer-events: none; z-index: 2; }
+.video-tile--self-screen { background: #111; }
+.screen-share-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; color: rgba(255, 255, 255, 0.85); background: linear-gradient(135deg, #1a1a1a, #0a0a0a); }
+.screen-share-placeholder-icon { width: 3rem; height: 3rem; opacity: 0.9; }
+.screen-share-placeholder-text { font-size: 0.95rem; font-weight: 500; letter-spacing: 0.02em; }
+.hand-badge { position: absolute; top: 0.5rem; right: 0.5rem; font-size: 1.1rem; line-height: 1; background: rgba(0, 0, 0, 0.45); border-radius: 999px; padding: 0.25rem 0.4rem; }
+
+/* —— 控制栏 —— */
+.controls { position: relative; display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 0.75rem; flex-shrink: 0; padding: 0.45rem 1rem 0.55rem; margin-top: 0; background: var(--meeting-bar); border-top: 1px solid var(--meeting-bar-border); min-height: 4.25rem; }
+.controls-cluster { display: flex; flex-wrap: nowrap; align-items: stretch; justify-content: center; gap: 0.2rem; max-width: calc(100% - 5.5rem); min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.controls-leave { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); }
+.control-btn { font: inherit; min-width: 3.6rem; max-width: 4.6rem; padding: 0.4rem 0.35rem 0.35rem; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--meeting-text); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.28rem; line-height: 1.15; }
+.control-btn-icon { position: relative; display: grid; place-items: center; width: 1.5rem; height: 1.5rem; color: rgba(255, 255, 255, 0.92); }
+.control-btn-badge { position: absolute; top: -0.4rem; right: -0.5rem; min-width: 1rem; height: 1rem; padding: 0 0.25rem; border-radius: 999px; background: #ea4335; color: #fff; font-size: 0.62rem; font-weight: 600; line-height: 1rem; text-align: center; pointer-events: none; }
+.control-btn-label { font-size: 0.68rem; color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.control-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.control-btn.is-active { background: rgba(18, 120, 255, 0.22); border-color: rgba(18, 120, 255, 0.45); }
+.control-btn.is-active .control-btn-icon { color: #8ec0ff; }
+.control-btn.is-off .control-btn-icon { color: #f28b82; }
+.control-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.control-btn--danger-text, .control-btn--danger-text .control-btn-icon, .control-btn--danger-text .control-btn-label { color: #f28b82; }
+.control-btn--danger-text:hover:not(:disabled) { background: rgba(242, 139, 130, 0.12); }
+.control-btn--danger { background: var(--color-danger); border-color: var(--color-danger); color: #fff; }
+.control-btn--danger:hover:not(:disabled) { filter: brightness(1.08); background: var(--color-danger); }
+.control-btn.is-recording { background: #e53935; border-color: #e53935; color: #fff; }
+.control-btn.is-recording .control-btn-icon { animation: rec-pulse 1.4s ease-in-out infinite; }
+@keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.recording-indicator { display: inline-flex; align-items: center; gap: 6px; color: #ff5252; font-weight: 600; font-variant-numeric: tabular-nums; }
+.recording-dot { width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 0 0 rgba(255, 59, 59, 0.7); animation: rec-dot 1.4s infinite; }
+@keyframes rec-dot { 0% { box-shadow: 0 0 0 0 rgba(255, 59, 59, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(255, 59, 59, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 59, 59, 0); } }
+.control-btn--leave { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.18); }
+.control-select { display: flex; flex-direction: row; align-items: center; gap: 0.4rem; font-size: 0.85rem; }
+.control-select select { max-width: 160px; padding: 0.4rem 0.5rem; border: 1px solid #e5e6eb; border-radius: 8px; font: inherit; }
+
+/* —— 等候室 / 主持人 —— */
+.waiting-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.waiting-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.waiting-actions { display: flex; gap: 0.4rem; }
+.host-peer-list { margin-top: 0.25rem; overflow-y: auto; min-height: 0; }
+.host-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem; }
+.host-actions button, .side-panel .waiting-actions button, .chat-form button { font-size: 0.82rem; padding: 0.45rem 0.7rem; }
+
+/* —— 聊天面板 —— */
+.chat-messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 0.75rem; padding-right: 0.25rem; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 0.25s ease; }
+.chat-messages:hover, .chat-messages:focus-within { scrollbar-color: rgba(255, 255, 255, 0.28) transparent; }
+.chat-messages::-webkit-scrollbar { width: 6px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; transition: background-color 0.25s ease; }
+.chat-messages:hover::-webkit-scrollbar-thumb, .chat-messages:focus-within::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.28); }
+.chat-messages:hover::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.45); }
+.chat-messages::-webkit-scrollbar-button, .chat-messages::-webkit-scrollbar-button:start, .chat-messages::-webkit-scrollbar-button:end { display: none; width: 0; height: 0; }
+.chat-item { display: flex; align-items: flex-start; gap: 0.5rem; max-width: 100%; }
+.chat-item--self { flex-direction: row-reverse; }
+.chat-avatar { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 600; color: #fff; background: rgba(255, 255, 255, 0.18); user-select: none; margin-top: 1.4rem; }
+.chat-item--self .chat-avatar { background: var(--color-primary); }
+.chat-bubble-wrap { display: flex; flex-direction: column; min-width: 0; max-width: 75%; }
+.chat-item--self .chat-bubble-wrap { align-items: flex-end; }
+.chat-bubble-meta { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.78rem; margin-bottom: 0.2rem; padding: 0 0.15rem; }
+.chat-bubble-meta strong { font-weight: 600; color: rgba(255, 255, 255, 0.9); }
+.chat-bubble-meta time { color: rgba(255, 255, 255, 0.45); font-size: 0.72rem; }
+.chat-text { margin: 0; padding: 0.45rem 0.7rem; border-radius: 0.7rem; white-space: pre-wrap; word-break: break-word; line-height: 1.4; font-size: 0.88rem; }
+.chat-item--other .chat-text { background: rgba(255, 255, 255, 0.1); color: #f5f6f7; border-top-left-radius: 0.3rem; }
+.chat-item--self .chat-text { background: var(--color-primary); color: #fff; border-top-right-radius: 0.3rem; }
+.chat-form { display: flex; gap: 0.5rem; margin-top: auto; }
+.chat-form input { flex: 1; padding: 0.55rem 0.7rem; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; font: inherit; color: #fff; background: rgba(0, 0, 0, 0.25); }
+.chat-form input::placeholder { color: rgba(255, 255, 255, 0.4); }
+
+/* —— 管理端 Ant Design 微调 —— */
+.admin-page { width: 100%; max-width: none; min-width: 0; }
+.admin-page-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem 1.25rem; margin-bottom: 1.25rem; width: 100%; }
+.admin-page-card { width: 100%; border-radius: 12px !important; overflow: hidden; }
+.admin-page-card .ant-card-head { min-height: 56px; padding: 0 16px; border-bottom: 1px solid #e5e6eb; }
+.admin-page-card .ant-card-body { padding: 0 !important; }
+.admin-page-card .ant-table-wrapper { padding: 0; }
+.admin-page-card .ant-table-pagination { margin: 12px 16px !important; }
+.admin-antd-form .ant-form-item { margin-bottom: 16px; }
+.admin-antd-form.ant-form_horizontal .ant-form-item-row { flex-wrap: nowrap; align-items: flex-start; }
+.admin-antd-form.ant-form_horizontal .ant-form-item-label { width: 88px !important; max-width: 88px; flex: 0 0 88px !important; display: flex !important; align-items: flex-start; justify-content: flex-end; align-self: stretch; white-space: nowrap; overflow: hidden; text-align: right; min-height: 32px; padding-top: 0 !important; padding-bottom: 0 !important; }
+.admin-antd-form.ant-form_horizontal .ant-form-item-label > label { display: inline-flex !important; flex-direction: row !important; align-items: center !important; justify-content: flex-end !important; gap: 0 !important; width: 100%; max-width: 100%; height: 32px; margin: 0; text-align: right; }
+.admin-antd-form.ant-form_horizontal .ant-form-item-control { flex: 1 1 auto; min-width: 0; }
+.admin-antd-form .ant-form-item-extra { min-height: 0; }
+
+/* —— 录制预览 —— */
+.recordings-preview-antd { display: flex; flex-direction: column; gap: 12px; }
+.recordings-preview-antd-loading { display: flex; align-items: center; justify-content: center; min-height: 240px; background: #111; border-radius: 8px; color: #fff; }
+.recordings-preview-antd-video { display: block; width: 100%; max-height: min(60vh, 560px); background: #000; border-radius: 8px; object-fit: contain; }
+.recordings-preview-antd-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: rgba(0, 0, 0, 0.45); }
+.recordings-preview-modal .ant-modal-body { max-height: min(78vh, 720px); overflow: auto; }
+
+/* —— MemberPicker —— */
+.member-picker { display: flex; gap: 1rem; height: 400px; max-height: 60vh; }
+.member-picker-left { flex: 2 1 0; display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.member-picker-right { flex: 1 1 0; display: flex; flex-direction: column; border: 1px solid #e5e6eb; border-radius: 8px; overflow: hidden; min-width: 0; }
+.member-picker-search { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.6rem; border: 1px solid #e5e6eb; border-radius: 6px; background: #fff; }
+.member-picker-search input { flex: 1; border: none; outline: none; font-size: 0.85rem; background: transparent; }
+.member-picker-cols { flex: 1; display: flex; gap: 0.5rem; min-height: 0; }
+.member-picker-tree { flex: 1 1 0; display: flex; flex-direction: column; border: 1px solid #e5e6eb; border-radius: 6px; overflow: hidden; min-width: 0; }
+.member-picker-users { flex: 1 1 0; display: flex; flex-direction: column; border: 1px solid #e5e6eb; border-radius: 6px; overflow: hidden; min-width: 0; }
+.member-picker-section-label { padding: 0.4rem 0.6rem; font-size: 0.75rem; color: #999; background: #fafafa; border-bottom: 1px solid #e5e6eb; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.member-picker-tree-list { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.member-picker-dept { display: flex; align-items: center; gap: 0.2rem; padding: 0.25rem 0.3rem; border-bottom: 1px solid #f0f0f0; transition: background 0.1s; }
+.member-picker-dept:hover { background: #f5f5f5; }
+.member-picker-dept.is-selected { background: #e6f0ff; }
+.member-picker-dept-toggle { border: none; background: none; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; }
+.member-picker-dept-name { border: none; background: none; cursor: pointer; flex: 1; display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: #333; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-picker-dept-check { border: 1px solid #d9d9d9; border-radius: 3px; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; font-size: 0.75rem; color: #fff; transition: all 0.15s; flex-shrink: 0; }
+.member-picker-dept-check.is-checked { background: var(--color-primary); border-color: var(--color-primary); }
+.member-picker-user-list { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+.member-picker-user { display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.6rem; border: none; border-bottom: 1px solid #f0f0f0; background: none; cursor: pointer; width: 100%; text-align: left; transition: background 0.1s; }
+.member-picker-user:hover { background: #f5f5f5; }
+.member-picker-user.is-selected { background: #e6f0ff; }
+.member-picker-user.is-disabled { opacity: 0.4; cursor: not-allowed; }
+.member-picker-user-name { font-size: 0.85rem; color: #333; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-picker-user-id { font-size: 0.75rem; color: #999; flex-shrink: 0; }
+.member-picker-user-check { color: var(--color-primary); font-size: 0.85rem; flex-shrink: 0; }
+.member-picker-pagination { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.4rem; border-top: 1px solid #e5e6eb; font-size: 0.8rem; }
+.member-picker-pagination button { border: 1px solid #e5e6eb; border-radius: 4px; background: #fff; cursor: pointer; padding: 0.15rem 0.5rem; font-size: 0.85rem; }
+.member-picker-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+.member-picker-right-header { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.6rem; background: #fafafa; border-bottom: 1px solid #e5e6eb; font-size: 0.85rem; font-weight: 500; }
+.member-picker-count { background: var(--color-primary); color: #fff; border-radius: 999px; padding: 0.1rem 0.5rem; font-size: 0.75rem; min-width: 20px; text-align: center; }
+.member-picker-selected-list { flex: 1; overflow-y: auto; scrollbar-width: thin; padding: 0.3rem; }
+.member-picker-selected-item { display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.5rem; border-radius: 4px; margin-bottom: 0.2rem; transition: background 0.1s; }
+.member-picker-selected-item:hover { background: #f5f5f5; }
+.member-picker-selected-dept { background: #f0f7ff; }
+.member-picker-selected-name { font-size: 0.85rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-picker-selected-meta { font-size: 0.72rem; color: #999; flex-shrink: 0; }
+.member-picker-remove { border: none; background: none; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 4px; color: #999; transition: all 0.15s; flex-shrink: 0; }
+.member-picker-remove:hover { background: #ff4d4f; color: #fff; }
+.member-picker-empty { text-align: center; padding: 2rem 0; font-size: 0.85rem; }
+
+/* —— 移动端响应式 —— */
+@media (max-width: 960px) and (min-width: 721px) {
+  .meeting-header { padding: 0.5rem 0.75rem; }
+  .meeting-stage { padding: 0.5rem 0.75rem 0; }
+  .controls { gap: 0.5rem; padding: 0.4rem 0.75rem 0.5rem; }
+}
+
+@media (max-width: 720px) {
+  .meeting-main { flex-direction: column; }
+  .meeting-side { flex: none; width: 100%; max-height: 40vh; }
+  .controls { flex-wrap: wrap; padding-bottom: 0.55rem; min-height: auto; }
+  .controls-leave { position: static; transform: none; }
+  .controls-cluster { max-width: 100%; }
+  .video-grid--side { flex-direction: row; }
+  .video-sidelist { max-width: 7.5rem; min-width: 5.5rem; }
+  .video-grid--training { flex-direction: column; }
+  .video-grid--training .video-sidelist { max-width: 100%; min-width: 0; flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+  .video-grid--training .video-side-main { flex: 3 1 0; }
+  .admin-page-header { flex-direction: column; align-items: stretch; }
+  .recordings-preview-antd-video { max-height: min(50vh, 420px); }
+  .meeting-page { padding-top: env(safe-area-inset-top); }
+  .meeting-header { padding: 0.45rem 0.6rem; gap: 0.5rem; }
+  .meeting-header-info h1 { font-size: 0.85rem; max-width: 55vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meeting-header-meta { font-size: 0.72rem; gap: 0.25rem; }
+  .meeting-header-btn { padding: 0.35rem 0.55rem; font-size: 0.78rem; }
+  .meeting-settings-popover { width: min(260px, calc(100vw - 1.2rem)); }
+  .meeting-stage { padding: 0.5rem 0.5rem 0; }
+  .meeting-main { gap: 0.5rem; }
+  .meeting-side { flex: none; width: 100%; max-height: 35vh; }
+  .video-grid { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 0.5rem; }
+  .video-grid--grid .video-tile { width: min(150px, calc((100% - 0.5rem) / 2)) !important; }
+  .video-tile { min-height: 120px; border-radius: 8px; }
+  .video-label { font-size: 0.72rem; }
+  .controls { flex-wrap: wrap; padding: 0.4rem 0.5rem; padding-bottom: calc(0.4rem + env(safe-area-inset-bottom)); min-height: auto; gap: 0.35rem; }
+  .controls-cluster { max-width: 100%; min-width: 0; gap: 0.1rem; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .controls-leave { position: static; transform: none; width: 100%; display: flex; justify-content: center; }
+  .control-btn { min-width: 3rem; padding: 0.35rem 0.25rem 0.3rem; }
+  .control-btn-label { font-size: 0.62rem; }
+  .side-panel { padding: 0.6rem; }
+  .video-sidelist { max-width: 7.5rem; min-width: 5.5rem; }
+  .member-picker { flex-direction: column; height: auto; max-height: none; }
+  .member-picker-left { height: 300px; }
+  .member-picker-right { max-height: 200px; }
+  .member-picker-cols { gap: 0.3rem; }
+}
+
+@media (max-width: 380px) {
+  .meeting-header-info h1 { font-size: 0.78rem; max-width: 48vw; }
+  .controls { gap: 0.2rem; }
+  .control-btn { min-width: 2.6rem; }
+}
+
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 900px) {
+  .meeting-main { flex-direction: row; }
+  .meeting-side { flex: 0 0 200px; width: 200px; max-height: none; }
+  .controls { flex-wrap: nowrap; padding-bottom: 0.35rem; }
+  .controls-leave { position: absolute; right: 0.5rem; transform: translateY(-50%); width: auto; }
+  .controls-cluster { max-width: calc(100% - 5rem); }
+}

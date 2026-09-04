@@ -1,0 +1,43 @@
+CREATE TABLE IF NOT EXISTS users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(64) NOT NULL,
+  password_hash VARCHAR(100) NOT NULL,
+  display_name VARCHAR(64) NOT NULL,
+  role VARCHAR(16) NOT NULL DEFAULT 'user',
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  phone VARCHAR(32) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_users_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS meetings (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(16) NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  host_user_id BIGINT UNSIGNED NULL,
+  status VARCHAR(16) NOT NULL,
+  waiting_room_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  join_password_hash VARCHAR(100) NULL,
+  scheduled_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ended_at TIMESTAMP NULL,
+  UNIQUE KEY uk_meetings_code (code),
+  KEY idx_meetings_host (host_user_id),
+  CONSTRAINT fk_meetings_host FOREIGN KEY (host_user_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS meeting_join_tokens (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  token CHAR(64) NOT NULL,
+  meeting_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NULL,
+  role VARCHAR(16) NOT NULL,
+  display_name VARCHAR(64) NULL,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_tokens_token (token),
+  KEY idx_tokens_meeting (meeting_id),
+  CONSTRAINT fk_tokens_meeting FOREIGN KEY (meeting_id) REFERENCES meetings (id),
+  CONSTRAINT fk_tokens_user FOREIGN KEY (user_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

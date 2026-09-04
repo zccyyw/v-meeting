@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.worktrees
+certs
+*.log
+coverage
+.env
+docs

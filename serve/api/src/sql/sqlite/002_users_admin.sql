@@ -1,0 +1,2 @@
+-- Placeholder: applied via migrate.ts pragma table_info.
+-- Adds users.role / status / phone / updated_at when missing.

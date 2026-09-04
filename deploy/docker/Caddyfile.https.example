@@ -1,0 +1,23 @@
+# Example: production HTTPS with public hostname + files under deploy/docker/certs/
+# Copy to Caddyfile (or merge) and set:
+#   VITE_WS_URL=wss://meeting.example.com/ws
+#   VITE_API_BASE=/api
+#
+# Certificates:
+#   deploy/docker/certs/fullchain.pem
+#   deploy/docker/certs/privkey.pem
+
+meeting.example.com {
+	tls /certs/fullchain.pem /certs/privkey.pem
+
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy api:8080
+	}
+	handle /ws {
+		reverse_proxy realtime:8082
+	}
+	handle {
+		reverse_proxy web:80
+	}
+}

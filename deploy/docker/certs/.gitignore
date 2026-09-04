@@ -1,0 +1,5 @@
+# Optional TLS certificates for Caddy (Docker Compose).
+# Place fullchain.pem + privkey.pem here when using Caddyfile.https.example.
+# This directory is mounted read-only at /certs in the caddy service.
+*
+!.gitignore

@@ -1,0 +1,26 @@
+[Unit]
+Description=Meeting API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meeting
+Group=meeting
+WorkingDirectory=/opt/meeting/app/serve/api
+EnvironmentFile=-/opt/meeting/conf/.env
+
+# Auto-migrate database before start (node direct, no shell)
+ExecStartPre=/opt/meeting/runtime/bin/node dist/migrate.js
+# Seed default admin (idempotent)
+ExecStartPost=/opt/meeting/runtime/bin/node dist/seed-admin.js
+
+ExecStart=/opt/meeting/runtime/bin/node dist/index.js
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+StandardOutput=append:/opt/meeting/logs/api.log
+StandardError=append:/opt/meeting/logs/api.err.log
+
+[Install]
+WantedBy=multi-user.target
