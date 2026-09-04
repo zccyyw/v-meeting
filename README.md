@@ -180,12 +180,14 @@ docker compose up -d --build
 **手动触发**（推荐）：
 
 1. 进入 GitHub 仓库 → **Actions** 标签页
-2. 左侧选择 **Build Packages** workflow
-3. 点击 **Run workflow**，选择参数：
+2. 左侧 **Workflows** 列表中找到 **Build Packages**（文件名为 `build-rpm.yml`）
+   > 如果左侧列表看不到该 workflow，请确保 `.github/workflows/build-rpm.yml` 已提交到仓库**默认分支**（如 `main`/`master`）。GitHub Actions 仅显示默认分支上的 workflow。
+3. 点击右侧 **Run workflow** 按钮，选择参数：
    - `build_type`：打包方式 — `all`（全部）、`pack`、`docker`、`native`、`rpm`、`deb`
    - `target_arch`：目标 CPU 架构（`x64` 或 `arm64`）
    - `version`：版本号（如 `0.1`）
    - `release`：发布号（如 `1`）
+4. 点击绿色 **Run workflow** 按钮确认，等待构建完成
 
 **Tag 触发**：
 
