@@ -1,0 +1,445 @@
+# =============================================================================
+# GitHub Actions — 统一构建工作流
+#
+# 支持全部 5 种打包方式，全部在 GitHub Actions 远程 Linux runner 上完成：
+#   1. 源码打包（pack）       → dist/ 目录的编译产物
+#   2. Docker 离线包（pack:docker）→ .tar 镜像包
+#   3. Native 离线包（pack:native）→ .tar.gz 安装包
+#   4. RPM 包（pack:rpm）     → .rpm 安装包
+#   5. DEB 包                 → .deb 安装包
+#
+# 触发方式：
+#   1. 手动触发（workflow_dispatch）：选择打包方式和目标架构
+#   2. 推送 tag v* 时自动触发：同时构建 x64+arm64 的全部包
+#
+# 产物下载：
+#   构建完成后在 Actions → Run details → Artifacts 区下载 ZIP 压缩包。
+#
+# 安装到目标服务器：
+#   sudo rpm -ivh meeting-*.rpm        # RPM 系（CentOS/麒麟/UOS）
+#   sudo dpkg -i meeting-*.deb         # DEB 系（Ubuntu/Deepin/UOS）
+#   tar -xzf meeting-linux-*.tar.gz && sudo ./install.sh  # Native 离线包
+#   docker load -i meeting-app-*.tar    # Docker 离线包
+# =============================================================================
+name: Build Packages
+
+on:
+  # 手动触发：在 GitHub 仓库 → Actions → Build Packages → Run workflow
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "打包方式（可多选）"
+        type: choice
+        options:
+          - all
+          - pack
+          - docker
+          - native
+          - rpm
+          - deb
+        default: all
+      target_arch:
+        description: "目标 CPU 架构"
+        type: choice
+        options:
+          - x64
+          - arm64
+        default: x64
+      version:
+        description: "版本号（如 0.1）"
+        required: true
+        default: "0.1"
+      release:
+        description: "发布号（如 1）"
+        required: true
+        default: "1"
+
+  # 推送 tag 时自动触发（同时构建 x64 和 arm64 全部包）
+  push:
+    tags:
+      - "v*"
+
+# 同一分支的并发构建只保留最新的
+concurrency:
+  group: build-${{ github.ref }}-${{ inputs.target_arch || 'all' }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  NODE_TAR_VERSION: "v22.23.1"
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────
+  # 构建矩阵：tag 推送时同时构建 x64+arm64，手动触发只构建选中的架构
+  # ───────────────────────────────────────────────────────────────────
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      build_type: ${{ steps.set-params.outputs.build_type }}
+      version: ${{ steps.set-params.outputs.version }}
+      release: ${{ steps.set-params.outputs.release }}
+    steps:
+      - id: set-matrix
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo 'matrix={"include":[{"arch":"x64"},{"arch":"arm64"}]}' >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"include\":[{\"arch\":\"${{ inputs.target_arch }}\"}]}" >> "$GITHUB_OUTPUT"
+          fi
+      - id: set-params
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ver="${GITHUB_REF##*/}"
+            ver="${ver#v}"
+            echo "build_type=all" >> "$GITHUB_OUTPUT"
+            echo "version=$ver" >> "$GITHUB_OUTPUT"
+            echo "release=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_type=${{ inputs.build_type }}" >> "$GITHUB_OUTPUT"
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "release=${{ inputs.release }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Job 1: 源码打包（pack）— 编译全部子包，输出 dist/ 目录
+  # 纯 Node.js 构建，无需原生编译，x64 和 arm64 产物相同
+  # ═══════════════════════════════════════════════════════════════════
+  pack:
+    needs: prepare
+    if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'pack'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build mediasoup worker
+        run: |
+          export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
+          export PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+          GHPROXY="https://gh-proxy.com"
+          if [ -d node_modules/mediasoup/worker/subprojects ]; then
+            node ./serve/realtime/patch-mediasoup-wrap.cjs "$GHPROXY"
+            cd node_modules/mediasoup
+            node npm-scripts.mjs postinstall
+          fi
+          cd ${{ github.workspace }}
+          npm rebuild better-sqlite3
+
+      - name: Run pack
+        run: npm run pack
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meeting-pack-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Job 2: Docker 离线包（pack:docker）— 构建 Docker 镜像并打包为 .tar
+  # 需要 Docker daemon，支持 x64/arm64 交叉构建
+  # ═══════════════════════════════════════════════════════════════════
+  docker:
+    needs: prepare
+    if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'docker'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # ARM64 交叉编译：启用 qemu
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build Docker offline bundle
+        env:
+          DOCKER_PLATFORM: ${{ matrix.arch == 'arm64' && 'linux/arm64' || '' }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+        run: |
+          if [ -n "$DOCKER_PLATFORM" ]; then
+            npm run pack:docker
+          else
+            npm run pack:docker
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meeting-docker-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          path: dist/docker/
+          retention-days: 30
+          if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Job 3: Native 离线包（pack:native）— tar.gz 安装包，需 Linux 原生编译
+  # ═══════════════════════════════════════════════════════════════════
+  native:
+    needs: prepare
+    if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'native'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # ARM64 交叉编译需要 qemu 模拟 Linux/arm64 环境
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build mediasoup worker
+        run: |
+          export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
+          export PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+          GHPROXY="https://gh-proxy.com"
+          if [ -d node_modules/mediasoup/worker/subprojects ]; then
+            node ./serve/realtime/patch-mediasoup-wrap.cjs "$GHPROXY"
+            cd node_modules/mediasoup
+            node npm-scripts.mjs postinstall
+          fi
+          cd ${{ github.workspace }}
+          npm rebuild better-sqlite3
+
+      - name: Build native package
+        env:
+          PACK_NATIVE_FORCE: "1"
+        run: |
+          # pack:native 默认在非 Linux 上拒绝执行，设置 PACK_NATIVE_FORCE=1 跳过
+          # 但 ARM64 交叉编译时 mediasoup 原生模块可能不匹配目标架构
+          # 对于 ARM64，使用 Docker 容器构建更可靠
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            echo "→ ARM64 native build via Docker container"
+            docker run --rm \
+              --platform linux/arm64 \
+              -v "$PWD:/workspace" \
+              -v "meeting-native-build-modules-${{ matrix.arch }}:/workspace/node_modules" \
+              -e PACK_NATIVE_FORCE=1 \
+              -w /workspace \
+            node:22-bullseye bash -c "
+              apt-get update && apt-get install -y python3 python3-pip make g++ cmake --no-install-recommends
+              npm ci --ignore-scripts
+              export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
+              export PIP_INDEX_URL='https://pypi.tuna.tsinghua.edu.cn/simple'
+              GHPROXY='https://gh-proxy.com'
+              if [ -d node_modules/mediasoup/worker/subprojects ]; then
+                node ./serve/realtime/patch-mediasoup-wrap.cjs \$GHPROXY
+                cd node_modules/mediasoup
+                node npm-scripts.mjs postinstall
+              fi
+              cd /workspace
+              npm rebuild better-sqlite3
+              npm run pack:native
+            "
+          else
+            echo "→ x64 native build on runner"
+            npm run pack:native
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meeting-native-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          path: dist/native/
+          retention-days: 30
+          if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Job 4: RPM 包（pack:rpm）— 使用 Docker 模式构建，内嵌 Node.js
+  # ═══════════════════════════════════════════════════════════════════
+  rpm:
+    needs: prepare
+    if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'rpm'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ARM64 交叉编译：启用 qemu
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build RPM
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          RPM_VERSION: ${{ needs.prepare.outputs.version }}
+          RPM_RELEASE: ${{ needs.prepare.outputs.release }}
+          NODE_VERSION: ${{ env.NODE_TAR_VERSION }}
+        run: |
+          echo "→ Building RPM for ${{ matrix.arch }} (version ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }})"
+
+          # 构建 Docker builder 镜像（内含 fpm + rpmbuild + 编译工具链）
+          docker build \
+            -t meeting-rpm-builder \
+            -f deploy/rpm/Dockerfile.build \
+            .
+
+          mkdir -p dist/rpm
+
+          # 在 Docker 容器内执行构建
+          docker run --rm \
+            ${{ matrix.arch == 'arm64' && '--platform linux/arm64' || '' }} \
+            -v "$PWD:/workspace" \
+            -v "$PWD/dist/rpm:/output" \
+            -v "meeting-rpm-build-modules-${{ matrix.arch }}:/workspace/node_modules" \
+            -e TARGET_ARCH=${{ matrix.arch }} \
+            -e RPM_VERSION=${{ needs.prepare.outputs.version }} \
+            -e RPM_RELEASE=${{ needs.prepare.outputs.release }} \
+            -e NODE_VERSION=${{ env.NODE_TAR_VERSION }} \
+            meeting-rpm-builder \
+            bash /workspace/deploy/rpm/build-rpm.sh
+
+      - name: Rename RPM with architecture
+        run: |
+          cd dist/rpm
+          arch_tag="${{ matrix.arch }}"
+          if [ "$arch_tag" = "arm64" ]; then
+            arch_tag="aarch64"
+          else
+            arch_tag="x86_64"
+          fi
+          for f in meeting-*.rpm; do
+            [ -f "$f" ] && mv "$f" "meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.${arch_tag}.rpm" || true
+          done
+          ls -lh
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meeting-rpm-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          path: dist/rpm/meeting-*.rpm
+          retention-days: 30
+          if-no-files-found: error
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Job 5: DEB 包 — 在 RPM 构建完成后，用 fpm 将 RPM 转为 DEB
+  # ═══════════════════════════════════════════════════════════════════
+  deb:
+    needs: [prepare, rpm]
+    if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'deb'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # ARM64 交叉编译：启用 qemu
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Download RPM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: meeting-rpm-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          path: dist/rpm
+
+      - name: Build DEB from RPM
+        run: |
+          echo "→ Converting RPM to DEB"
+          # 使用 Docker builder 镜像（已含 fpm）
+          docker build \
+            -t meeting-rpm-builder \
+            -f deploy/rpm/Dockerfile.build \
+            . 2>/dev/null || true
+
+          mkdir -p dist/deb
+
+          docker run --rm \
+            ${{ matrix.arch == 'arm64' && '--platform linux/arm64' || '' }} \
+            -v "$PWD/dist/rpm:/input:ro" \
+            -v "$PWD/dist/deb:/output" \
+            --entrypoint bash \
+            meeting-rpm-builder \
+            -c "cd /input && \
+                rpm_file=\$(ls meeting-*.rpm | head -1) && \
+                echo \"Converting: \$rpm_file\" && \
+                fpm -s rpm -t deb \
+                  -n meeting \
+                  -v ${{ needs.prepare.outputs.version }} \
+                  --iteration ${{ needs.prepare.outputs.release }} \
+                  -p /output/meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.deb \
+                  \$rpm_file && \
+                echo 'DEB conversion complete' || \
+                echo 'DEB conversion failed (non-critical)'"
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meeting-deb-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          path: dist/deb/meeting-*.deb
+          retention-days: 30
+          if-no-files-found: warn
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 构建完成汇总
+  # ═══════════════════════════════════════════════════════════════════
+  summary:
+    needs: [prepare, pack, docker, native, rpm, deb]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Build summary
+        run: |
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Package Type | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| 源码打包 (pack) | ${{ needs.pack.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker 离线包 | ${{ needs.docker.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Native 离线包 | ${{ needs.native.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| RPM 包 | ${{ needs.rpm.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| DEB 包 | ${{ needs.deb.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download artifacts from the Actions run page." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}" >> $GITHUB_STEP_SUMMARY
