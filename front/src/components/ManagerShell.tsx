@@ -8,6 +8,7 @@ import {
   Layout,
   Menu,
   Space,
+  Tooltip,
   Typography,
   theme,
 } from "antd";
@@ -117,19 +118,23 @@ function ManagerShellInner() {
     },
   ];
 
+  function onLogout() {
+    modal.confirm({
+      title: t("nav.confirmLogout"),
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
+      onOk: () => {
+        clearSession();
+        navigate("/manager/login", { replace: true });
+      },
+    });
+  }
+
   function onAvatarMenuClick({ key }: { key: string }) {
     if (key === "back") {
       navigate("/");
     } else if (key === "logout") {
-      modal.confirm({
-        title: t("nav.confirmLogout"),
-        okText: t("common.confirm"),
-        cancelText: t("common.cancel"),
-        onOk: () => {
-          clearSession();
-          navigate("/manager/login", { replace: true });
-        },
-      });
+      onLogout();
     }
   }
 
@@ -175,9 +180,51 @@ function ManagerShellInner() {
           </Typography.Title>
         </Space>
 
-        {/* 右侧：主题切换 + 头像 + 下拉 */}
+        {/* 右侧：主题切换 + 返回首页 + 退出按钮 + 头像下拉 */}
         <Space size={8}>
           <ThemeToggle />
+          <Tooltip title={t("nav.backToMeetings")}>
+            <button
+              type="button"
+              onClick={() => navigate("/")}
+              aria-label={t("nav.backToMeetings")}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "8px",
+                fontSize: 18,
+                color: token.colorTextSecondary,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 8,
+              }}
+            >
+              <HomeOutlined />
+            </button>
+          </Tooltip>
+          <Tooltip title={t("nav.logout")}>
+            <button
+              type="button"
+              onClick={onLogout}
+              aria-label={t("nav.logout")}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "8px",
+                fontSize: 18,
+                color: token.colorTextSecondary,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 8,
+              }}
+            >
+              <LogoutOutlined />
+            </button>
+          </Tooltip>
           <Dropdown
             menu={{ items: avatarMenuItems, onClick: onAvatarMenuClick }}
             placement="bottomRight"
@@ -206,21 +253,21 @@ function ManagerShellInner() {
           collapsible
           collapsed={collapsed}
           onCollapse={setCollapsed}
-          theme="dark"
           style={{
             overflow: "auto",
             height: "calc(100vh - 56px)",
             position: "sticky",
             top: 56,
             left: 0,
+            background: token.colorBgContainer,
+            borderRight: `1px solid ${token.colorBorderSecondary}`,
           }}
         >
           <Menu
-            theme="dark"
             mode="inline"
             selectedKeys={[selectedKey]}
             items={menuItems}
-            style={{ borderRight: 0 }}
+            style={{ borderRight: 0, background: "transparent" }}
           />
         </Sider>
 
