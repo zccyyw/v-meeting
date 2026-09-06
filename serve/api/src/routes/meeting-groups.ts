@@ -373,39 +373,4 @@ export async function meetingGroupRoutes(app: FastifyInstance, db: Db, redis: Re
     };
   });
 
-  // ── 所有进行中会议的参会者在线状态（管理后台）──
-  app.get("/admin/meetings/online", async (req, reply) => {
-    const sid = req.headers["x-session-id"] as string | undefined;
-    const user = await loadSessionUser(db, redis, sid);
-    if (!user) return reply.code(401).send({ error: "unauthorized" });
-    if (!user.roles.includes("admin") && !user.permissions.includes("meeting:monitor:list"))
-      return reply.code(403).send({ error: "forbidden" });
-
-    const [rows] = await db.query(
-      `SELECT m.id, m.code, m.title, m.status,
-        (SELECT COUNT(*) FROM meeting_invitations i WHERE i.meeting_id = m.id AND i.status = 'attended') AS online_count,
-        (SELECT COUNT(*) FROM meeting_invitations i WHERE i.meeting_id = m.id) AS invited_count
-       FROM meetings m
-       WHERE m.status = 'live'
-       ORDER BY m.created_at DESC`,
-    );
-
-    const items = (rows as {
-      id: number;
-      code: string;
-      title: string;
-      status: string;
-      online_count: number | string;
-      invited_count: number | string;
-    }[]).map((r) => ({
-      meetingId: Number(r.id),
-      code: r.code,
-      title: r.title,
-      status: r.status,
-      onlineCount: Number(r.online_count),
-      invitedCount: Number(r.invited_count),
-    }));
-
-    return { items };
-  });
 }
