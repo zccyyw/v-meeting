@@ -31,8 +31,7 @@ function getInitialMode(): ThemeMode {
   } catch {
     // ignore
   }
-  // 跟随系统偏好
-  if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) return "dark";
+  // 默认明亮模式（不跟随系统偏好）
   return "light";
 }
 
