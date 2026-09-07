@@ -55,6 +55,9 @@
 /* antd App wrapper — 不阻断 flex/height 链 */
 .ant-app { height: 100%; }
 
+/* antd Sider 内部容器 — 覆盖 block 为 flex，使底部按钮真正靠底 */
+.ant-layout-sider-children { display: flex !important; flex-direction: column !important; height: 100%; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -607,13 +610,13 @@ input:not(.ant-input):focus {
 .controls { position: relative; display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 0.75rem; flex-shrink: 0; padding: 0.45rem 1rem 0.55rem; margin-top: 0; background: var(--meeting-bar); border-top: 1px solid var(--meeting-bar-border); min-height: 4.25rem; }
 .controls-cluster { display: flex; flex-wrap: nowrap; align-items: stretch; justify-content: center; gap: 0.2rem; max-width: calc(100% - 5.5rem); min-width: 0; overflow-x: auto; scrollbar-width: thin; }
 .controls-leave { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); }
-.control-btn { font: inherit; min-width: 3.6rem; max-width: 4.6rem; padding: 0.4rem 0.35rem 0.35rem; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--meeting-text); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.28rem; line-height: 1.15; }
+.control-btn { font: inherit; min-width: 3.6rem; max-width: 4.6rem; padding: 0.4rem 0.35rem 0.35rem; border-radius: 8px; border: 1px solid transparent !important; background: transparent !important; color: var(--meeting-text); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.28rem; line-height: 1.15; }
 .control-btn-icon { position: relative; display: grid; place-items: center; width: 1.5rem; height: 1.5rem; color: rgba(255, 255, 255, 0.92); }
 .control-btn-badge { position: absolute; top: -0.4rem; right: -0.5rem; min-width: 1rem; height: 1rem; padding: 0 0.25rem; border-radius: 999px; background: #ea4335; color: #fff; font-size: 0.62rem; font-weight: 600; line-height: 1rem; text-align: center; pointer-events: none; }
 .control-btn-label { font-size: 0.68rem; color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .control-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
-.control-btn.is-active { background: rgba(18, 120, 255, 0.22); border-color: rgba(18, 120, 255, 0.45); }
-.control-btn.is-active .control-btn-icon { color: #8ec0ff; }
+.control-btn.is-active { background: transparent !important; border-color: transparent !important; }
+.control-btn.is-active .control-btn-icon { color: rgba(255, 255, 255, 0.92); }
 .control-btn.is-off .control-btn-icon { color: #f28b82; }
 .control-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .control-btn--danger-text, .control-btn--danger-text .control-btn-icon, .control-btn--danger-text .control-btn-label { color: #f28b82; }
@@ -637,6 +640,19 @@ input:not(.ant-input):focus {
 .host-peer-list { margin-top: 0.25rem; overflow-y: auto; min-height: 0; }
 .host-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem; }
 .host-actions button, .side-panel .waiting-actions button, .chat-form button { font-size: 0.82rem; padding: 0.45rem 0.7rem; }
+
+/* —— 统一成员列表 —— */
+.member-unified-list { gap: 0.35rem; }
+.member-row { padding: 0.35rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.member-row:last-child { border-bottom: none; }
+.member-row-left { display: flex; align-items: center; gap: 2px; font-size: 0.85rem; min-width: 0; flex: 1; }
+.member-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-self-tag { flex-shrink: 0; }
+.member-invite-status { flex-shrink: 0; }
+.member-actions { flex-shrink: 0; }
+.member-mute-btn { padding: 0.25rem 0.4rem !important; font-size: 1rem !important; line-height: 1; }
+.member-mute-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.member-online-icon, .member-offline-icon { flex-shrink: 0; }
 
 /* —— 聊天面板 —— */
 .chat-messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 0.75rem; padding-right: 0.25rem; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 0.25s ease; }

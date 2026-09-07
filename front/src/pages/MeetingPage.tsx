@@ -300,13 +300,13 @@ function MeetingPageInner() {
     };
   }, []);
 
-  // 获取邀请名单
+  // 获取邀请名单（成员面板或名单面板打开时加载）
   useEffect(() => {
-    if (!inviteListOpen || !meetingId) return;
+    if ((!membersOpen && !inviteListOpen) || !meetingId) return;
     void InvitationApi.list(Number(meetingId))
       .then((res) => setInvitations(res.items))
       .catch(() => { /* ignore */ });
-  }, [inviteListOpen, meetingId]);
+  }, [membersOpen, inviteListOpen, meetingId]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -728,7 +728,7 @@ function MeetingPageInner() {
               )}
             </div>
 
-            {(membersOpen || chatOpen || inviteListOpen) && (
+            {(membersOpen || chatOpen) && (
               <aside className="meeting-side">
                 {membersOpen && (
                   <HostControls
@@ -737,6 +737,7 @@ function MeetingPageInner() {
                     allMuted={allMuted}
                     peers={snap.peers}
                     selfPeerId={snap.peerId}
+                    invitations={invitations}
                     onClose={() => setMembersOpen(false)}
                     onToggleAllowShare={() => {
                       roomRef.current?.setSharePermission(!snap.allowShare);
@@ -750,6 +751,9 @@ function MeetingPageInner() {
                         setAllMuted(true);
                       }
                     }}
+                    onMutePeer={(peerId) => {
+                      roomRef.current?.mutePeer(peerId);
+                    }}
                     onKick={(peerId) => {
                       roomRef.current?.kickPeer(peerId);
                     }}
@@ -761,13 +765,6 @@ function MeetingPageInner() {
                     selfPeerId={snap.peerId}
                     onSend={(text) => roomRef.current?.sendChat(text)}
                     onClose={() => setChatOpen(false)}
-                  />
-                )}
-                {inviteListOpen && (
-                  <InvitationPanel
-                    invitations={invitations}
-                    peers={snap.peers}
-                    onClose={() => setInviteListOpen(false)}
                   />
                 )}
               </aside>
@@ -786,7 +783,6 @@ function MeetingPageInner() {
           isHost={isHost}
           membersOpen={membersOpen}
           chatOpen={chatOpen}
-          inviteListOpen={inviteListOpen}
           unreadChat={unreadChat}
           onToggleMic={() => {
             void roomRef.current?.setMicEnabled(!snap.micEnabled);
@@ -814,7 +810,6 @@ function MeetingPageInner() {
               return next;
             });
           }}
-          onToggleInviteList={() => setInviteListOpen((v) => !v)}
           onInvite={() => setInviteOpen(true)}
           onLeave={() => {
             roomRef.current?.leave();

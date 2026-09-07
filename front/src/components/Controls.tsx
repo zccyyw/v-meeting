@@ -8,7 +8,6 @@ import {
   DesktopOutlined,
   UserAddOutlined,
   TeamOutlined,
-  SolutionOutlined,
   MessageOutlined,
   AlertOutlined,
   LogoutOutlined,
@@ -28,7 +27,6 @@ type Props = {
   isHost: boolean;
   membersOpen: boolean;
   chatOpen: boolean;
-  inviteListOpen: boolean;
   unreadChat: number;
   recording: boolean;
   canRecord: boolean;
@@ -38,7 +36,6 @@ type Props = {
   onToggleScreenShare: () => void;
   onToggleMembers: () => void;
   onToggleChat: () => void;
-  onToggleInviteList: () => void;
   onInvite: () => void;
   onLeave: () => void;
   onEndMeeting: () => void;
@@ -95,7 +92,6 @@ export function Controls({
   isHost,
   membersOpen,
   chatOpen,
-  inviteListOpen,
   unreadChat,
   onToggleMic,
   onToggleCam,
@@ -103,7 +99,6 @@ export function Controls({
   onToggleScreenShare,
   onToggleMembers,
   onToggleChat,
-  onToggleInviteList,
   onInvite,
   onLeave,
   onEndMeeting,
@@ -180,13 +175,6 @@ export function Controls({
           className={membersOpen ? "is-active" : ""}
           onClick={onToggleMembers}
           ariaPressed={membersOpen}
-        />
-        <ControlButton
-          label={t("meeting.inviteList", "名单")}
-          icon={<SolutionOutlined style={ICON_STYLE} aria-hidden />}
-          className={inviteListOpen ? "is-active" : ""}
-          onClick={onToggleInviteList}
-          ariaPressed={inviteListOpen}
         />
         <ControlButton
           label={t("meeting.chat")}

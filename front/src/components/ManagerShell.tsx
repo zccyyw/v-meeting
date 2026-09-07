@@ -4,10 +4,8 @@ import { useTranslation } from "react-i18next";
 import {
   App as AntApp,
   Avatar,
-  Dropdown,
   Layout,
   Menu,
-  Space,
   Tooltip,
   Typography,
   theme,
@@ -17,7 +15,6 @@ import {
   AppstoreOutlined,
   BarsOutlined,
   BellOutlined,
-  DownOutlined,
   FileTextOutlined,
   LogoutOutlined,
   SettingOutlined,
@@ -26,10 +23,12 @@ import {
   AuditOutlined,
   ScheduleOutlined,
   MonitorOutlined,
+  LockOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { clearSession, getDisplayName, getRoles } from "@/auth/session";
 import { ThemeToggle } from "@/theme/ThemeToggle";
+import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 
 const { Header, Sider, Content } = Layout;
 
@@ -76,6 +75,21 @@ function filterNavItems(): typeof navItems {
   );
 }
 
+/** 侧边栏底部图标按钮的通用样式 */
+const siderBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  cursor: "pointer",
+  padding: "10px 4px",
+  fontSize: 22,
+  width: 44,
+  height: 44,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 8,
+};
+
 function ManagerShellInner() {
   const { t } = useTranslation();
   const { modal } = AntApp.useApp();
@@ -83,6 +97,7 @@ function ManagerShellInner() {
   const location = useLocation();
   const { token } = theme.useToken();
   const [collapsed, setCollapsed] = useState(false);
+  const [pwdOpen, setPwdOpen] = useState(false);
   const displayName = getDisplayName();
 
   // 当前选中的菜单 key
@@ -102,22 +117,6 @@ function ManagerShellInner() {
     ),
   }));
 
-  // 头像下拉菜单
-  const avatarMenuItems: MenuProps["items"] = [
-    {
-      key: "back",
-      icon: <HomeOutlined />,
-      label: t("nav.backToMeetings"),
-    },
-    { type: "divider" },
-    {
-      key: "logout",
-      icon: <LogoutOutlined />,
-      label: t("nav.logout"),
-      danger: true,
-    },
-  ];
-
   function onLogout() {
     modal.confirm({
       title: t("nav.confirmLogout"),
@@ -128,14 +127,6 @@ function ManagerShellInner() {
         navigate("/manager/login", { replace: true });
       },
     });
-  }
-
-  function onAvatarMenuClick({ key }: { key: string }) {
-    if (key === "back") {
-      navigate("/");
-    } else if (key === "logout") {
-      onLogout();
-    }
   }
 
   return (
@@ -158,7 +149,7 @@ function ManagerShellInner() {
         }}
       >
         {/* Logo + 系统名称 */}
-        <Space size={12}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div
             style={{
               width: 32,
@@ -178,71 +169,20 @@ function ManagerShellInner() {
           <Typography.Title level={4} style={{ margin: 0, lineHeight: "56px" }}>
             {t("nav.systemManagement")}
           </Typography.Title>
-        </Space>
+        </div>
 
-        {/* 右侧：主题切换 + 返回首页 + 退出按钮 + 头像下拉 */}
-        <Space size={8}>
-          <ThemeToggle />
-          <Tooltip title={t("nav.backToMeetings")}>
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              aria-label={t("nav.backToMeetings")}
-              style={{
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: "8px",
-                fontSize: 18,
-                color: token.colorTextSecondary,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 8,
-              }}
-            >
-              <HomeOutlined />
-            </button>
-          </Tooltip>
-          <Tooltip title={t("nav.logout")}>
-            <button
-              type="button"
-              onClick={onLogout}
-              aria-label={t("nav.logout")}
-              style={{
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: "8px",
-                fontSize: 18,
-                color: token.colorTextSecondary,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 8,
-              }}
-            >
-              <LogoutOutlined />
-            </button>
-          </Tooltip>
-          <Dropdown
-            menu={{ items: avatarMenuItems, onClick: onAvatarMenuClick }}
-            placement="bottomRight"
+        {/* 右侧：用户信息 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Avatar
+            size={32}
+            style={{ background: token.colorPrimary }}
           >
-            <Space size={8} style={{ cursor: "pointer" }}>
-              <Avatar
-                size={32}
-                style={{ background: token.colorPrimary }}
-              >
-                {(displayName || "?").slice(0, 2).toUpperCase()}
-              </Avatar>
-              <Typography.Text style={{ fontSize: 14 }}>
-                {displayName || "Admin"}
-              </Typography.Text>
-              <DownOutlined style={{ fontSize: 12, color: token.colorTextSecondary }} />
-            </Space>
-          </Dropdown>
-        </Space>
+            {(displayName || "?").slice(0, 2).toUpperCase()}
+          </Avatar>
+          <Typography.Text style={{ fontSize: 14 }}>
+            {displayName || "Admin"}
+          </Typography.Text>
+        </div>
       </Header>
 
       {/* ── 下方：左侧菜单 + 右侧内容 ── */}
@@ -254,21 +194,67 @@ function ManagerShellInner() {
           collapsed={collapsed}
           onCollapse={setCollapsed}
           style={{
-            overflow: "auto",
+            overflow: "hidden",
             height: "calc(100vh - 56px)",
             position: "sticky",
             top: 56,
             left: 0,
             background: token.colorBgContainer,
             borderRight: `1px solid ${token.colorBorderSecondary}`,
+            display: "flex",
+            flexDirection: "column",
           }}
         >
           <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
             items={menuItems}
-            style={{ borderRight: 0, background: "transparent" }}
+            style={{ flex: 1, borderRight: 0, background: "transparent", overflow: "auto" }}
           />
+
+          {/* 底部工具区：主题切换 + 返回首页 + 修改密码 + 退出 */}
+          <div
+            style={{
+              borderTop: `1px solid ${token.colorBorderSecondary}`,
+              padding: "8px 0",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            <ThemeToggle />
+            <Tooltip title={t("nav.backToMeetings")}>
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                aria-label={t("nav.backToMeetings")}
+                style={{ ...siderBtnStyle, color: token.colorTextSecondary }}
+              >
+                <HomeOutlined />
+              </button>
+            </Tooltip>
+            <Tooltip title={t("nav.changePassword")}>
+              <button
+                type="button"
+                onClick={() => setPwdOpen(true)}
+                aria-label={t("nav.changePassword")}
+                style={{ ...siderBtnStyle, color: token.colorTextSecondary }}
+              >
+                <LockOutlined />
+              </button>
+            </Tooltip>
+            <Tooltip title={t("nav.logout")}>
+              <button
+                type="button"
+                onClick={onLogout}
+                aria-label={t("nav.logout")}
+                style={{ ...siderBtnStyle, color: token.colorError }}
+              >
+                <LogoutOutlined />
+              </button>
+            </Tooltip>
+          </div>
         </Sider>
 
         {/* 右侧主内容 */}
@@ -283,6 +269,8 @@ function ManagerShellInner() {
           <Outlet />
         </Content>
       </Layout>
+
+      <ChangePasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} />
     </Layout>
   );
 }

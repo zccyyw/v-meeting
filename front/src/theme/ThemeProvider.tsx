@@ -79,14 +79,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
             colorPrimary: "#1278ff",
             borderRadius: 8,
           },
-          components: {
-            Layout: {
-              // 暗色模式下侧边栏更深
-              siderBg: mode === "dark" ? "#141414" : "#001529",
-              headerBg: mode === "dark" ? "#1f1f1f" : "#ffffff",
-              bodyBg: mode === "dark" ? "#141414" : "#f0f2f5",
-            },
-          },
         }}
       >
         <AntApp>{children}</AntApp>

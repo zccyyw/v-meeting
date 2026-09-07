@@ -6,7 +6,6 @@ import { apiErrorMessage } from "@/i18n/errorMessage";
 
 type Props = {
   open: boolean;
-  force?: boolean;
   onClose: () => void;
 };
 
@@ -16,7 +15,7 @@ type FormValues = {
   confirmPassword: string;
 };
 
-export function ChangePasswordModal({ open, force = false, onClose }: Props) {
+export function ChangePasswordModal({ open, onClose }: Props) {
   const { t } = useTranslation();
   const { message } = AntApp.useApp();
   const [form] = Form.useForm<FormValues>();
@@ -51,15 +50,15 @@ export function ChangePasswordModal({ open, force = false, onClose }: Props) {
     <Modal
       open={open}
       title={t("account.changePassword")}
-      onCancel={force ? undefined : handleClose}
-      closable={!force}
-      maskClosable={!force}
+      onCancel={handleClose}
+      closable
+      maskClosable
       onOk={() => void onSubmit()}
       confirmLoading={busy}
       okText={done ? t("common.confirm") : t("common.save")}
       cancelText={t("common.cancel")}
       okButtonProps={{ disabled: done }}
-      cancelButtonProps={{ style: { display: done || force ? "none" : undefined } }}
+      cancelButtonProps={{ style: { display: done ? "none" : undefined } }}
       destroyOnHidden
       centered
       width={420}

@@ -47,18 +47,14 @@ function AppShellInner() {
   const displayName = getDisplayName();
   const [pwdOpen, setPwdOpen] = useState(false);
   const { canInstall, installed, promptInstall } = useInstallPrompt();
-  const [forcePwd, setForcePwd] = useState(false);
 
-  // ── 登录后检查是否需要修改密码（默认密码/密码过期）──
+  // ── 登录后提示修改密码（默认密码/密码过期），非强制 ──
   useEffect(() => {
     if (sessionStorage.getItem("mustChangePassword") === "1") {
       sessionStorage.removeItem("mustChangePassword");
       setPwdOpen(true);
     }
-    if (sessionStorage.getItem("forceChangePassword") === "1") {
-      sessionStorage.removeItem("forceChangePassword");
-      setForcePwd(true);
-    }
+    sessionStorage.removeItem("forceChangePassword");
   }, []);
 
   // ── 空闲超时 ──
@@ -136,6 +132,7 @@ function AppShellInner() {
           flexDirection: "column",
           alignItems: "center",
           overflow: "hidden",
+          background: token.colorBgContainer,
         }}
       >
         <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, paddingTop: 16 }}>
@@ -158,7 +155,7 @@ function AppShellInner() {
           }}
         />
 
-        <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingBottom: 16 }}>
+        <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingBottom: 16, marginTop: "auto" }}>
           <ThemeToggle />
           {!installed && (canInstall || /iPad|iPhone|iPod/.test(navigator.userAgent)) && (
             <Tooltip title={t("pwa.install")}>
@@ -242,11 +239,7 @@ function AppShellInner() {
 
       <ChangePasswordModal
         open={pwdOpen}
-        force={forcePwd}
-        onClose={() => {
-          setPwdOpen(false);
-          setForcePwd(false);
-        }}
+        onClose={() => setPwdOpen(false)}
       />
 
       {/* 空闲超时警告弹窗 */}

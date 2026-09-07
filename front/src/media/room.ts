@@ -312,6 +312,10 @@ export class MediaRoom {
     this.signal.send({ type: "host", action: "kick", targetPeerId });
   }
 
+  mutePeer(targetPeerId: string): void {
+    this.signal.send({ type: "host", action: "mutePeer", targetPeerId });
+  }
+
   endMeeting(): void {
     this.signal.send({ type: "host", action: "endMeeting" });
   }
