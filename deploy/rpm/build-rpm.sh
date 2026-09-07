@@ -113,6 +113,13 @@ if [ -d "$WORKSPACE_DIR/node_modules/mediasoup/worker/subprojects" ]; then
   node ./serve/realtime/patch-mediasoup-wrap.cjs "$GHPROXY"
   echo "→ Building mediasoup worker..."
   cd "$WORKSPACE_DIR/node_modules/mediasoup"
+  # 使用 venv Python：Debian 12 (PEP 668) 下系统 python3 禁止裸 pip install，
+  # mediasoup postinstall 内的 `pip install --target ...` 会因此失败。
+  # mediasoup 尊重 $PYTHON 环境变量；venv 自带 pip 且不受 externally-managed 限制。
+  if [ -x /opt/mediasoup-venv/bin/python ]; then
+    export PYTHON=/opt/mediasoup-venv/bin/python
+    echo "→ Using venv Python for mediasoup worker build: $PYTHON"
+  fi
   node npm-scripts.mjs postinstall
 fi
 

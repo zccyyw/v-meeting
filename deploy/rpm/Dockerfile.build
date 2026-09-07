@@ -43,9 +43,13 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 # ─── Install Ruby, fpm, rpm, python(pip) and native build tools ───
 # node:22-bookworm (buildpack-deps full) already includes build-essential and
 # python3, but NOT python3-pip — mediasoup's postinstall invokes
-#   python3 -m pip install --no-user --target ... invoke
-# so pip is mandatory. (Bookworm ships pip 23.x, which supports --no-user;
-# we still upgrade to the latest for good measure.)
+#   python3 -m pip install --upgrade --no-user --target .../pip_invoke invoke
+# so pip is mandatory.
+#
+# Debian 12 (bookworm) Python is PEP 668 "externally-managed": bare
+# `pip install` into the system interpreter is rejected. We therefore create a
+# dedicated venv (which carries its own pip and is NOT externally-managed) and
+# point mediasoup at it via the PYTHON env var (mediasoup respects $PYTHON).
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -57,9 +61,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 \
       python3-pip \
       python3-setuptools \
+      python3-venv \
       build-essential \
       cmake \
-    && python3 -m pip install --no-input --upgrade pip \
+    && python3 -m venv /opt/mediasoup-venv \
+    && /opt/mediasoup-venv/bin/python -m pip install --no-input --upgrade pip \
     && rm -rf /var/lib/apt/lists/*
 
 # ─── Configure RubyGems mirror (optional) ───

@@ -119,6 +119,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
+      # mediasoup postinstall 需要能裸 `pip install` 的 python3。
+      # ubuntu-latest(24.04) 系统 python3 无 pip 且受 PEP 668 限制，
+      # 用 setup-python 提供的 python.org 解释器（自带 pip、不受限制）。
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
@@ -212,6 +220,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
+      # mediasoup postinstall 需要能裸 `pip install` 的 python3。
+      # ubuntu-latest(24.04) 系统 python3 无 pip 且受 PEP 668 限制，
+      # 用 setup-python 提供的 python.org 解释器（自带 pip、不受限制）。
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       # ARM64 交叉编译需要 qemu 模拟 Linux/arm64 环境
       - name: Set up QEMU
         if: matrix.arch == 'arm64'
@@ -251,11 +267,15 @@ jobs:
               -e PACK_NATIVE_FORCE=1 \
               -w /workspace \
             node:22-bookworm bash -c "
-              apt-get update && apt-get install -y python3 python3-pip python3-setuptools make g++ cmake --no-install-recommends
-              python3 -m pip install --no-input --upgrade pip
+              apt-get update && apt-get install -y python3 python3-pip python3-setuptools python3-venv make g++ cmake --no-install-recommends
+              # Debian 12 (PEP 668) 下系统 python 禁止裸 pip install，
+              # 建 venv（自带 pip、不受 externally-managed 限制）并让 mediasoup 使用它
+              python3 -m venv /opt/mediasoup-venv
+              /opt/mediasoup-venv/bin/python -m pip install --no-input --upgrade pip
               npm ci --ignore-scripts
               export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
               export PIP_INDEX_URL='https://pypi.tuna.tsinghua.edu.cn/simple'
+              export PYTHON=/opt/mediasoup-venv/bin/python
               GHPROXY='https://gh-proxy.com'
               if [ -d node_modules/mediasoup/worker/subprojects ]; then
                 node ./serve/realtime/patch-mediasoup-wrap.cjs \$GHPROXY

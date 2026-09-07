@@ -19,9 +19,17 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
     python3 \
     python3-pip \
     python3-setuptools \
+    python3-venv \
     build-essential \
     cmake \
   && rm -rf /var/lib/apt/lists/*
+
+# Debian 12 (bookworm) Python 受 PEP 668 externally-managed 限制：
+# 系统 python3 禁止裸 pip install，mediasoup postinstall 内的
+# `pip install --target ... invoke` 会因此失败。建独立 venv（自带 pip、
+# 不受该限制）并让 mediasoup 通过 $PYTHON 使用它。
+RUN python3 -m venv /opt/mediasoup-venv \
+  && /opt/mediasoup-venv/bin/python -m pip install --no-input --upgrade pip
 
 COPY package.json package-lock.json ./
 COPY serve/shared/package.json ./serve/shared/
@@ -34,6 +42,7 @@ RUN npm ci --ignore-scripts -w @meeting/shared -w @meeting/db -w @meeting/realti
 
 # Patch mediasoup's meson wrap files to use gh-proxy mirror, then build worker.
 COPY serve/realtime/patch-mediasoup-wrap.cjs ./patch-mediasoup-wrap.cjs
+ENV PYTHON=/opt/mediasoup-venv/bin/python
 RUN node ./patch-mediasoup-wrap.cjs ${GHPROXY} \
   && cd node_modules/mediasoup && node npm-scripts.mjs postinstall \
   && cd /app && npm rebuild better-sqlite3
