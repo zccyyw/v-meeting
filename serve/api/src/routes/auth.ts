@@ -7,6 +7,7 @@ import { loadSessionUser } from "../session-user.js";
 import { recordLoginLog } from "../middleware/oper-log.js";
 import { nowSql, hasSysUser } from "../sql-utils.js";
 import { getConfigInt } from "../config-cache.js";
+import { countOnlineUsers } from "../redis.js";
 import {
   loadPasswordPolicy,
   validatePassword,
@@ -19,6 +20,27 @@ const LoginBody = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
 });
+
+/**
+ * 系统同时在线人数限制（登录环节）。
+ * 依据 sys_config 的 sys.online.maxUsers 阈值：当前在线用户数达到/超过阈值时
+ * 不允许继续登录。system 账号为系统保留账号（拥有全部权限、用于维护该配置），
+ * 始终放行，避免系统因自身阈值被锁死。
+ * 返回 null 表示放行；否则返回应下发的 HTTP 码与错误码。
+ */
+async function assertOnlineCapacity(
+  db: Db,
+  redis: Redis,
+  username: string,
+): Promise<{ code: number; error: string } | null> {
+  if (username === "system") return null;
+  const maxUsers = await getConfigInt(db, "sys.online.maxUsers", 20);
+  const online = await countOnlineUsers(redis);
+  if (online >= maxUsers) {
+    return { code: 403, error: "online_limit_reached" };
+  }
+  return null;
+}
 
 /**
  * 检查账户是否已被锁定。
@@ -116,6 +138,14 @@ export async function authRoutes(app: FastifyInstance, db: Db, redis: Redis) {
       );
 
       const userId = Number(row.user_id);
+
+      // ── 系统同时在线人数限制（登录即拦截，超限不允许登录）──
+      const cap = await assertOnlineCapacity(db, redis, body.username);
+      if (cap) {
+        void recordLoginLog(db, body.username, req.ip, false, "online_limit_reached");
+        return reply.code(cap.code).send({ error: cap.error });
+      }
+
       const sessionId = await createSession(redis, userId);
 
       // 登录成功，清除失败计数
@@ -169,6 +199,14 @@ export async function authRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     }
 
     const userId = Number(legacyUser.id);
+
+    // ── 系统同时在线人数限制（登录即拦截，超限不允许登录）──
+    const cap = await assertOnlineCapacity(db, redis, body.username);
+    if (cap) {
+      void recordLoginLog(db, body.username, req.ip, false, "online_limit_reached");
+      return reply.code(cap.code).send({ error: cap.error });
+    }
+
     const sessionId = await createSession(redis, userId);
 
     // 登录成功，清除失败计数
@@ -253,6 +291,16 @@ export async function authRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     );
     // 清除强制修改密码标志
     await redis.del(`session_force:${sessionId}`);
+    return { ok: true };
+  });
+
+  // 登出：删除服务端会话，立即释放“在线人数”名额（配合 sys.online.maxUsers）
+  app.post("/auth/logout", async (req, reply) => {
+    const sessionId = (req.headers["x-session-id"] as string) || "";
+    if (sessionId) {
+      await redis.del(`session:${sessionId}`);
+      await redis.del(`session_force:${sessionId}`);
+    }
     return { ok: true };
   });
 }

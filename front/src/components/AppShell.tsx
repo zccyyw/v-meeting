@@ -70,6 +70,8 @@ function AppShellInner() {
     timeoutSec: idleConfig.timeoutSec,
     warningSec: idleConfig.warningSec,
     onTimeout: () => {
+      // 空闲自动退出也通知服务端注销会话，释放“在线人数”名额
+      void api("/auth/logout", { method: "POST" }).catch(() => {});
       clearSession();
       message.warning(t("idle.timeoutMessage"));
       navigate("/login", { replace: true });
@@ -84,7 +86,8 @@ function AppShellInner() {
       title: t("nav.confirmLogout"),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
-      onOk: () => {
+      onOk: async () => {
+        await api("/auth/logout", { method: "POST" }).catch(() => {});
         clearSession();
         navigate("/login", { replace: true });
       },

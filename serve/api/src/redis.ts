@@ -44,9 +44,48 @@ class MemoryRedis {
     return n;
   }
 
+  /**
+   * 统计前缀匹配、未过期且 value 不同（去重）的用户数，供“在线用户”统计。
+   * 会话 value 即 userId，故按 value 去重可得到一个用户多端登录只计一次。
+   */
+  async countUsers(prefix: string): Promise<number> {
+    const users = new Set<string>();
+    for (const [k, v] of this.store) {
+      if (!k.startsWith(prefix)) continue;
+      if (this.isExpired(v)) {
+        this.store.delete(k);
+        continue;
+      }
+      users.add(v.value);
+    }
+    return users.size;
+  }
+
   async disconnect(): Promise<void> {
     this.store.clear();
   }
+}
+
+/**
+ * 当前在线用户数：以 session:* 为唯一事实来源（会话自带 TTL，
+ * Redis / MemoryRedis 均会在过期后自动消失，无需额外清理）。
+ * 按 userId 去重统计——同一账号多端登录只计为 1 个在线用户。
+ */
+export async function countOnlineUsers(redis: Redis): Promise<number> {
+  const memory = redis as unknown as {
+    countUsers?: (prefix: string) => Promise<number>;
+  };
+  if (typeof memory.countUsers === "function") {
+    return memory.countUsers("session:");
+  }
+  const keys = await redis.keys("session:*");
+  if (keys.length === 0) return 0;
+  const users = new Set<string>();
+  for (const k of keys) {
+    const uid = await redis.get(k);
+    if (uid != null) users.add(uid);
+  }
+  return users.size;
 }
 
 export type AppRedis = ReturnType<typeof createRedis>;

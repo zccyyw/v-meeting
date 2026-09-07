@@ -34,6 +34,17 @@ function mapRow(row: ConfigRow) {
   };
 }
 
+/** 系统保留配置键：仅 system 账号可见/可管理，其余用户一律按“不存在”处理 */
+const SYSTEM_ONLY_CONFIG_KEYS = ["sys.online.maxUsers"];
+
+function isSystemAccount(user: { username: string } | null): boolean {
+  return !!user && user.username === "system";
+}
+
+function isSystemOnlyConfigKey(key: string): boolean {
+  return SYSTEM_ONLY_CONFIG_KEYS.includes(key);
+}
+
 const CreateBody = z.object({
   configName: z.string().min(1).max(100),
   configKey: z.string().min(1).max(100),
@@ -77,6 +88,12 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     if (q.configKey) { where += ` AND config_key LIKE ?`; params.push(`%${q.configKey}%`); }
     if (q.configType) { where += ` AND config_type = ?`; params.push(q.configType); }
 
+    // 保留配置（sys.online.maxUsers）仅 system 账号可见：其余账号从列表隐藏
+    if (!isSystemAccount(user)) {
+      where += ` AND config_key <> ?`;
+      params.push("sys.online.maxUsers");
+    }
+
     const [countRows] = await db.query(`SELECT COUNT(*) AS total FROM sys_config ${where}`, params);
     const total = Number((countRows as { total: number | string }[])[0].total);
 
@@ -100,6 +117,10 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     const [rows] = await db.query(`SELECT * FROM sys_config WHERE config_id = ? LIMIT 1`, [id]);
     const row = (rows as ConfigRow[])[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
+    // 保留配置仅 system 账号可读
+    if (isSystemOnlyConfigKey(row.config_key) && !isSystemAccount(user)) {
+      return reply.code(404).send({ error: "not_found" });
+    }
     return mapRow(row);
   });
 
@@ -113,6 +134,10 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     const [rows] = await db.query(`SELECT * FROM sys_config WHERE config_key = ? LIMIT 1`, [key]);
     const row = (rows as ConfigRow[])[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
+    // 保留配置仅 system 账号可读
+    if (isSystemOnlyConfigKey(row.config_key) && !isSystemAccount(user)) {
+      return reply.code(404).send({ error: "not_found" });
+    }
     return mapRow(row);
   });
 
@@ -125,6 +150,10 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
       return reply.code(403).send({ error: "forbidden" });
 
     const body = CreateBody.parse(req.body ?? {});
+    // 保留配置键仅 system 账号可新增
+    if (isSystemOnlyConfigKey(body.configKey) && !isSystemAccount(user)) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
     try {
       const [result] = await db.query(
         `INSERT INTO sys_config (config_name, config_key, config_value, config_type, create_by, create_time, remark)
@@ -162,6 +191,10 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     );
     const row = (existing as { config_id: number | string }[])[0];
     if (!row) return reply.code(404).send({ error: "config_not_found" });
+    // 保留配置仅 system 账号可修改
+    if (isSystemOnlyConfigKey(body.key) && !isSystemAccount(user)) {
+      return reply.code(404).send({ error: "config_not_found" });
+    }
 
     await db.query(
       `UPDATE sys_config SET config_value = ?, update_by = ?, update_time = ${nowSql(db)} WHERE config_id = ?`,
@@ -187,6 +220,17 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     const body = UpdateBody.parse(req.body ?? {});
     if (Object.keys(body).length === 0) return reply.code(400).send({ error: "empty_patch" });
 
+    // 保留配置仅 system 账号可修改（非 system 视为不存在）
+    const [exRows] = await db.query(
+      `SELECT config_key FROM sys_config WHERE config_id = ? LIMIT 1`,
+      [id],
+    );
+    const exRow = (exRows as { config_key?: string }[])[0];
+    if (!exRow) return reply.code(404).send({ error: "not_found" });
+    if (isSystemOnlyConfigKey(exRow.config_key ?? "") && !isSystemAccount(user)) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+
     const sets: string[] = [];
     const params: unknown[] = [];
     if (body.configName !== undefined) { sets.push("config_name = ?"); params.push(body.configName); }
@@ -210,6 +254,16 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
       return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);
+    // 保留配置仅 system 账号可删除（非 system 视为不存在）
+    const [exRows] = await db.query(
+      `SELECT config_key FROM sys_config WHERE config_id = ? LIMIT 1`,
+      [id],
+    );
+    const exRow = (exRows as { config_key?: string }[])[0];
+    if (!exRow) return reply.code(404).send({ error: "not_found" });
+    if (isSystemOnlyConfigKey(exRow.config_key ?? "") && !isSystemAccount(user)) {
+      return reply.code(404).send({ error: "not_found" });
+    }
     await db.query(`DELETE FROM sys_config WHERE config_id = ?`, [id]);
     return reply.code(204).send();
   });

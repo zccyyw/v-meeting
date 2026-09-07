@@ -292,7 +292,7 @@
     "recordAllowedToggle": "开启录制",
     "me": "我",
     "peer": "参会者",
-    "onlineLimitReached": "系统同时在线人数已达上限，请稍后再试。"
+    "onlineLimitReached": "当前系统在线人数已达到限制，请联系系统管理员！"
   },
   "recordings": {
     "title": "录制历史",
@@ -435,6 +435,7 @@
     "password_too_short": "密码至少 6 位",
     "password_mismatch": "两次输入的密码不一致",
     "account_locked": "账户已被锁定，请稍后重试",
+    "online_limit_reached": "当前系统在线人数已达到限制，请联系系统管理员！",
     "password_policy_violation": "密码不符合策略要求",
     "password_reuse_not_allowed": "新密码不能与旧密码相同",
     "generic": "操作失败：{{message}}"

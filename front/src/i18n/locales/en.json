@@ -292,7 +292,7 @@
     "recordAllowedToggle": "Allow recording",
     "me": "me",
     "peer": "Participant",
-    "onlineLimitReached": "The system has reached its online user limit. Please try again later."
+    "onlineLimitReached": "The system online user limit has been reached. Please contact the system administrator."
   },
   "recordings": {
     "title": "Recordings",
@@ -435,6 +435,7 @@
     "password_too_short": "Password must be at least 6 characters",
     "password_mismatch": "Passwords do not match",
     "account_locked": "Account is locked, please try again later",
+    "online_limit_reached": "The system online user limit has been reached. Please contact the system administrator.",
     "password_policy_violation": "Password does not meet policy requirements",
     "password_reuse_not_allowed": "New password cannot be the same as the old password",
     "generic": "Something went wrong: {{message}}"

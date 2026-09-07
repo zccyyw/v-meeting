@@ -31,7 +31,7 @@ import type { MenuProps } from "antd";
 import { clearSession, getDisplayName, getRoles } from "@/auth/session";
 import { ThemeToggle } from "@/theme/ThemeToggle";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
-
+import { api } from "@/api/client";
 const { Header, Sider, Content } = Layout;
 
 /**
@@ -109,7 +109,9 @@ function ManagerShellInner() {
       title: t("nav.confirmLogout"),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
-      onOk: () => {
+      onOk: async () => {
+        // 通知服务端注销会话，立即释放“在线人数”名额
+        await api("/auth/logout", { method: "POST" }).catch(() => {});
         clearSession();
         navigate("/manager/login", { replace: true });
       },
