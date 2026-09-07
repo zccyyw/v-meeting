@@ -241,6 +241,8 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     sets.push(`update_time = ${nowSql(db)}`);
 
     await db.query(`UPDATE sys_config SET ${sets.join(", ")} WHERE config_id = ?`, [...params, id]);
+    // 失效该配置项的缓存，确保后续读取（如登录时读取 sys.online.maxUsers）立即拿到新值
+    invalidateConfig(exRow.config_key ?? "");
     const [rows] = await db.query(`SELECT * FROM sys_config WHERE config_id = ? LIMIT 1`, [id]);
     return mapRow((rows as ConfigRow[])[0]);
   });
@@ -265,6 +267,8 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
       return reply.code(404).send({ error: "not_found" });
     }
     await db.query(`DELETE FROM sys_config WHERE config_id = ?`, [id]);
+    // 失效该配置项的缓存，避免删除后读取仍命中旧缓存值
+    invalidateConfig(exRow.config_key ?? "");
     return reply.code(204).send();
   });
 }
