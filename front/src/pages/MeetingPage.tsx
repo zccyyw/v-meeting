@@ -650,7 +650,11 @@ function MeetingPageInner() {
 
       <div className="meeting-stage">
         {snap.error && snap.error !== "reconnect_failed" && (
-          <p className="error">{snap.error}</p>
+          <p className="error">
+            {snap.error === "online_limit_reached"
+              ? t("meeting.onlineLimitReached")
+              : snap.error}
+          </p>
         )}
 
         {snap.status === "kicked" && (

@@ -142,10 +142,20 @@ export function createSignalHandler(db: Db) {
   /** Per-meetingId lock so concurrent first joins share one room/router. */
   const roomInit = new Map<string, Promise<RoomState>>();
   const wsToPeer = new Map<WebSocket, string>();
-  /** 全局在线连接计数器，避免遍历所有 room */
-  let totalPeerCount = 0;
   /** peerId → meetingId 映射，O(1) 查找 peer 所属 room */
   const peerIdToRoom = new Map<string, string>();
+
+  /**
+   * 当前全局在线人数：直接统计所有房间的 peer 数（含等候室）。
+   * 以 state.peers 为唯一事实来源——不再维护独立计数器，避免在
+   * 拒绝/移出/结束会议等清理路径漏减导致计数漂移（漂移会让在线上限
+   * 在无人时也误拦，或无法正确生效）。
+   */
+  function countOnlinePeers(): number {
+    let n = 0;
+    for (const s of rooms.values()) n += s.peers.size;
+    return n;
+  }
 
   async function getOrCreateRoom(
     meetingId: string,
@@ -242,7 +252,7 @@ export function createSignalHandler(db: Db) {
       await closePeerMedia(state, media);
       state.peers.delete(id);
       peerIdToRoom.delete(id);
-      totalPeerCount--;
+      // 在线人数改为按 rooms 实时统计（countOnlinePeers），无需在此维护计数
     }
     const peer = state.room.getPeer(id);
     const wasAdmitted = peer && !peer.inWaitingRoom;
@@ -290,27 +300,32 @@ export function createSignalHandler(db: Db) {
       return;
     }
 
-    // ── 全局在线人数限制 ──
-    let maxUsers = 20; // 默认值
-    try {
-      const [rows] = await db.query(
-        `SELECT config_value FROM sys_config WHERE config_key = 'sys.online.maxUsers' LIMIT 1`,
-      );
-      const val = (rows as { config_value?: string }[])[0]?.config_value;
-      if (val) {
-        const n = Number(val);
-        if (Number.isFinite(n)) maxUsers = n;
-      }
-    } catch {
-      // 表不存在或查询失败，使用默认值
-    }
-    if (totalPeerCount >= maxUsers) {
-      send(ws, { type: "error", message: "online_limit_reached" });
-      return;
-    }
-
-    // Replace any previous session on this socket
+    // Replace any previous session on this socket（先释放旧连接，避免把
+    // 自身的旧会话也算进在线上限导致误拦）
     await leavePeer(ws, true);
+
+    // ── 全局在线人数限制 ──
+    // 实时读取 sys_config，每次入会现算在线人数（而非维护计数器）。
+    // 主持人始终放行：满员时需有人进场进行管理/结束会议，否则系统会被锁死。
+    if (auth.role !== "host") {
+      let maxUsers = 20; // 默认值
+      try {
+        const [rows] = await db.query(
+          `SELECT config_value FROM sys_config WHERE config_key = 'sys.online.maxUsers' LIMIT 1`,
+        );
+        const val = (rows as { config_value?: string }[])[0]?.config_value;
+        if (val) {
+          const n = Number(val);
+          if (Number.isFinite(n)) maxUsers = n;
+        }
+      } catch {
+        // 表不存在或查询失败，使用默认值
+      }
+      if (countOnlinePeers() >= maxUsers) {
+        send(ws, { type: "error", message: "online_limit_reached" });
+        return;
+      }
+    }
 
     const state = await getOrCreateRoom(auth.meetingId, auth.waitingRoomEnabled, auth.recordAllowed);
     if (state.room.ended) {
@@ -336,7 +351,6 @@ export function createSignalHandler(db: Db) {
     state.peers.set(id, media);
     wsToPeer.set(ws, id);
     peerIdToRoom.set(id, auth.meetingId);
-    totalPeerCount++;
 
     if (peer.inWaitingRoom) {
       send(ws, { type: "waiting", peerId: id, displayName });
