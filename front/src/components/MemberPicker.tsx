@@ -120,12 +120,13 @@ export function MemberPicker({
         });
       }
       setSelectedUsers(next);
+      // 保留已有部门成员选择（本组件仅管理用户维度）
       onChange?.({
         userIds: [...next.keys()],
-        deptIds: [],
+        deptIds: value?.deptIds ?? [],
       });
     },
-    [selectedUsers, maxUsers, onChange],
+    [selectedUsers, maxUsers, onChange, value?.deptIds],
   );
 
   const removeUser = useCallback(
@@ -135,10 +136,10 @@ export function MemberPicker({
       setSelectedUsers(next);
       onChange?.({
         userIds: [...next.keys()],
-        deptIds: [],
+        deptIds: value?.deptIds ?? [],
       });
     },
-    [selectedUsers, onChange],
+    [selectedUsers, onChange, value?.deptIds],
   );
 
   const totalPages = Math.ceil(userTotal / 50);

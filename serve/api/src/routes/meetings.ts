@@ -362,10 +362,12 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
 
     try {
       const [rows] = await db.query(
-        `SELECT id, meeting_id, user_id, dept_id, display_name, status, invited_at, joined_at
-         FROM meeting_invitations
-         WHERE meeting_id = ?
-         ORDER BY invited_at ASC`,
+        `SELECT i.id, i.meeting_id, i.user_id, i.dept_id, i.display_name, i.status, i.invited_at, i.joined_at,
+                d.dept_name
+         FROM meeting_invitations i
+         LEFT JOIN sys_dept d ON d.dept_id = i.dept_id
+         WHERE i.meeting_id = ?
+         ORDER BY i.invited_at ASC`,
         [meetingId],
       );
       const items = (rows as any[]).map((r) => ({
@@ -373,6 +375,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
         meetingId: Number(r.meeting_id),
         userId: r.user_id == null ? null : Number(r.user_id),
         deptId: r.dept_id == null ? null : Number(r.dept_id),
+        deptName: r.dept_name ?? null,
         displayName: r.display_name,
         status: r.status,
         invitedAt: r.invited_at ? new Date(r.invited_at).toISOString() : null,

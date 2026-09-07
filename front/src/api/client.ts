@@ -572,7 +572,7 @@ export const MeetingAppApi = {
   approve: (id: number, body: { approved: boolean; rejectReason?: string }) =>
     api<{ appId: number; status: string }>(`/meeting-applications/${id}/approve`, { method: "PATCH", body: JSON.stringify(body) }),
   start: (id: number) =>
-    api<{ meetingId: number; code: string; title: string }>(`/meeting-applications/${id}/start`, { method: "POST", body: JSON.stringify({}) }),
+    api<{ meetingId: number; code: string; title: string; hostJoinToken: string }>(`/meeting-applications/${id}/start`, { method: "POST", body: JSON.stringify({}) }),
 };
 
 // ── 用户操作审批 API ──
@@ -612,6 +612,8 @@ export type MeetingGroupItem = {
   groupName: string;
   memberCount: number;
   createdAt: string;
+  /** 常用（置顶）标记 */
+  pinned: boolean;
 };
 
 export type MeetingGroupDetail = {
@@ -646,6 +648,11 @@ export const MeetingGroupApi = {
     `/meeting-groups/${id}`, { method: "PATCH", body: JSON.stringify(body) }
   ),
   remove: (id: number) => api<void>(`/meeting-groups/${id}`, { method: "DELETE" }),
+  pin: (id: number, pinned: boolean) =>
+    api<{ groupId: number; pinned: boolean }>(`/meeting-groups/${id}/pin`, {
+      method: "POST",
+      body: JSON.stringify({ pinned }),
+    }),
   quickStart: (id: number, body?: { title?: string; waitingRoomEnabled?: boolean }) =>
     api<{ meetingId: number; code: string; title: string; invitedCount: number }>(
       `/meeting-groups/${id}/quick-start`, { method: "POST", body: JSON.stringify(body ?? {}) }
@@ -658,6 +665,7 @@ export type InvitationItem = {
   meetingId: number;
   userId: number | null;
   deptId: number | null;
+  deptName: string | null;
   displayName: string;
   status: string;
   invitedAt: string;

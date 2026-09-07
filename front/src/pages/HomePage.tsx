@@ -9,9 +9,12 @@ import {
   Col,
   Form,
   Input,
+  InputNumber,
   Flex,
   Modal,
   Row,
+  Select,
+  Tag,
   Typography,
   theme,
 } from "antd";
@@ -22,7 +25,7 @@ import {
   PlayCircleOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import { MeetingApi } from "@/api/client";
+import { MeetingApi, MeetingAppApi, type MeetingAppItem } from "@/api/client";
 import {
   getJoinHistory,
   rememberJoin,
@@ -51,6 +54,10 @@ type ScheduleItem = {
   priority: string | null;
 };
 
+type ScheduleEntry =
+  | ({ kind: "meeting" } & ScheduleItem)
+  | ({ kind: "application" } & MeetingAppItem);
+
 type ModalKind = "join" | "schedule" | null;
 
 type JoinFormValues = {
@@ -62,10 +69,11 @@ type JoinFormValues = {
 
 type ScheduleFormValues = {
   topic: string;
-  waitingRoom: boolean;
-  enablePassword: boolean;
-  password?: string;
   time: string;
+  endTime?: string;
+  location?: string;
+  deptCount?: number;
+  priority: "高" | "中" | "低";
 };
 
 export function HomePage() {
@@ -85,7 +93,7 @@ export function HomePage() {
   const [joinHistory, setJoinHistory] = useState<JoinHistoryEntry[]>(() =>
     getJoinHistory(),
   );
-  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [scheduleItems, setScheduleItems] = useState<ScheduleEntry[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [enteringId, setEnteringId] = useState<number | null>(null);
 
@@ -100,11 +108,20 @@ export function HomePage() {
   const loadSchedule = useCallback(async () => {
     setScheduleLoading(true);
     try {
-      const res = await MeetingApi.listMine();
-      // 后端已按优先级排序（live > 高 > 中 > 低 > 无优先级 > 预约时间升序 > 创建时间倒序）
-      // 前端直接使用后端排序结果，无需再排序
-      const sorted = res.items;
-      setScheduleItems(sorted);
+      const [meetingsRes, appsRes] = await Promise.all([
+        MeetingApi.listMine(),
+        MeetingAppApi.list({ page: 1, pageSize: 50 }),
+      ]);
+      // 会议条目：后端已按优先级排序（live > 高 > 中 > 低 > 预约时间升序）
+      const meetingEntries: ScheduleEntry[] = meetingsRes.items.map((m) => ({
+        kind: "meeting",
+        ...m,
+      }));
+      // 申请条目：仅展示尚未发起的申请（已发起的会议进入“我的会议”）
+      const appEntries: ScheduleEntry[] = appsRes.items
+        .filter((a) => a.meetingId == null)
+        .map((a) => ({ kind: "application", ...a }));
+      setScheduleItems([...meetingEntries, ...appEntries]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -275,29 +292,37 @@ export function HomePage() {
     try {
       const values = await schedForm.validateFields();
       if (!values.time) throw new Error("scheduled_time_required");
-      if (values.enablePassword && values.password && values.password.trim().length < 4) {
-        throw new Error("join_password_too_short");
-      }
       const title = values.topic?.trim() || t("home.schedule");
-      const res = await MeetingApi.create({
+      // 预约会议 → 提交会议申请，审批通过后方可发起
+      await MeetingAppApi.create({
         title,
-        waitingRoomEnabled: values.waitingRoom,
-        scheduledAt: new Date(values.time).toISOString(),
-        joinPassword: values.enablePassword
-          ? values.password?.trim()
+        meetingTime: new Date(values.time).toISOString(),
+        endTime: values.endTime
+          ? new Date(values.endTime).toISOString()
           : undefined,
+        location: values.location?.trim() || undefined,
+        deptCount: values.deptCount ?? undefined,
+        priority: values.priority,
       });
-      rememberJoin(res.code, title);
-      setJoinHistory(getJoinHistory());
       closeModal();
-      showMessage(
-        t("home.scheduleSuccess", {
-          code: formatMeetingCode(res.code),
-        }),
-      );
+      showMessage(t("home.applySubmitted"));
       await loadSchedule();
     } catch (err) {
       if (typeof err === "object" && err !== null && "errorFields" in err) return;
+      message.error(apiErrorMessage(t, err));
+      setBusy(false);
+    }
+  }
+
+  async function onStartApplication(app: MeetingAppItem) {
+    setBusy(true);
+    try {
+      const res = await MeetingAppApi.start(app.appId);
+      if (!res.hostJoinToken) throw new Error("meeting_create_failed");
+      rememberJoin(res.code, res.title);
+      setJoinHistory(getJoinHistory());
+      navigate(meetingPath(res.meetingId, res.hostJoinToken, { code: res.code }));
+    } catch (err) {
       message.error(apiErrorMessage(t, err));
       setBusy(false);
     }
@@ -381,80 +406,142 @@ export function HomePage() {
               </div>
             ) : (
               <Flex vertical gap="small">
-                {scheduleItems.map((item) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "12px 0 12px 10px",
-                      borderBottom: `1px solid ${token.colorBorderSecondary}`,
-                      borderLeft: `3px solid ${
-                        item.status === "live"
-                          ? token.colorError
-                          : item.priority === "高"
+                {scheduleItems.map((item) => {
+                  const priorityColor =
+                    item.priority === "高"
+                      ? token.colorError
+                      : item.priority === "中"
+                        ? token.colorWarning
+                        : item.priority === "低"
+                          ? token.colorSuccess
+                          : token.colorBorder;
+                  if (item.kind === "application") {
+                    const statusTagColor =
+                      item.status === "approved"
+                        ? "green"
+                        : item.status === "rejected"
+                          ? "red"
+                          : "orange";
+                    return (
+                      <div
+                        key={`app-${item.appId}`}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "12px 0 12px 10px",
+                          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                          borderLeft: `3px solid ${priorityColor}`,
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <Typography.Text strong>{item.title}</Typography.Text>
+                          <Tag
+                            style={{ marginLeft: 8 }}
+                            color={statusTagColor}
+                          >
+                            {t(`meetingApp.status_${item.status}`)}
+                          </Tag>
+                          {item.priority && (
+                            <Typography.Text
+                              style={{
+                                marginLeft: 6,
+                                fontSize: 11,
+                                color: priorityColor,
+                                fontWeight: 600,
+                              }}
+                            >
+                              {item.priority}
+                            </Typography.Text>
+                          )}
+                          <div style={{ fontSize: 13, color: token.colorTextSecondary }}>
+                            {formatScheduleTime(item.meetingTime)}
+                            {item.location ? ` · ${item.location}` : ""}
+                            {item.deptCount
+                              ? ` · ${t("home.units", { count: item.deptCount })}`
+                              : ""}
+                          </div>
+                        </div>
+                        {item.status === "approved" && (
+                          <Button
+                            type="primary"
+                            size="small"
+                            loading={busy}
+                            onClick={() => void onStartApplication(item)}
+                          >
+                            {t("home.startMeeting")}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      key={`m-${item.id}`}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "12px 0 12px 10px",
+                        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                        borderLeft: `3px solid ${
+                          item.status === "live"
                             ? token.colorError
-                            : item.priority === "中"
-                              ? token.colorWarning
-                              : item.priority === "低"
-                                ? token.colorSuccess
-                                : item.scheduledAt
-                                  ? token.colorPrimary
-                                  : token.colorBorder
-                      }`,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <Typography.Text strong>{item.title}</Typography.Text>
-                      {item.status === "live" && (
-                        <Typography.Text
-                          style={{
-                            marginLeft: 8,
-                            color: "#ff4d4f",
-                            fontSize: 12,
-                            fontWeight: 600,
-                          }}
-                        >
-                          ● {t("home.live", "直播中")}
-                        </Typography.Text>
-                      )}
-                      {item.priority && (
-                        <Typography.Text
-                          style={{
-                            marginLeft: 6,
-                            fontSize: 11,
-                            color:
-                              item.priority === "高"
-                                ? token.colorError
-                                : item.priority === "中"
-                                  ? token.colorWarning
-                                  : token.colorSuccess,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {item.priority}
-                        </Typography.Text>
-                      )}
-                      <div style={{ fontSize: 13, color: token.colorTextSecondary }}>
-                        {formatScheduleTime(item.scheduledAt)}
-                      </div>
-                      <div style={{ fontFamily: "ui-monospace, Consolas, monospace", letterSpacing: "0.04em", color: token.colorTextSecondary }}>
-                        {formatMeetingCode(item.code)}
-                      </div>
-                    </div>
-                    <Button
-                      type="primary"
-                      size="small"
-                      loading={enteringId === item.id || busy}
-                      onClick={() => void onEnterScheduled(item)}
+                            : item.priority
+                              ? priorityColor
+                              : item.scheduledAt
+                                ? token.colorPrimary
+                                : token.colorBorder
+                        }`,
+                      }}
                     >
-                      {enteringId === item.id
-                        ? t("home.joining")
-                        : t("home.enterMeeting")}
-                    </Button>
-                  </div>
-                ))}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Typography.Text strong>{item.title}</Typography.Text>
+                        {item.status === "live" && (
+                          <Typography.Text
+                            style={{
+                              marginLeft: 8,
+                              color: "#ff4d4f",
+                              fontSize: 12,
+                              fontWeight: 600,
+                            }}
+                          >
+                            ● {t("home.live", "直播中")}
+                          </Typography.Text>
+                        )}
+                        {item.priority && (
+                          <Typography.Text
+                            style={{
+                              marginLeft: 6,
+                              fontSize: 11,
+                              color: priorityColor,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {item.priority}
+                          </Typography.Text>
+                        )}
+                        <div style={{ fontSize: 13, color: token.colorTextSecondary }}>
+                          {formatScheduleTime(item.scheduledAt)}
+                        </div>
+                        <div style={{ fontFamily: "ui-monospace, Consolas, monospace", letterSpacing: "0.04em", color: token.colorTextSecondary }}>
+                          {formatMeetingCode(item.code)}
+                        </div>
+                      </div>
+                      <Button
+                        type="primary"
+                        size="small"
+                        loading={enteringId === item.id || busy}
+                        onClick={() => void onEnterScheduled(item)}
+                      >
+                        {enteringId === item.id
+                          ? t("home.joining")
+                          : t("home.enterMeeting")}
+                      </Button>
+                    </div>
+                  );
+                })}
               </Flex>
             )}
           </Card>
@@ -504,7 +591,7 @@ export function HomePage() {
         </Form>
       </Modal>
 
-      {/* Schedule Meeting Modal */}
+      {/* Schedule Meeting Modal — 提交会议申请，审批通过后方可发起 */}
       <Modal
         open={modal === "schedule"}
         title={t("scheduleModal.title")}
@@ -515,37 +602,17 @@ export function HomePage() {
         cancelText={t("common.cancel")}
         destroyOnHidden
       >
-        <Form form={schedForm} layout="vertical" initialValues={{ waitingRoom: false, enablePassword: false }}>
+        <Form
+          form={schedForm}
+          layout="vertical"
+          initialValues={{ priority: "中" }}
+        >
           <Form.Item
             name="topic"
             label={t("scheduleModal.topic")}
             rules={[{ max: 120 }]}
           >
             <Input maxLength={120} autoFocus />
-          </Form.Item>
-          <Form.Item name="waitingRoom" valuePropName="checked">
-            <Checkbox>{t("scheduleModal.waitingRoom")}</Checkbox>
-          </Form.Item>
-          <Form.Item name="enablePassword" valuePropName="checked">
-            <Checkbox>{t("scheduleModal.enablePassword")}</Checkbox>
-          </Form.Item>
-          <Form.Item shouldUpdate noStyle>
-            {() => {
-              const enablePwd = schedForm.getFieldValue("enablePassword");
-              return enablePwd ? (
-                <Form.Item
-                  name="password"
-                  label={t("scheduleModal.password")}
-                  rules={[{ min: 4, max: 32 }]}
-                  style={{ marginTop: 12 }}
-                >
-                  <Input.Password
-                    autoComplete="new-password"
-                    placeholder={t("scheduleModal.passwordHint")}
-                  />
-                </Form.Item>
-              ) : null;
-            }}
           </Form.Item>
           <Form.Item
             name="time"
@@ -554,6 +621,31 @@ export function HomePage() {
           >
             <Input type="datetime-local" style={{ width: "100%" }} />
           </Form.Item>
+          <Form.Item name="endTime" label={t("meetingApp.endTime")}>
+            <Input type="datetime-local" style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            name="location"
+            label={t("meetingApp.location")}
+            rules={[{ max: 100 }]}
+          >
+            <Input maxLength={100} />
+          </Form.Item>
+          <Form.Item name="deptCount" label={t("meetingApp.deptCount")}>
+            <InputNumber min={0} max={9999} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="priority" label={t("meetingApp.priority")}>
+            <Select
+              options={[
+                { value: "高", label: t("meetingApp.priorityHigh") },
+                { value: "中", label: t("meetingApp.priorityMedium") },
+                { value: "低", label: t("meetingApp.priorityLow") },
+              ]}
+            />
+          </Form.Item>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {t("scheduleModal.submitHint")}
+          </Typography.Text>
         </Form>
       </Modal>
     </div>

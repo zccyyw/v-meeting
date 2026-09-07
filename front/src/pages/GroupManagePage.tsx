@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button, Card, Input, Modal as AntModal, Popconfirm, Space, Table, Tag, Tooltip, Typography } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined, HomeOutlined, TeamOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined, HomeOutlined, TeamOutlined, StarOutlined, StarFilled } from "@ant-design/icons";
 import { MeetingGroupApi, type MeetingGroupItem } from "@/api/client";
 import { MemberPicker, type MemberPickerValue } from "@/components/MemberPicker";
 import { showMessage } from "@/ui/toast";
@@ -136,11 +136,30 @@ export function GroupManagePage() {
     }
   }
 
+  async function onTogglePin(group: MeetingGroupItem) {
+    try {
+      await MeetingGroupApi.pin(group.groupId, !group.pinned);
+      await loadGroups();
+    } catch {
+      showMessage(t("common.error"));
+    }
+  }
+
   const columns = [
     {
       title: t("group.groupName"),
       dataIndex: "groupName",
       key: "groupName",
+      render: (_: unknown, record: MeetingGroupItem) => (
+        <Space size={6}>
+          {record.pinned && (
+            <Tag color="gold" icon={<StarFilled />} style={{ marginRight: 0 }}>
+              {t("group.pinnedTag")}
+            </Tag>
+          )}
+          <span>{record.groupName}</span>
+        </Space>
+      ),
     },
     {
       title: t("group.memberCount"),
@@ -159,7 +178,7 @@ export function GroupManagePage() {
     {
       title: t("common.actions"),
       key: "actions",
-      width: 280,
+      width: 340,
       render: (_: unknown, record: MeetingGroupItem) => (
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <Button
@@ -173,6 +192,19 @@ export function GroupManagePage() {
             }}
           >
             {t("group.quickStart")}
+          </Button>
+          <Button
+            size="small"
+            icon={
+              record.pinned ? (
+                <StarFilled style={{ color: "#faad14" }} />
+              ) : (
+                <StarOutlined />
+              )
+            }
+            onClick={() => void onTogglePin(record)}
+          >
+            {record.pinned ? t("group.unpin") : t("group.pin")}
           </Button>
           <Button
             size="small"

@@ -57,7 +57,10 @@
     "scheduleSuccess": "预定成功，会议号 {{code}}",
     "greeting": "你好，{{name}}",
     "joining": "正在加入会议…",
-    "live": "直播中"
+    "live": "直播中",
+    "applySubmitted": "会议申请已提交，等待审批",
+    "startMeeting": "发起会议",
+    "units": "{{count}} 个单位"
   },
   "joinModal": {
     "title": "加入会议",
@@ -76,7 +79,8 @@
     "password": "入会密码",
     "passwordHint": "至少 4 位",
     "time": "预约时间",
-    "submit": "创建预定"
+    "submit": "提交申请",
+    "submitHint": "提交后将进入审批流程，审批通过后方可发起会议"
   },
   "users": {
     "title": "用户管理",
@@ -222,6 +226,14 @@
     "layoutSpeaker": "演讲者布局",
     "layoutTraining": "培训布局",
     "focusSpeaker": "设为发言",
+    "dragHandle": "拖动",
+    "collapseList": "收起列表",
+    "expandList": "展开列表",
+    "inviteList": "邀请名单",
+    "noInvitations": "暂无邀请记录",
+    "inviteStatusInRoom": "在会议中",
+    "inviteStatusAttended": "已入会",
+    "inviteStatusPending": "待入会",
     "layoutCols": "页面布局",
     "layoutColsAuto": "自适应",
     "layoutCols4": "4 人",
@@ -465,6 +477,9 @@
     "members": "群组成员",
     "memberCount": "成员数",
     "quickStart": "群组开会",
+    "pin": "常用",
+    "unpin": "取消常用",
+    "pinnedTag": "常用",
     "confirmDelete": "确定删除该群组吗？",
     "empty": "暂无群组，点击创建",
     "createdAt": "创建时间",

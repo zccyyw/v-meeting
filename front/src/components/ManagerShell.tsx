@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -8,6 +8,7 @@ import {
   Dropdown,
   Layout,
   Menu,
+  Modal,
   Tooltip,
   Typography,
   theme,
@@ -31,6 +32,7 @@ import type { MenuProps } from "antd";
 import { clearSession, getDisplayName, getRoles } from "@/auth/session";
 import { ThemeToggle } from "@/theme/ThemeToggle";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
+import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { api } from "@/api/client";
 const { Header, Sider, Content } = Layout;
 
@@ -79,13 +81,36 @@ function filterNavItems(): typeof navItems {
 
 function ManagerShellInner() {
   const { t } = useTranslation();
-  const { modal } = AntApp.useApp();
+  const { modal, message } = AntApp.useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const { token } = theme.useToken();
   const [collapsed, setCollapsed] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
   const displayName = getDisplayName();
+
+  // ── 空闲超时（需求 6.2：页面停留 10 分钟自动退出，覆盖管理后台）──
+  const [idleConfig, setIdleConfig] = useState({ timeoutSec: 600, warningSec: 60 });
+  useEffect(() => {
+    api<{ idleTimeout: number; idleWarning: number }>("/sys-config/public")
+      .then((cfg) => setIdleConfig({ timeoutSec: cfg.idleTimeout, warningSec: cfg.idleWarning }))
+      .catch(() => {});
+  }, []);
+
+  const { showWarning, remainingSec } = useIdleTimer({
+    timeoutSec: idleConfig.timeoutSec,
+    warningSec: idleConfig.warningSec,
+    onTimeout: () => {
+      // 空闲自动退出也通知服务端注销会话，释放“在线人数”名额
+      void api("/auth/logout", { method: "POST" }).catch(() => {});
+      clearSession();
+      message.warning(t("idle.timeoutMessage"));
+      navigate("/manager/login", { replace: true });
+    },
+    onWarning: () => {
+      message.warning(t("idle.warningMessage"));
+    },
+  });
 
   // 当前选中的菜单 key
   const visibleNavItems = filterNavItems();
@@ -259,6 +284,17 @@ function ManagerShellInner() {
       </Layout>
 
       <ChangePasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} />
+
+      {/* 空闲超时警告弹窗 */}
+      <Modal
+        open={showWarning}
+        title={t("idle.warningTitle")}
+        footer={null}
+        closable={false}
+        centered
+      >
+        <p>{t("idle.warningText", { seconds: remainingSec })}</p>
+      </Modal>
     </Layout>
   );
 }

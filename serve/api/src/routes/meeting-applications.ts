@@ -201,7 +201,7 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     if (row.applicant_id !== user.id && !user.roles.includes("admin"))
       return reply.code(403).send({ error: "forbidden" });
 
-    // 创建会议
+    // 创建会议（继承申请的预约时间）
     let code = generateMeetingCode();
     let meetingId: number | null = null;
 
@@ -210,8 +210,8 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
         const [result] = await db.query(
           `INSERT INTO meetings
            (code, title, host_user_id, status, waiting_room_enabled, join_password_hash, scheduled_at)
-           VALUES (?, ?, ?, 'live', 0, NULL, NULL)`,
-          [code, row.title, user.id],
+           VALUES (?, ?, ?, 'live', 0, NULL, ?)`,
+          [code, row.title, user.id, row.meeting_time || null],
         );
         meetingId = Number((result as ResultHeader).insertId);
         break;

@@ -47,7 +47,12 @@ export function InvitationPanel({
                     }`}
                     aria-hidden
                   />
-                  <span className="invite-list-name">{inv.displayName}</span>
+                  <span className="invite-list-name">
+                    {inv.displayName}
+                    {inv.deptName ? (
+                      <span className="invite-list-dept">{inv.deptName}</span>
+                    ) : null}
+                  </span>
                   <span className="invite-list-status">
                     {inRoom
                       ? t("meeting.inviteStatusInRoom", "在会议中")

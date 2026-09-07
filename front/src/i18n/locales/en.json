@@ -57,7 +57,10 @@
     "scheduleSuccess": "Scheduled. Meeting ID {{code}}",
     "greeting": "Hello, {{name}}",
     "joining": "Joining meeting…",
-    "live": "LIVE"
+    "live": "LIVE",
+    "applySubmitted": "Application submitted, pending approval",
+    "startMeeting": "Start meeting",
+    "units": "{{count}} units"
   },
   "joinModal": {
     "title": "Join meeting",
@@ -76,7 +79,8 @@
     "password": "Join password",
     "passwordHint": "At least 4 characters",
     "time": "Scheduled time",
-    "submit": "Schedule"
+    "submit": "Submit application",
+    "submitHint": "The application will go through approval; the meeting can be started once approved"
   },
   "users": {
     "title": "User Management",
@@ -222,6 +226,14 @@
     "layoutSpeaker": "Speaker layout",
     "layoutTraining": "Training layout",
     "focusSpeaker": "Set as speaker",
+    "dragHandle": "Drag",
+    "collapseList": "Collapse list",
+    "expandList": "Expand list",
+    "inviteList": "Invitations",
+    "noInvitations": "No invitations yet",
+    "inviteStatusInRoom": "In meeting",
+    "inviteStatusAttended": "Joined",
+    "inviteStatusPending": "Pending",
     "layoutCols": "Page layout",
     "layoutColsAuto": "Auto",
     "layoutCols4": "4",
@@ -465,6 +477,9 @@
     "members": "Members",
     "memberCount": "Members",
     "quickStart": "Quick Start Meeting",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "pinnedTag": "Frequent",
     "confirmDelete": "Delete this group?",
     "empty": "No groups yet, click to create",
     "createdAt": "Created",

@@ -6,6 +6,22 @@ import { useSpeaking } from "@/media/useSpeaking";
 
 export type LayoutCols = "auto" | 4 | 6;
 
+type Tile = {
+  key: string;
+  peerId: string;
+  stream: MediaStream | null;
+  label: string;
+  /** Local always muted; remotes muted too — audio via RemoteAudios */
+  muted?: boolean;
+  handRaised: boolean;
+  isScreen?: boolean;
+  forceAvatar?: boolean;
+  /** Whether this peer's microphone is muted (for showing mute indicator). */
+  micMuted?: boolean;
+  /** Local screen share that may capture the meeting UI itself (monitor or window). */
+  localSelfScreen?: boolean;
+};
+
 type Props = {
   localStream: MediaStream | null;
   localScreenStream: MediaStream | null;
@@ -19,7 +35,9 @@ type Props = {
   layout: MeetingLayout;
   focusPeerId: string | null;
   layoutCols: LayoutCols;
-  /** Called when user clicks a tile to set focus (training/speaker mode). */
+  /** Peer id of the meeting host / presenter (for PIP placement). */
+  hostPeerId?: string | null;
+  /** Called when user clicks a tile to set focus (training/speaker mode, host only). */
   onFocusPeer?: (peerId: string) => void;
 };
 
@@ -30,7 +48,7 @@ function hasActiveCamera(stream: MediaStream | null | undefined): boolean {
     .some((t) => t.readyState === "live" && t.enabled);
 }
 
-/** Draggable side list — can be dragged as a floating panel, default bottom-right. */
+/** Draggable side list — can be dragged as a floating panel; collapsible. */
 function DraggableSideList({
   tiles,
   isTraining,
@@ -53,7 +71,9 @@ function DraggableSideList({
   handTitle: string;
   onFocusPeer?: (peerId: string) => void;
 }) {
+  const { t } = useTranslation();
   const [floating, setFloating] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
@@ -65,8 +85,9 @@ function DraggableSideList({
     setFloating(true);
     const el = dragRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    dragStart.current = { x: e.clientX, y: e.clientY, px: rect.left, py: rect.top };
+    // Use offsetLeft/Top (relative to the positioned .video-grid container) so
+    // the absolute left/top style matches, avoiding a jump on first drag.
+    dragStart.current = { x: e.clientX, y: e.clientY, px: el.offsetLeft, py: el.offsetTop };
     e.preventDefault();
   }, []);
 
@@ -93,14 +114,52 @@ function DraggableSideList({
     ? { position: "absolute", right: "auto", bottom: "auto", left: pos.x, top: pos.y, zIndex: 50, opacity: 0.95 }
     : {};
 
+  if (collapsed) {
+    return (
+      <div className="video-sidelist video-sidelist--collapsed" style={style}>
+        <div
+          className="video-sidelist-drag-handle"
+          onMouseDown={onMouseDown}
+          title={t("meeting.dragHandle")}
+        >
+          <span className="video-sidelist-drag-icon" aria-hidden />
+        </div>
+        <button
+          type="button"
+          className="video-sidelist-toggle"
+          onClick={() => setCollapsed(false)}
+          title={t("meeting.expandList")}
+          aria-label={t("meeting.expandList")}
+        >
+          ‹
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={dragRef}
       className={`video-sidelist${floating ? " video-sidelist--floating" : ""}`}
       style={style}
     >
-      <div className="video-sidelist-drag-handle" onMouseDown={onMouseDown} title="拖动">
-        <span className="video-sidelist-drag-icon" aria-hidden />
+      <div className="video-sidelist-toolbar">
+        <div
+          className="video-sidelist-drag-handle"
+          onMouseDown={onMouseDown}
+          title={t("meeting.dragHandle")}
+        >
+          <span className="video-sidelist-drag-icon" aria-hidden />
+        </div>
+        <button
+          type="button"
+          className="video-sidelist-toggle"
+          onClick={() => setCollapsed(true)}
+          title={t("meeting.collapseList")}
+          aria-label={t("meeting.collapseList")}
+        >
+          ›
+        </button>
       </div>
       {tiles.map((tile) => (
         <VideoTile
@@ -121,6 +180,76 @@ function DraggableSideList({
           }
         />
       ))}
+    </div>
+  );
+}
+
+/**
+ * Presenter PIP (picture-in-picture) — floats over the main stage, defaults to
+ * the bottom-right corner and can be dragged anywhere.
+ */
+function DraggablePip({ tile, handTitle }: { tile: Tile; handTitle: string }) {
+  const { t } = useTranslation();
+  const [dragging, setDragging] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    const el = ref.current;
+    if (!el) return;
+    // offsetLeft/Top are relative to the positioned .video-grid container,
+    // matching the absolute left/top style (avoids a jump on first drag).
+    dragStart.current = { x: e.clientX, y: e.clientY, px: el.offsetLeft, py: el.offsetTop };
+    setPos({ x: el.offsetLeft, y: el.offsetTop });
+    setDragging(true);
+    e.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      if (!dragStart.current) return;
+      const dx = e.clientX - dragStart.current.x;
+      const dy = e.clientY - dragStart.current.y;
+      setPos({ x: dragStart.current.px + dx, y: dragStart.current.py + dy });
+    };
+    const onUp = () => {
+      dragStart.current = null;
+      setDragging(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [dragging]);
+
+  const style: React.CSSProperties = pos
+    ? { right: "auto", bottom: "auto", left: pos.x, top: pos.y }
+    : {};
+
+  return (
+    <div
+      ref={ref}
+      className="video-pip"
+      style={style}
+      onMouseDown={onMouseDown}
+      title={t("meeting.dragHandle")}
+    >
+      <VideoTile
+        stream={tile.stream}
+        label={tile.label}
+        muted={tile.muted}
+        micMuted={tile.micMuted}
+        handRaised={tile.handRaised}
+        handTitle={handTitle}
+        showAvatar={!tile.isScreen && tile.forceAvatar}
+        isScreen={tile.isScreen}
+        localSelfScreen={tile.localSelfScreen}
+        camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
+      />
     </div>
   );
 }
@@ -364,6 +493,7 @@ export function VideoGrid({
   layout,
   focusPeerId,
   layoutCols,
+  hostPeerId,
   onFocusPeer,
 }: Props) {
   const { t } = useTranslation();
@@ -408,22 +538,6 @@ export function VideoGrid({
 
   const peerMicEnabled = (peerId: string) =>
     peers.find((p) => p.peerId === peerId)?.micEnabled ?? true;
-
-  type Tile = {
-    key: string;
-    peerId: string;
-    stream: MediaStream | null;
-    label: string;
-    /** Local always muted; remotes muted too — audio via RemoteAudios */
-    muted?: boolean;
-    handRaised: boolean;
-    isScreen?: boolean;
-    forceAvatar?: boolean;
-    /** Whether this peer's microphone is muted (for showing mute indicator). */
-    micMuted?: boolean;
-    /** Local screen share that may capture the meeting UI itself (monitor or window). */
-    localSelfScreen?: boolean;
-  };
 
   // Conservative: any local screen share (monitor, window, or browser) may
   // capture the meeting UI itself and cause an infinite mirror loop. All are
@@ -555,10 +669,18 @@ export function VideoGrid({
     tiles.find((t) => t.isScreen) ||
     null;
 
+  // Presenter (host) camera tile for PIP display.
+  const hostTile =
+    hostPeerId != null
+      ? tiles.find((t) => t.peerId === hostPeerId && !t.isScreen)
+      : undefined;
+
   const resolvedFocusPeer =
     focusPeerId && tiles.some((t) => t.peerId === focusPeerId)
       ? focusPeerId
-      : (tiles[0]?.peerId ?? null);
+      : hostPeerId != null && tiles.some((t) => t.peerId === hostPeerId && !t.isScreen)
+        ? hostPeerId
+        : (tiles[0]?.peerId ?? null);
 
   const useSideLayout = layout === "speaker" || layout === "training" || hasScreen;
 
@@ -568,8 +690,18 @@ export function VideoGrid({
       tiles[0])
     : null;
 
+  // Show the presenter as a draggable PIP whenever the main stage shows
+  // something else (shared screen or a focused speaker).
+  const showPip =
+    useSideLayout && Boolean(hostTile) && focusTile != null && focusTile.key !== hostTile!.key;
+
   const stripTiles = useSideLayout
-    ? tiles.filter((t) => t.key !== focusTile?.key && !t.isScreen)
+    ? tiles.filter(
+        (t) =>
+          t.key !== focusTile?.key &&
+          !t.isScreen &&
+          !(showPip && hostTile && t.key === hostTile.key),
+      )
     : tiles;
 
   if (useSideLayout && focusTile) {
@@ -600,6 +732,9 @@ export function VideoGrid({
           </div>
           {stripTiles.length > 0 && (
             <DraggableSideList tiles={stripTiles} isTraining={isTraining} handTitle={handTitle} onFocusPeer={onFocusPeer} />
+          )}
+          {showPip && hostTile && (
+            <DraggablePip tile={hostTile} handTitle={handTitle} />
           )}
         </div>
       </>

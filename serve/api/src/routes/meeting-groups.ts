@@ -28,6 +28,8 @@ const QuickStartBody = z.object({
   waitingRoomEnabled: z.boolean().optional(),
 });
 
+const PinBody = z.object({ pinned: z.boolean() });
+
 /**
  * 展开群组成员为用户列表（部门展开为部门下所有用户）。
  */
@@ -124,22 +126,50 @@ export async function meetingGroupRoutes(app: FastifyInstance, db: Db, redis: Re
     }
 
     const [rows] = await db.query(
-      `SELECT g.group_id, g.group_name, g.created_at,
+      `SELECT g.group_id, g.group_name, g.created_at, g.pinned,
         (SELECT COUNT(*) FROM meeting_group_members m WHERE m.group_id = g.group_id) AS member_count
        FROM meeting_groups g
        ${where}
-       ORDER BY g.created_at DESC`,
+       ORDER BY g.pinned DESC, g.created_at DESC`,
       params,
     );
 
-    const items = (rows as { group_id: number; group_name: string; created_at: string; member_count: number | string }[]).map((r) => ({
+    const items = (rows as { group_id: number; group_name: string; created_at: string; member_count: number | string; pinned?: number | boolean }[]).map((r) => ({
       groupId: Number(r.group_id),
       groupName: r.group_name,
       memberCount: Number(r.member_count),
       createdAt: r.created_at,
+      pinned: Boolean(r.pinned),
     }));
 
     return { items };
+  });
+
+  // ── 设置常用（置顶）标记 ──
+  app.post("/meeting-groups/:id/pin", async (req, reply) => {
+    const sid = req.headers["x-session-id"] as string | undefined;
+    const user = await loadSessionUser(db, redis, sid);
+    if (!user) return reply.code(401).send({ error: "unauthorized" });
+
+    const id = Number((req.params as { id: string }).id);
+    const body = PinBody.parse(req.body ?? {});
+    const [rows] = await db.query(
+      `SELECT owner_id FROM meeting_groups WHERE group_id = ? LIMIT 1`,
+      [id],
+    );
+    const group = (rows as { owner_id: number }[])[0];
+    if (!group) return reply.code(404).send({ error: "not_found" });
+    if (group.owner_id !== user.id && !user.roles.includes("admin")) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+
+    // SQLite/MySQL 用 0/1，PostgreSQL 用 boolean
+    const pinnedVal = db.driver === "postgres" ? body.pinned : body.pinned ? 1 : 0;
+    await db.query(
+      `UPDATE meeting_groups SET pinned = ? WHERE group_id = ?`,
+      [pinnedVal, id],
+    );
+    return { groupId: id, pinned: body.pinned };
   });
 
   // ── 群组详情 ──

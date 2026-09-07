@@ -745,9 +745,19 @@ function MeetingPageInner() {
                 layout={snap.layout}
                 focusPeerId={snap.focusPeerId}
                 layoutCols={layoutCols}
-                onFocusPeer={(peerId) => {
-                  roomRef.current?.setFocus(peerId);
-                }}
+                hostPeerId={
+                  isHost
+                    ? snap.peerId
+                    : snap.peers.find((p) => p.role === "host")?.peerId ?? null
+                }
+                onFocusPeer={
+                  // 需求 5：仅发起者/主持人可切换发言者画面
+                  isHost
+                    ? (peerId) => {
+                        roomRef.current?.setFocus(peerId);
+                      }
+                    : undefined
+                }
               />
               {danmuEnabled && (
                 <DanmuOverlay
