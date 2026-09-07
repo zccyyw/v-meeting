@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import {
   App as AntApp,
   Avatar,
+  Button,
+  Dropdown,
   Layout,
   Menu,
   Tooltip,
@@ -74,21 +76,6 @@ function filterNavItems(): typeof navItems {
     item.roles.some((r) => roles.includes(r))
   );
 }
-
-/** 侧边栏底部图标按钮的通用样式 */
-const siderBtnStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "none",
-  cursor: "pointer",
-  padding: "10px 4px",
-  fontSize: 22,
-  width: 44,
-  height: 44,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 8,
-};
 
 function ManagerShellInner() {
   const { t } = useTranslation();
@@ -171,17 +158,60 @@ function ManagerShellInner() {
           </Typography.Title>
         </div>
 
-        {/* 右侧：用户信息 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Avatar
-            size={32}
-            style={{ background: token.colorPrimary }}
+        {/* 右侧：返回会议 + 主题切换 + 用户头像（悬浮菜单：修改密码 / 退出） */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <Tooltip title={t("nav.backToMeetings")}>
+            <Button
+              type="text"
+              icon={<HomeOutlined style={{ fontSize: 18 }} />}
+              onClick={() => navigate("/")}
+              aria-label={t("nav.backToMeetings")}
+            />
+          </Tooltip>
+          <ThemeToggle />
+          <Dropdown
+            trigger={["hover"]}
+            placement="bottomRight"
+            menu={{
+              items: [
+                {
+                  key: "changePassword",
+                  icon: <LockOutlined />,
+                  label: t("nav.changePassword"),
+                },
+                { type: "divider" },
+                {
+                  key: "logout",
+                  icon: <LogoutOutlined />,
+                  label: t("nav.logout"),
+                  danger: true,
+                },
+              ],
+              onClick: ({ key }) => {
+                if (key === "changePassword") setPwdOpen(true);
+                else if (key === "logout") onLogout();
+              },
+            }}
           >
-            {(displayName || "?").slice(0, 2).toUpperCase()}
-          </Avatar>
-          <Typography.Text style={{ fontSize: 14 }}>
-            {displayName || "Admin"}
-          </Typography.Text>
+            {/* 头像区：hover 弹出 修改密码/退出 菜单 */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                cursor: "pointer",
+                marginLeft: 8,
+              }}
+              aria-label={t("nav.userMenu")}
+            >
+              <Typography.Text style={{ fontSize: 14 }}>
+                {displayName || "Admin"}
+              </Typography.Text>
+              <Avatar size={32} style={{ background: token.colorPrimary }}>
+                {(displayName || "?").slice(0, 2).toUpperCase()}
+              </Avatar>
+            </div>
+          </Dropdown>
         </div>
       </Header>
 
@@ -211,50 +241,6 @@ function ManagerShellInner() {
             items={menuItems}
             style={{ flex: 1, borderRight: 0, background: "transparent", overflow: "auto" }}
           />
-
-          {/* 底部工具区：主题切换 + 返回首页 + 修改密码 + 退出 */}
-          <div
-            style={{
-              borderTop: `1px solid ${token.colorBorderSecondary}`,
-              padding: "8px 0",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 4,
-            }}
-          >
-            <ThemeToggle />
-            <Tooltip title={t("nav.backToMeetings")}>
-              <button
-                type="button"
-                onClick={() => navigate("/")}
-                aria-label={t("nav.backToMeetings")}
-                style={{ ...siderBtnStyle, color: token.colorTextSecondary }}
-              >
-                <HomeOutlined />
-              </button>
-            </Tooltip>
-            <Tooltip title={t("nav.changePassword")}>
-              <button
-                type="button"
-                onClick={() => setPwdOpen(true)}
-                aria-label={t("nav.changePassword")}
-                style={{ ...siderBtnStyle, color: token.colorTextSecondary }}
-              >
-                <LockOutlined />
-              </button>
-            </Tooltip>
-            <Tooltip title={t("nav.logout")}>
-              <button
-                type="button"
-                onClick={onLogout}
-                aria-label={t("nav.logout")}
-                style={{ ...siderBtnStyle, color: token.colorError }}
-              >
-                <LogoutOutlined />
-              </button>
-            </Tooltip>
-          </div>
         </Sider>
 
         {/* 右侧主内容 */}

@@ -17,7 +17,9 @@
     "notices": "通知公告",
     "logs": "操作日志",
     "meetingApproval": "会议审批",
-    "userApproval": "用户审批"
+    "meetingMonitor": "会议监控",
+    "userApproval": "用户审批",
+    "userMenu": "用户菜单"
   },
   "manager": {
     "login": {
@@ -289,7 +291,8 @@
     "recordingStoppedBy": "{{name}} 结束了录制",
     "recordAllowedToggle": "开启录制",
     "me": "我",
-    "peer": "参会者"
+    "peer": "参会者",
+    "onlineLimitReached": "系统同时在线人数已达上限，请稍后再试。"
   },
   "recordings": {
     "title": "录制历史",
@@ -323,7 +326,12 @@
     "create": "新增",
     "edit": "修改",
     "delete": "删除",
+    "detail": "详情",
     "actions": "操作",
+    "success": "操作成功",
+    "error": "操作失败",
+    "remove": "移除",
+    "total": "共",
     "createSuccess": "新增成功",
     "updateSuccess": "修改成功",
     "deleteSuccess": "删除成功"

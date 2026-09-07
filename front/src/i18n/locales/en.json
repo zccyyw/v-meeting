@@ -17,7 +17,9 @@
     "notices": "Notices",
     "logs": "Operation Logs",
     "meetingApproval": "Meeting Approval",
-    "userApproval": "User Approval"
+    "meetingMonitor": "Meeting Monitor",
+    "userApproval": "User Approval",
+    "userMenu": "User menu"
   },
   "manager": {
     "login": {
@@ -289,7 +291,8 @@
     "recordingStoppedBy": "{{name}} stopped recording",
     "recordAllowedToggle": "Allow recording",
     "me": "me",
-    "peer": "Participant"
+    "peer": "Participant",
+    "onlineLimitReached": "The system has reached its online user limit. Please try again later."
   },
   "recordings": {
     "title": "Recordings",
@@ -323,7 +326,12 @@
     "create": "Create",
     "edit": "Edit",
     "delete": "Delete",
+    "detail": "Detail",
     "actions": "Actions",
+    "success": "Success",
+    "error": "Operation failed",
+    "remove": "Remove",
+    "total": "Total",
     "createSuccess": "Created successfully",
     "updateSuccess": "Updated successfully",
     "deleteSuccess": "Deleted successfully"
