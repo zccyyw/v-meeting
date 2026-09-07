@@ -641,18 +641,36 @@ input:not(.ant-input):focus {
 .host-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem; }
 .host-actions button, .side-panel .waiting-actions button, .chat-form button { font-size: 0.82rem; padding: 0.45rem 0.7rem; }
 
-/* —— 统一成员列表 —— */
-.member-unified-list { gap: 0.35rem; }
-.member-row { padding: 0.35rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+/* —— 统一成员列表（仿 QQ 头像 + 状态小点） —— */
+.member-unified-list { gap: 0.2rem; }
+.member-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
 .member-row:last-child { border-bottom: none; }
-.member-row-left { display: flex; align-items: center; gap: 2px; font-size: 0.85rem; min-width: 0; flex: 1; }
+
+/* 头像容器 */
+.member-avatar-wrap { position: relative; flex-shrink: 0; width: 36px; height: 36px; }
+.member-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 600; color: #fff; background: var(--color-primary); overflow: hidden; }
+.member-avatar.is-offline { background: #bfbfbf; color: #f0f0f0; filter: grayscale(1); opacity: 0.6; }
+
+/* 仿 QQ 状态小点 */
+.member-status-dot { position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--side-panel-bg, #1f1f1f); }
+.member-status-dot.online { background: #52c41a; }
+.member-status-dot.offline { background: #bfbfbf; }
+
+/* 中间信息区 */
+.member-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.member-name-row { display: flex; align-items: center; gap: 2px; font-size: 0.85rem; }
 .member-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.member-self-tag { flex-shrink: 0; }
-.member-invite-status { flex-shrink: 0; }
+.member-self-tag { flex-shrink: 0; color: #8c8c8c; font-size: 0.72rem; }
+
+/* 麦克风/摄像头图标行 */
+.member-media-icons { display: flex; gap: 6px; align-items: center; }
+.member-media-icon { font-size: 12px; display: flex; align-items: center; }
+.member-media-icon.on { color: #52c41a; }
+.member-media-icon.off { color: #ff4d4f; }
+
 .member-actions { flex-shrink: 0; }
 .member-mute-btn { padding: 0.25rem 0.4rem !important; font-size: 1rem !important; line-height: 1; }
 .member-mute-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.member-online-icon, .member-offline-icon { flex-shrink: 0; }
 
 /* —— 聊天面板 —— */
 .chat-messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 0.75rem; padding-right: 0.25rem; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 0.25s ease; }
@@ -719,14 +737,20 @@ input:not(.ant-input):focus {
 .member-picker-dept-name { border: none; background: none; cursor: pointer; flex: 1; display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: #333; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member-picker-dept-check { border: 1px solid #d9d9d9; border-radius: 3px; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; font-size: 0.75rem; color: #fff; transition: all 0.15s; flex-shrink: 0; }
 .member-picker-dept-check.is-checked { background: var(--color-primary); border-color: var(--color-primary); }
-.member-picker-user-list { flex: 1; overflow-y: auto; scrollbar-width: thin; }
-.member-picker-user { display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.6rem; border: none; border-bottom: 1px solid #f0f0f0; background: none; cursor: pointer; width: 100%; text-align: left; transition: background 0.1s; }
-.member-picker-user:hover { background: #f5f5f5; }
-.member-picker-user.is-selected { background: #e6f0ff; }
+.member-picker-user-list { flex: 1; overflow-y: auto; scrollbar-width: thin; min-height: 0; }
+.member-picker-simple .member-picker-user-list { border: 1px solid #e5e6eb; border-radius: 6px; overflow-y: auto; }
+.member-picker-user { display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.6rem; border: none !important; border-bottom: 1px solid #f0f0f0 !important; background: none !important; cursor: pointer; width: 100%; text-align: left; transition: background 0.1s; }
+.member-picker-user:hover { background: #f5f5f5 !important; }
+.member-picker-user.is-selected { background: transparent !important; }
 .member-picker-user.is-disabled { opacity: 0.4; cursor: not-allowed; }
 .member-picker-user-name { font-size: 0.85rem; color: #333; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member-picker-user-id { font-size: 0.75rem; color: #999; flex-shrink: 0; }
 .member-picker-user-check { color: var(--color-primary); font-size: 0.85rem; flex-shrink: 0; }
+
+/* —— 自定义复选框（未勾选背景透明，勾选√变蓝） —— */
+.member-picker-checkbox { width: 18px; height: 18px; border: 1.5px solid #d9d9d9 !important; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: transparent !important; transition: all 0.15s; }
+.member-picker-checkbox.is-checked { border-color: #d9d9d9 !important; background: transparent !important; color: var(--color-primary); }
+.member-picker-user:hover .member-picker-checkbox { border-color: #d9d9d9 !important; }
 .member-picker-pagination { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.4rem; border-top: 1px solid #e5e6eb; font-size: 0.8rem; }
 .member-picker-pagination button { border: 1px solid #e5e6eb; border-radius: 4px; background: #fff; cursor: pointer; padding: 0.15rem 0.5rem; font-size: 0.85rem; }
 .member-picker-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }

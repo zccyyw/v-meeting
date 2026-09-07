@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   App as AntApp,
@@ -43,6 +43,7 @@ function AppShellInner() {
   const { t } = useTranslation();
   const { modal, message } = AntApp.useApp();
   const navigate = useNavigate();
+  const location = useLocation();
   const { token } = theme.useToken();
   const displayName = getDisplayName();
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -146,7 +147,7 @@ function AppShellInner() {
 
         <Menu
           mode="inline"
-          defaultSelectedKeys={["/"]}
+          selectedKeys={[location.pathname]}
           items={menuItems}
           style={{
             flex: 1,

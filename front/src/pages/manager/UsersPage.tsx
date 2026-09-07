@@ -34,6 +34,7 @@ import {
 } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 import { getUserId, hasPermission } from "@/auth/session";
+import { PasswordStrengthHint } from "@/components/PasswordStrengthHint";
 
 const PAGE_SIZE_OPTIONS = ["10", "20", "30", "50"];
 
@@ -422,6 +423,11 @@ export function UsersPage() {
           >
             <Input.Password autoComplete="new-password" autoFocus />
           </Form.Item>
+          <Form.Item shouldUpdate>
+            {({ getFieldValue }) => (
+              <PasswordStrengthHint password={getFieldValue("password") || ""} />
+            )}
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -451,6 +457,11 @@ export function UsersPage() {
             <>
               <Form.Item name="password" label={t("users.password")} rules={[{ required: true }, { min: 6, max: 128 }]}>
                 <Input.Password autoComplete="new-password" />
+              </Form.Item>
+              <Form.Item shouldUpdate>
+                {({ getFieldValue }) => (
+                  <PasswordStrengthHint password={getFieldValue("password") || ""} />
+                )}
               </Form.Item>
               <Form.Item
                 name="passwordConfirm"

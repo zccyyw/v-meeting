@@ -407,6 +407,13 @@ export const SysUserApi = {
     sp.set("pageSize", String(params?.pageSize ?? 20));
     return api<{ items: SysUserItem[]; total: number; page: number; pageSize: number }>(`/sys-user/list?${sp}`);
   },
+  simpleList: (params?: { userName?: string; page?: number; pageSize?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.userName) sp.set("userName", params.userName);
+    sp.set("page", String(params?.page ?? 1));
+    sp.set("pageSize", String(params?.pageSize ?? 50));
+    return api<{ items: { userId: number; userName: string; nickName: string }[]; total: number; page: number; pageSize: number }>(`/sys-user/simple-list?${sp}`);
+  },
   get: (id: number) => api<SysUserItem>(`/sys-user/${id}`),
   create: async (body: Record<string, unknown>) => {
     if (body.password) body.password = await encryptPassword(body.password as string);

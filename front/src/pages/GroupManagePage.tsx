@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Button, Card, Input, Modal as AntModal, Popconfirm, Table, Tag } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { Button, Card, Input, Modal as AntModal, Popconfirm, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined, HomeOutlined, TeamOutlined } from "@ant-design/icons";
 import { MeetingGroupApi, type MeetingGroupItem } from "@/api/client";
 import { MemberPicker, type MemberPickerValue } from "@/components/MemberPicker";
 import { showMessage } from "@/ui/toast";
@@ -53,6 +53,7 @@ export function GroupManagePage() {
     void MeetingGroupApi.get(group.groupId).then((detail) => {
       setMemberValue({
         userIds: detail.members.map((m) => m.userId),
+        // 保留已有的部门成员 ID，编辑提交时会原样传递
         deptIds: detail.deptMembers.map((d) => d.deptId),
       });
     }).catch(() => {});
@@ -198,7 +199,23 @@ export function GroupManagePage() {
   return (
     <div className="admin-page">
       <div className="admin-page-header">
-        <h1 style={{ margin: 0, fontSize: "1.4rem" }}>{t("group.title")}</h1>
+        <div>
+          <Typography.Title level={3} style={{ margin: 0 }}>
+            <Space size={8}>
+              <TeamOutlined />
+              {t("group.title")}
+              <Tooltip title={t("recordings.backHome")}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<HomeOutlined />}
+                  aria-label={t("recordings.backHome")}
+                  onClick={() => navigate("/")}
+                />
+              </Tooltip>
+            </Space>
+          </Typography.Title>
+        </div>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           {t("group.create")}
         </Button>
@@ -227,6 +244,7 @@ export function GroupManagePage() {
         <form onSubmit={onSubmit}>
           <div style={{ marginBottom: "1rem" }}>
             <label className="admin-antd-form-item-label" style={{ display: "block", marginBottom: "0.5rem" }}>
+              <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>
               {t("group.groupName")}
             </label>
             <Input

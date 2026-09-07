@@ -299,4 +299,16 @@ NO_DOCKER=1 USE_CN_MIRROR=1 USE_SYSTEM_NODE=1 npm run pack:rpm
 
 ## 默认账号
 
-`admin / admin123`，生产环境部署后请立即修改密码。
+执行 `npm run seed` 后，系统会创建以下默认账号：
+
+| 用户名 | 密码 | 昵称 | 角色 | 说明 |
+|--------|------|------|------|------|
+| `admin` | `admin123` | 管理员 | 超级管理员 (role_id=1) | 拥有所有权限，首次登录提示修改密码 |
+| `system` | `system123` | 系统用户 | 超级管理员 (role_id=1) | 隐藏用户，对非 system 用户不可见，用于系统级操作 |
+| `sysadmin` | `Admin@123` | 系统管理员 | 系统管理员 (role_id=3) | 三员之一，管理系统配置 |
+| `authadmin` | `Admin@123` | 授权管理员 | 授权管理员 (role_id=4) | 三员之一，管理用户审批 |
+| `auditadmin` | `Admin@123` | 审计管理员 | 审计管理员 (role_id=5) | 三员之一，管理操作审计 |
+| `meeting` | `Admin@123` | 普通用户 | 普通用户 (role_id=2) | 仅会议功能，无管理后台权限 |
+| `test1` ~ `test5` | `123456` | 测试用户1~5 | 普通用户 (role_id=2) | 测试用账号 |
+
+> ⚠️ 生产环境部署后请立即修改所有默认密码。

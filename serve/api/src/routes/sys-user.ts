@@ -131,11 +131,10 @@ export async function sysUserRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     let where = `WHERE u.del_flag = '0'`;
     const params: unknown[] = [];
     // system 隐藏用户：对非 system 用户不可见
-    if (user.username !== "system") {
-      where += ` AND u.user_name != 'system'`;
-    }
+    // 始终屏蔽 system 和 sysadmin（不影响其登录和系统操作）
+    where += ` AND u.user_name NOT IN ('system', 'sysadmin')`;
     if (q.deptId) { where += ` AND u.dept_id = ?`; params.push(q.deptId); }
-    if (q.userName) { where += ` AND u.user_name LIKE ?`; params.push(`%${q.userName}%`); }
+    if (q.userName) { where += ` AND (u.user_name LIKE ? OR u.nick_name LIKE ?)`; params.push(`%${q.userName}%`, `%${q.userName}%`); }
     if (q.phonenumber) { where += ` AND u.phonenumber LIKE ?`; params.push(`%${q.phonenumber}%`); }
     if (q.status) { where += ` AND u.status = ?`; params.push(q.status); }
 
@@ -157,6 +156,48 @@ export async function sysUserRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     );
 
     return { items, total, page: q.page, pageSize: q.pageSize };
+  });
+
+  // ── 简单列表（仅需登录，用于群组成员选择）──
+  app.get("/sys-user/simple-list", async (req, reply) => {
+    const sid = req.headers["x-session-id"] as string | undefined;
+    const user = await loadSessionUser(db, redis, sid);
+    if (!user) return reply.code(401).send({ error: "unauthorized" });
+
+    const q = ListQuery.parse(req.query ?? {});
+    const offset = (q.page - 1) * q.pageSize;
+
+    let where = `WHERE u.del_flag = '0' AND u.status = '0'`;
+    const params: unknown[] = [];
+    // 始终屏蔽 system 和 sysadmin（不影响其登录和系统操作）
+    where += ` AND u.user_name NOT IN ('system', 'sysadmin')`;
+    if (q.userName) {
+      where += ` AND (u.user_name LIKE ? OR u.nick_name LIKE ?)`;
+      params.push(`%${q.userName}%`, `%${q.userName}%`);
+    }
+
+    const [countRows] = await db.query(
+      `SELECT COUNT(*) AS total FROM sys_user u ${where}`,
+      params,
+    );
+    const total = Number((countRows as { total: number | string }[])[0].total);
+
+    const [rows] = await db.query(
+      `SELECT u.user_id, u.user_name, u.nick_name FROM sys_user u ${where} ORDER BY u.user_id LIMIT ? OFFSET ?`,
+      [...params, q.pageSize, offset],
+    );
+    const users = rows as { user_id: number; user_name: string; nick_name: string }[];
+
+    return {
+      items: users.map((r) => ({
+        userId: Number(r.user_id),
+        userName: r.user_name,
+        nickName: r.nick_name,
+      })),
+      total,
+      page: q.page,
+      pageSize: q.pageSize,
+    };
   });
 
   // ── 详情 ──

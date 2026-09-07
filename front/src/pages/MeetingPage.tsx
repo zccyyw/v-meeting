@@ -300,13 +300,21 @@ function MeetingPageInner() {
     };
   }, []);
 
-  // 获取邀请名单（成员面板或名单面板打开时加载）
+  // 获取邀请名单（成员面板打开时加载，peers 变化时刷新，定时刷新以更新在线状态）
   useEffect(() => {
     if ((!membersOpen && !inviteListOpen) || !meetingId) return;
+    // 立即加载一次
     void InvitationApi.list(Number(meetingId))
       .then((res) => setInvitations(res.items))
       .catch(() => { /* ignore */ });
-  }, [membersOpen, inviteListOpen, meetingId]);
+    // 定时刷新（每 5 秒），确保在线状态及时更新
+    const timer = window.setInterval(() => {
+      void InvitationApi.list(Number(meetingId))
+        .then((res) => setInvitations(res.items))
+        .catch(() => { /* ignore */ });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [membersOpen, inviteListOpen, meetingId, snap.peers.length]);
 
   useEffect(() => {
     if (!settingsOpen) return;

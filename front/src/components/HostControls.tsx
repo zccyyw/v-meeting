@@ -5,8 +5,7 @@ import {
   AlertOutlined,
   AudioOutlined,
   AudioMutedOutlined,
-  CheckCircleFilled,
-  MinusCircleFilled,
+  VideoCameraOutlined,
 } from "@ant-design/icons";
 import type { PeerInfo } from "@/media/room";
 import type { InvitationItem } from "@/api/client";
@@ -34,11 +33,17 @@ type MemberRow = {
   /** 在线时的 peerId（用于静音/踢出） */
   peerId?: string;
   micEnabled: boolean;
+  camEnabled: boolean;
   isSelf: boolean;
   handRaised: boolean;
-  /** 邀请状态 */
-  inviteStatus?: string;
 };
+
+/** 从显示名生成头像首字母 */
+function getInitials(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "?";
+  return trimmed.slice(0, 2).toUpperCase();
+}
 
 export function HostControls({
   isHost,
@@ -61,42 +66,38 @@ export function HostControls({
   // 2. 再从 invitations 中补充未上线的被邀请者
   // 3. 已上线排最上面
   const onlineMembers: MemberRow[] = [];
-  const onlineNames = new Set<string>();
+  const onlineNamesLower = new Set<string>();
 
-  // 已上线成员（先自己，再其他人）
   for (const p of peers) {
     const isSelf = p.peerId === selfPeerId;
-    onlineNames.add(p.displayName);
+    onlineNamesLower.add(p.displayName.trim().toLowerCase());
     onlineMembers.push({
       key: p.peerId,
       displayName: p.displayName,
       online: true,
       peerId: p.peerId,
       micEnabled: p.micEnabled,
+      camEnabled: p.camEnabled,
       isSelf,
       handRaised: p.handRaised,
     });
   }
 
-  // 未上线的被邀请者
   const offlineMembers: MemberRow[] = [];
   for (const inv of invitations) {
-    if (onlineNames.has(inv.displayName)) continue; // 已上线，跳过
-    const isAttended = inv.status === "attended";
+    // 大小写不敏感 + trim 匹配
+    if (onlineNamesLower.has(inv.displayName.trim().toLowerCase())) continue;
     offlineMembers.push({
       key: `inv-${inv.id}`,
       displayName: inv.displayName,
       online: false,
       micEnabled: false,
+      camEnabled: false,
       isSelf: false,
       handRaised: false,
-      inviteStatus: isAttended
-        ? t("meeting.inviteStatusAttended", "已入会")
-        : t("meeting.inviteStatusPending", "待入会"),
     });
   }
 
-  // 合并：已上线在前，未上线在后
   const allMembers = [...onlineMembers, ...offlineMembers];
 
   return (
@@ -131,45 +132,46 @@ export function HostControls({
           <ul className="waiting-list member-unified-list">
             {allMembers.map((m) => (
               <li key={m.key} className="member-row">
-                <span className="member-row-left">
-                  {/* 在线状态图标 */}
-                  {m.online ? (
-                    <CheckCircleFilled
-                      className="member-online-icon"
-                      style={{ color: "#52c41a", marginRight: 6 }}
-                      aria-label={t("meeting.inviteStatusInRoom", "在会议中")}
-                    />
-                  ) : (
-                    <MinusCircleFilled
-                      className="member-offline-icon"
-                      style={{ color: "#bfbfbf", marginRight: 6 }}
-                      aria-label={m.inviteStatus || t("meeting.inviteStatusPending", "待入会")}
-                    />
+                {/* 左侧：头像 + 状态小点 */}
+                <div className="member-avatar-wrap">
+                  <div
+                    className={`member-avatar${m.online ? "" : " is-offline"}`}
+                    aria-hidden
+                  >
+                    {getInitials(m.displayName)}
+                  </div>
+                  {/* 仿 QQ 状态小点：在线绿色，离线灰色 */}
+                  <span
+                    className={`member-status-dot${m.online ? " online" : " offline"}`}
+                    aria-label={m.online ? t("meeting.inviteStatusInRoom", "在会议中") : t("meeting.inviteStatusPending", "待入会")}
+                  />
+                </div>
+
+                {/* 中间：名称 + 麦克风/摄像头图标 */}
+                <div className="member-info">
+                  <div className="member-name-row">
+                    <span className="member-name">{m.displayName}</span>
+                    {m.isSelf && (
+                      <span className="member-self-tag">({t("meeting.me")})</span>
+                    )}
+                    {m.handRaised && (
+                      <AlertOutlined style={{ marginLeft: 4, color: "#faad14", fontSize: 13 }} aria-hidden />
+                    )}
+                  </div>
+                  {/* 麦克风/摄像头状态图标 */}
+                  {m.online && (
+                    <div className="member-media-icons">
+                      <span className={`member-media-icon ${m.micEnabled ? "on" : "off"}`}>
+                        {m.micEnabled ? <AudioOutlined /> : <AudioMutedOutlined />}
+                      </span>
+                      <span className={`member-media-icon ${m.camEnabled ? "on" : "off"}`}>
+                        <VideoCameraOutlined />
+                      </span>
+                    </div>
                   )}
-                  <span className="member-name">{m.displayName}</span>
-                  {m.isSelf && (
-                    <span className="member-self-tag" style={{ color: "#8c8c8c", fontSize: "0.75rem" }}>
-                      ({t("meeting.me")})
-                    </span>
-                  )}
-                  {m.handRaised && (
-                    <AlertOutlined style={{ marginLeft: 4, color: "#faad14" }} aria-hidden />
-                  )}
-                  {/* 麦克风状态 */}
-                  {m.online && !m.isSelf && (
-                    m.micEnabled ? (
-                      <AudioOutlined style={{ marginLeft: 4, fontSize: 14, color: "#52c41a" }} aria-label={t("meeting.mic")} />
-                    ) : (
-                      <AudioMutedOutlined style={{ marginLeft: 4, fontSize: 14, color: "#ff4d4f" }} aria-label={t("meeting.mute")} />
-                    )
-                  )}
-                  {!m.online && m.inviteStatus && (
-                    <span className="member-invite-status" style={{ color: "#8c8c8c", fontSize: "0.72rem", marginLeft: 4 }}>
-                      {m.inviteStatus}
-                    </span>
-                  )}
-                </span>
-                {/* 主持人操作按钮 */}
+                </div>
+
+                {/* 右侧：主持人操作按钮 */}
                 {isHost && m.online && !m.isSelf && m.peerId && (
                   <div className="waiting-actions member-actions">
                     <button

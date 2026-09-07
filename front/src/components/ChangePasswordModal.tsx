@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { App as AntApp, Alert, Form, Input, Modal } from "antd";
 import { AuthApi } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
+import { PasswordStrengthHint } from "@/components/PasswordStrengthHint";
 
 type Props = {
   open: boolean;
@@ -89,6 +90,11 @@ export function ChangePasswordModal({ open, onClose }: Props) {
             ]}
           >
             <Input.Password autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item shouldUpdate>
+            {({ getFieldValue }) => (
+              <PasswordStrengthHint password={getFieldValue("newPassword") || ""} />
+            )}
           </Form.Item>
           <Form.Item
             name="confirmPassword"
