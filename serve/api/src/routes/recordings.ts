@@ -5,9 +5,13 @@ import { loadSessionUser } from "../session-user.js";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { pipeline } from "node:stream/promises";
 
 const RECORDINGS_DIR =
   process.env.RECORDINGS_DIR ?? path.join(process.cwd(), "data", "recordings");
+
+/** 允许落盘的录制文件扩展名（其余一律按 .webm 处理），避免任意文件落盘 */
+const ALLOWED_EXT = new Set([".webm", ".mkv", ".mp4", ".ogg", ".mov"]);
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
@@ -33,29 +37,49 @@ export async function recordingRoutes(
 
     // 注意：不要先 req.file() 再 req.parts()，会把文件流消费掉导致永远落到 upload_failed
     const fields: Record<string, string> = {};
-    let fileBuf: Buffer | null = null;
+    let tmpPath: string | null = null;
+    let finalFilename = "";
+    let sizeBytes = 0;
     let uploadFilename = "recording.webm";
 
     try {
       for await (const part of req.parts()) {
         if (part.type === "file") {
           if (part.fieldname === "file") {
-            fileBuf = await part.toBuffer();
             uploadFilename = part.filename || uploadFilename;
+            const extRaw = path.extname(uploadFilename).toLowerCase();
+            const ext = ALLOWED_EXT.has(extRaw) ? extRaw : ".webm";
+            const id = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+            finalFilename = `${id}-${Date.now()}${ext}`;
+            // 流式落盘到 .part 临时文件，成功后再改名，失败不残留半成品
+            tmpPath = path.join(RECORDINGS_DIR, `${finalFilename}.part`);
+            const out = fs.createWriteStream(tmpPath, { flags: "wx" });
+            await pipeline(part.file, out);
+            sizeBytes = fs.statSync(tmpPath).size;
           } else {
             // 丢弃非预期文件字段，避免流卡住
-            await part.toBuffer();
+            for await (const _chunk of part.file) {
+              /* drain */
+            }
           }
         } else {
           fields[String(part.fieldname)] = String(part.value);
         }
       }
     } catch (err) {
+      // busboy 超过 fileSize 上限会以 LIMIT_FILE_SIZE 中断
+      const limitHit = (err as { code?: string })?.code === "LIMIT_FILE_SIZE";
+      if (tmpPath) {
+        await fs.promises.unlink(tmpPath).catch(() => {});
+      }
       console.error("parse multipart failed", err);
-      return reply.code(400).send({ error: "invalid_multipart" });
+      return reply.code(limitHit ? 413 : 400).send({
+        error: limitHit ? "file_too_large" : "invalid_multipart",
+      });
     }
 
-    if (!fileBuf || fileBuf.length === 0) {
+    if (!tmpPath || sizeBytes === 0) {
+      if (tmpPath) await fs.promises.unlink(tmpPath).catch(() => {});
       return reply.code(400).send({ error: "no_file" });
     }
 
@@ -63,12 +87,8 @@ export async function recordingRoutes(
       const title = safeTitle(fields.title || "未命名录制");
       const meetingId = fields.meetingId ? Number(fields.meetingId) : null;
       const durationMs = Number(fields.durationMs) || 0;
-      const ext = path.extname(uploadFilename) || ".webm";
-      const id = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-      const filename = `${id}-${Date.now()}${ext}`;
-      const storagePath = path.join(RECORDINGS_DIR, filename);
-      fs.writeFileSync(storagePath, fileBuf);
-      const sizeBytes = fs.statSync(storagePath).size;
+      const storagePath = path.join(RECORDINGS_DIR, finalFilename);
+      await fs.promises.rename(tmpPath, storagePath);
 
       const [result] = await db.query(
         `INSERT INTO recordings
@@ -80,7 +100,7 @@ export async function recordingRoutes(
           title,
           durationMs,
           sizeBytes,
-          filename,
+          finalFilename,
         ]
       );
       const recordingId = Number((result as ResultHeader).insertId);
@@ -92,6 +112,8 @@ export async function recordingRoutes(
         url: `/api/recordings/${recordingId}/download`,
       });
     } catch (err) {
+      // 清理可能残留的临时文件
+      await fs.promises.unlink(tmpPath).catch(() => {});
       console.error("upload recording failed", err);
       return reply.code(500).send({ error: "upload_failed" });
     }

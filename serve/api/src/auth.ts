@@ -19,3 +19,11 @@ export async function createSession(redis: Redis, userId: string | number) {
 export async function getSessionUserId(redis: Redis, sessionId: string) {
   return redis.get(`session:${sessionId}`);
 }
+
+/**
+ * 会话是否处于“强制修改密码”受限状态（密码过期后登录会打标记）。
+ * 受限期间除改密等少数接口外应拒绝访问。
+ */
+export async function isForceChangePassword(redis: Redis, sessionId: string) {
+  return (await redis.get(`session_force:${sessionId}`)) != null;
+}

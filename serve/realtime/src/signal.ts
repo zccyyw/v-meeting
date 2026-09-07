@@ -19,7 +19,7 @@ import type {
 } from "mediasoup/types";
 import { MeetingRoom } from "./room.js";
 import { createRouter, createWebRtcTransport } from "./mediasoup.js";
-import type { Db } from "./db.js";
+import { nowSql, type Db } from "./db.js";
 import { validateJoinToken } from "./auth-bridge.js";
 
 type PeerMedia = {
@@ -260,7 +260,6 @@ export function createSignalHandler(db: Db) {
         // 忽略
       }
     }
-
     state.room.remove(id);
     if (announce) {
       if (wasAdmitted) {
@@ -349,7 +348,7 @@ export function createSignalHandler(db: Db) {
     if (media.userId != null) {
       try {
         await db.query(
-          `UPDATE meeting_invitations SET status = 'attended', joined_at = NOW() WHERE meeting_id = ? AND user_id = ?`,
+          `UPDATE meeting_invitations SET status = 'attended', joined_at = ${nowSql(db)} WHERE meeting_id = ? AND user_id = ?`,
           [auth.meetingId, media.userId],
         );
       } catch {
@@ -427,7 +426,7 @@ export function createSignalHandler(db: Db) {
         if (targetMedia.userId != null) {
           try {
             await db.query(
-              `UPDATE meeting_invitations SET status = 'attended', joined_at = NOW() WHERE meeting_id = ? AND user_id = ?`,
+              `UPDATE meeting_invitations SET status = 'attended', joined_at = ${nowSql(db)} WHERE meeting_id = ? AND user_id = ?`,
               [state.room.meetingId, targetMedia.userId],
             );
           } catch {
@@ -557,7 +556,7 @@ export function createSignalHandler(db: Db) {
         state.room.ended = true;
         try {
           await db.query(
-            `UPDATE meetings SET status = 'ended', ended_at = NOW() WHERE id = ?`,
+            `UPDATE meetings SET status = 'ended', ended_at = ${nowSql(db)} WHERE id = ?`,
             [state.room.meetingId]
           );
         } catch (err) {

@@ -135,8 +135,8 @@ export async function authRoutes(app: FastifyInstance, db: Db, redis: Redis) {
       // 密码过期：创建临时受限会话，强制用户修改密码
       if (expired) {
         // 标记会话为 force_change_password，中间件将限制除 change-password 外的 API 访问
-        await redis.sadd(`session_force:${sessionId}`, "force_change_password");
-        await redis.expire(`session_force:${sessionId}`, 3600); // 1小时过期
+        // 用普通 string + EX（不用 sadd），兼容内存 Redis 单机模式
+        await redis.set(`session_force:${sessionId}`, "1", "EX", 3600); // 1小时过期
       }
 
       return {

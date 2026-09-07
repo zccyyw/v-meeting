@@ -236,6 +236,8 @@
     "kicked": "You were removed from the meeting",
     "ended": "Meeting ended",
     "connecting": "Joining meeting…",
+    "reconnecting": "Connection lost, reconnecting…",
+    "reconnectFailed": "Reconnect failed. Please go back and join again.",
     "confirmEnd": "End the meeting for everyone?",
     "confirmLeave": "Are you sure you want to leave the meeting?",
     "waitingTitle": "Waiting room",

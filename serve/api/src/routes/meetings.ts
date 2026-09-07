@@ -7,10 +7,53 @@ import type { Db } from "../db.js";
 import type { Redis } from "ioredis";
 import { hashPassword, verifyPassword } from "../auth.js";
 import { generateMeetingCode } from "../meeting-code.js";
-import { loadSessionUser } from "../session-user.js";
-import { nowSql } from "../sql-utils.js";
+import { loadSessionUser, type AppUser } from "../session-user.js";
+import { nowSql, insertIgnorePrefix, conflictSuffix } from "../sql-utils.js";
 
 const zDisplayName = z.string().min(1).max(64);
+
+/** 管理后台角色（超级管理员 + 三员），用于会议监控等管理接口的授权判断 */
+const MANAGER_ROLES = ["admin", "sys_admin", "auth_admin", "audit_admin"];
+
+function isManagerRole(user: Pick<AppUser, "roles">): boolean {
+  return MANAGER_ROLES.some((r) => user.roles.includes(r));
+}
+
+/**
+ * 会议访问授权：仅主持人或管理后台角色可进行会议级管理操作（查看/邀请名单等）。
+ * 内部校验会议是否存在。返回 true 放行；false 表示已发送 403/404 响应。
+ */
+async function assertMeetingManageAccess(
+  db: Db,
+  reply: { code: (n: number) => { send: (b: unknown) => unknown } },
+  user: AppUser,
+  meetingId: number,
+): Promise<boolean> {
+  if (isManagerRole(user)) {
+    // 管理后台角色仍需确认会议存在
+    const [check] = await db.query(
+      `SELECT id FROM meetings WHERE id = ? LIMIT 1`,
+      [meetingId],
+    );
+    if (!(check as any[])[0]) {
+      reply.code(404).send({ error: "not_found" });
+      return false;
+    }
+    return true;
+  }
+  const [rows] = await db.query(
+    `SELECT host_user_id FROM meetings WHERE id = ? LIMIT 1`,
+    [meetingId],
+  );
+  const m = (rows as any[])[0];
+  if (!m) {
+    reply.code(404).send({ error: "not_found" });
+    return false;
+  }
+  if (String(m.host_user_id) === String(user.id)) return true;
+  reply.code(403).send({ error: "forbidden" });
+  return false;
+}
 
 async function assertJoinPassword(
   m: { host_user_id: unknown; join_password_hash: string | null },
@@ -314,6 +357,8 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const sessionId = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sessionId);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
+    // 仅主持人 / 管理后台角色可查看邀请名单
+    if (!(await assertMeetingManageAccess(db, reply, user, meetingId))) return;
 
     try {
       const [rows] = await db.query(
@@ -349,10 +394,15 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const sessionId = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sessionId);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
+    // 仅主持人 / 管理后台角色可邀请他人入会
+    if (!(await assertMeetingManageAccess(db, reply, user, meetingId))) return;
 
     const body = (req.body as any) ?? {};
     const userIds: number[] = Array.isArray(body.userIds) ? body.userIds : [];
     const deptIds: number[] = Array.isArray(body.deptIds) ? body.deptIds : [];
+
+    const invitePrefix = insertIgnorePrefix(db); // INSERT OR IGNORE / INSERT IGNORE / INSERT INTO
+    const inviteSuffix = conflictSuffix(db, "meeting_id, user_id"); // PG: ON CONFLICT DO NOTHING
 
     let invited = 0;
     for (const uid of userIds) {
@@ -363,8 +413,8 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
         );
         const uName = (uRows as any[])[0]?.nick_name ?? `用户${uid}`;
         await db.query(
-          `INSERT IGNORE INTO meeting_invitations (meeting_id, user_id, display_name, status, invited_at)
-           VALUES (?, ?, ?, 'pending', NOW())`,
+          `${invitePrefix} INTO meeting_invitations (meeting_id, user_id, display_name, status, invited_at)
+           VALUES (?, ?, ?, 'pending', ${nowSql(db)}) ${inviteSuffix}`,
           [meetingId, uid, uName],
         );
         invited++;
@@ -379,8 +429,8 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
         );
         for (const u of dRows as any[]) {
           await db.query(
-            `INSERT IGNORE INTO meeting_invitations (meeting_id, user_id, dept_id, display_name, status, invited_at)
-             VALUES (?, ?, ?, ?, 'pending', NOW())`,
+            `${invitePrefix} INTO meeting_invitations (meeting_id, user_id, dept_id, display_name, status, invited_at)
+             VALUES (?, ?, ?, ?, 'pending', ${nowSql(db)}) ${inviteSuffix}`,
             [meetingId, u.user_id, did, u.nick_name],
           );
           invited++;
@@ -400,6 +450,8 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const sessionId = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sessionId);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
+    // 仅主持人 / 管理后台角色可查看参会者明细
+    if (!(await assertMeetingManageAccess(db, reply, user, meetingId))) return;
 
     // 查询已入会的邀请名单
     try {
@@ -458,6 +510,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const sessionId = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sessionId);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
+    if (!isManagerRole(user)) return reply.code(403).send({ error: "forbidden" });
 
     try {
       const [rows] = await db.query(
@@ -494,6 +547,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const sessionId = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sessionId);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
+    if (!isManagerRole(user)) return reply.code(403).send({ error: "forbidden" });
 
     try {
       const [rows] = await db.query(

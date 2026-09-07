@@ -1,9 +1,8 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import type { Db } from "../db.js";
 import type { Redis } from "ioredis";
 import { loadSessionUser } from "../session-user.js";
 import { nowSql } from "../sql-utils.js";
-import { getConfigInt } from "../config-cache.js";
 
 /**
  * 日志脱敏函数 — 记录前对 password 等敏感字段脱敏
@@ -23,50 +22,6 @@ function sanitizeParam(body: unknown): string {
   } catch {
     return "";
   }
-}
-export function logOperation(db: Db, title: string, businessType: number = 0) {
-  return async (req: FastifyRequest, reply: FastifyReply) => {
-    // 延迟记录到 onResponse 钩子，确保能拿到响应结果
-    const startTime = process.hrtime.bigint();
-    const sid = req.headers["x-session-id"] as string | undefined;
-
-    // 异步获取用户名（不阻塞请求）
-    let userName = "anonymous";
-    try {
-      if (sid) {
-        const user = await loadSessionUser(db, { get: async () => null } as unknown as Redis, sid);
-        if (user) userName = user.username;
-      }
-    } catch { /* ignore */ }
-
-    reply.raw.on("finish", () => {
-      const costNs = process.hrtime.bigint() - startTime;
-      const costMs = Number(costNs) / 1_000_000;
-      const statusCode = reply.statusCode;
-      const isSuccess = statusCode >= 200 && statusCode < 400;
-      const url = req.url;
-      const method = req.method;
-      const ip = req.ip;
-
-      // 截取请求参数（避免日志过长） + 脱敏
-      const param = sanitizeParam(req.body);
-
-      // 截取响应结果
-      const jsonResult = JSON.stringify({ code: statusCode });
-
-      let errorMsg = "";
-      if (!isSuccess) {
-        errorMsg = `HTTP ${statusCode}`;
-      }
-
-      // 异步写入日志（不阻塞响应）
-      db.query(
-        `INSERT INTO sys_oper_log (title, log_type, business_type, method, request_method, oper_url, oper_ip, oper_param, json_result, status, error_msg, oper_user_name, oper_time, cost_time)
-         VALUES (?, 'operation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${nowSql(db)}, ?)`,
-        [title, businessType, `${method} ${url}`, method, url, ip, param, jsonResult, isSuccess ? 0 : 1, errorMsg, userName, Math.round(costMs)],
-      ).catch(() => { /* 忽略日志写入失败 */ });
-    });
-  };
 }
 
 /**

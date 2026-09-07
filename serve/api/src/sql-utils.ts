@@ -1,16 +1,7 @@
 import type { Db } from "./db.js";
 
-/**
- * 返回当前时间戳 SQL，兼容 SQLite/MySQL/PostgreSQL
- * - SQLite:   datetime('now')
- * - MySQL:     NOW()
- * - PostgreSQL: CURRENT_TIMESTAMP
- */
-export function nowSql(db: Db): string {
-  if (db.driver === "sqlite") return "datetime('now')";
-  if (db.driver === "postgres") return "CURRENT_TIMESTAMP";
-  return "NOW()";
-}
+// nowSql 统一实现位于 @meeting/db（api 与 realtime 共用），此处保留导出位置
+export { nowSql } from "./db.js";
 
 /**
  * 返回 INSERT IGNORE 语法前缀，兼容 SQLite/MySQL/PostgreSQL

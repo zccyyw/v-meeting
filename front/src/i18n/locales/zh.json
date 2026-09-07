@@ -236,6 +236,8 @@
     "kicked": "已被移出会议",
     "ended": "会议已结束",
     "connecting": "正在加入会议…",
+    "reconnecting": "连接中断，正在重连…",
+    "reconnectFailed": "重连失败，请返回首页后重新加入会议。",
     "confirmEnd": "确定结束会议？所有人将被断开。",
     "confirmLeave": "确定离开会议？",
     "waitingTitle": "等候室",

@@ -117,6 +117,19 @@ export async function seedAdmin(db?: Db) {
   const useSysUser = await hasSysUser(db);
   const seeded: string[] = [];
 
+  // ── 防重置守卫：目标表已有用户时跳过播种 ──
+  // 历史问题：每次启动无条件执行 seed，把管理员改过的密码/停用的测试账号全部重置。
+  // 现在仅当表为空（首次部署）时播种；显式设 SEED_FORCE=1 可强制重播。
+  const seedTable = useSysUser ? "sys_user" : "users";
+  const [cntRows] = await db.query(`SELECT COUNT(*) AS cnt FROM ${seedTable}`);
+  const existingCount = Number((cntRows as { cnt?: number | string }[])[0]?.cnt ?? 0);
+  if (existingCount > 0 && process.env.SEED_FORCE !== "1") {
+    console.log(
+      `[seed] ${seedTable} 已有 ${existingCount} 个用户，跳过默认账号播种（SEED_FORCE=1 可强制）`,
+    );
+    return { seeded: [], skipped: true };
+  }
+
   if (useSysUser) {
     // ── 新表 sys_user（迁移后）──
 

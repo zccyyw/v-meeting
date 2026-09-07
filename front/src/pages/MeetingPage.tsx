@@ -649,7 +649,9 @@ function MeetingPageInner() {
       </header>
 
       <div className="meeting-stage">
-        {snap.error && <p className="error">{snap.error}</p>}
+        {snap.error && snap.error !== "reconnect_failed" && (
+          <p className="error">{snap.error}</p>
+        )}
 
         {snap.status === "kicked" && (
           <section className="panel meeting-ended">
@@ -657,6 +659,15 @@ function MeetingPageInner() {
             {snap.endedReason ? (
               <p className="muted">{snap.endedReason}</p>
             ) : null}
+            <button type="button" onClick={() => navigate("/")}>
+              {t("meeting.backHome")}
+            </button>
+          </section>
+        )}
+
+        {snap.status === "error" && snap.error === "reconnect_failed" && (
+          <section className="panel meeting-ended">
+            <h2>{t("meeting.reconnectFailed")}</h2>
             <button type="button" onClick={() => navigate("/")}>
               {t("meeting.backHome")}
             </button>
@@ -673,6 +684,14 @@ function MeetingPageInner() {
             >
               {t("meeting.inviteList", "名单")}
             </button>
+          </div>
+        )}
+
+        {snap.status === "reconnecting" && (
+          <div className="meeting-connecting-wrap">
+            <p className="muted meeting-connecting">
+              {t("meeting.reconnecting")}
+            </p>
           </div>
         )}
 

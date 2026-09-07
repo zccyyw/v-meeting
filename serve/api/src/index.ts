@@ -18,6 +18,7 @@ import { userApprovalRoutes } from "./routes/sys-user-approval.js";
 import { meetingAppRoutes } from "./routes/meeting-applications.js";
 import { meetingGroupRoutes } from "./routes/meeting-groups.js";
 import { getConfigInt, getConfigBool } from "./config-cache.js";
+import { isForceChangePassword } from "./auth.js";
 import { registerOperLogHook } from "./middleware/oper-log.js";
 import { cleanupExpiredLogs } from "./routes/sys-operlog.js";
 import { ZodError } from "zod";
@@ -58,6 +59,20 @@ await app.register(multipart, {
     files: 1,
   },
 });
+
+// ── 强制改密拦截：密码过期会话仅允许 /auth/me 与 /auth/change-password ──
+app.addHook("preHandler", async (req, reply) => {
+  const sid = req.headers["x-session-id"] as string | undefined;
+  if (!sid) return; // 无会话（公开接口 / 访客流程）不拦截
+  const url = req.url;
+  if (url.startsWith("/auth/change-password")) return;
+  if (url.startsWith("/auth/me")) return;
+  if (url.startsWith("/sys-config/public")) return;
+  if (await isForceChangePassword(redis, sid)) {
+    return reply.code(403).send({ error: "password_change_required" });
+  }
+});
+
 await authRoutes(app, db, redis);
 await meetingRoutes(app, db, redis);
 await recordingRoutes(app, db, redis);

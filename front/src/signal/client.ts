@@ -19,12 +19,20 @@ function resolveWsUrl(): string {
 const WS_URL = resolveWsUrl();
 
 export type MessageHandler = (msg: ServerMessage) => void;
+/** 非主动 close() 导致的连接断开回调（供上层实现自动重连） */
+export type UnexpectedCloseHandler = () => void;
 
 export class SignalClient {
   private ws: WebSocket | null = null;
   private handlers = new Set<MessageHandler>();
   /** 标记是否为主动关闭，防止 onerror 误报 */
   private closed = false;
+  private onUnexpectedClose: UnexpectedCloseHandler | null = null;
+
+  /** 注册“意外断开”回调（同一时刻只保留一个消费者）。 */
+  setUnexpectedCloseHandler(handler: UnexpectedCloseHandler): void {
+    this.onUnexpectedClose = handler;
+  }
 
   connect(): Promise<void> {
     if (this.ws?.readyState === WebSocket.OPEN) {
@@ -66,8 +74,20 @@ export class SignalClient {
         }
         const ws = new WebSocket(WS_URL);
         this.ws = ws;
-        ws.onopen = () => resolve();
+        // 连接超时保护：TCP/握手被网络黑洞拖住时主动断开，供上层重试
+        const connectTimer = setTimeout(() => {
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+        }, 12_000);
+        ws.onopen = () => {
+          clearTimeout(connectTimer);
+          resolve();
+        };
         ws.onerror = () => {
+          clearTimeout(connectTimer);
           if (this.closed) resolve();
           else reject(new Error("ws_connect_failed"));
         };
@@ -80,7 +100,10 @@ export class SignalClient {
           }
         };
         ws.onclose = () => {
+          clearTimeout(connectTimer);
           if (this.ws === ws) this.ws = null;
+          // 非主动关闭：通知上层（自动重连）
+          if (!this.closed) this.onUnexpectedClose?.();
         };
       });
     });

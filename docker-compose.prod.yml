@@ -7,21 +7,22 @@
 #   docker compose -f docker-compose.prod.yml -f docker-compose.postgres.yml --profile postgres --env-file .env up -d --build
 
 services:
+  # 数据库/缓存容器仅通过内部网络访问（不向宿主机发布端口）。
+  # 需要宿主机直连调试时再显式取消注释对应 ports。
   mysql:
     image: mysql:8.4
     profiles: ["mysql"]
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
       MYSQL_USER: ${MYSQL_USER:-meeting}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
-    ports:
-      - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     command: ["--character-set-server=utf8mb4"]
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      test: ["CMD-SHELL", "MYSQL_PWD='${MYSQL_ROOT_PASSWORD:-rootpass}' mysqladmin ping -h 127.0.0.1 -uroot"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -29,12 +30,11 @@ services:
   postgres:
     image: postgres:12-alpine
     profiles: ["postgres"]
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-meeting}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meetingpass}
       POSTGRES_DB: ${POSTGRES_DB:-meeting}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -43,14 +43,15 @@ services:
       timeout: 5s
       retries: 20
 
+  # Redis 存放登录会话等敏感数据：必须设密码、不对外发布端口。
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-meetingpass}"]
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD:-meetingpass}' ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -60,6 +61,7 @@ services:
       context: .
       dockerfile: serve/api/Dockerfile
     image: ${MEETING_API_IMAGE:-meeting-api:latest}
+    restart: unless-stopped
     environment:
       DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
       MYSQL_HOST: mysql
@@ -74,6 +76,7 @@ services:
       PGDATABASE: ${POSTGRES_DB:-meeting}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-meetingpass}
       API_PORT: 8080
       RECORDINGS_DIR: ${RECORDINGS_DIR:-/app/data/recordings}
     depends_on:
@@ -85,6 +88,12 @@ services:
       postgres:
         condition: service_healthy
         required: false
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     expose:
       - "8080"
     volumes:
@@ -95,6 +104,7 @@ services:
       context: .
       dockerfile: serve/realtime/Dockerfile
     image: ${MEETING_REALTIME_IMAGE:-meeting-realtime:latest}
+    restart: unless-stopped
     environment:
       DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
       MYSQL_HOST: mysql
@@ -119,6 +129,12 @@ services:
       postgres:
         condition: service_healthy
         required: false
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8082/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     ports:
       - "40000-40100:40000-40100/udp"
     expose:
@@ -136,15 +152,22 @@ services:
         VITE_APP_NAME: ${VITE_APP_NAME:-Meeting}
         VITE_APP_LOGO: ${VITE_APP_LOGO:-/favicon.svg}
     image: ${MEETING_WEB_IMAGE:-meeting-web:latest}
+    restart: unless-stopped
     # CentOS 7 (kernel 3.10) overlayfs pwrite() bug causes nginx PID write to
     # fail with EPERM. Mount /run as tmpfs to bypass the overlay filesystem.
     tmpfs:
       - /run
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     expose:
       - "80"
 
   caddy:
     image: caddy:2-alpine
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
@@ -154,9 +177,12 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      - api
-      - realtime
-      - web
+      api:
+        condition: service_healthy
+      realtime:
+        condition: service_healthy
+      web:
+        condition: service_healthy
 
 volumes:
   mysql-data:

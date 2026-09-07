@@ -32,6 +32,7 @@ export type ChatMessage = {
 export type MediaRoomStatus =
   | "idle"
   | "connecting"
+  | "reconnecting"
   | "waiting"
   | "joined"
   | "ended"
@@ -72,6 +73,8 @@ const VIDEO_ENCODINGS = [
   { rid: "r2", maxBitrate: 900_000 },
 ];
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export class MediaRoom {
   private readonly signal: SignalClient;
   private readonly token: string;
@@ -103,6 +106,8 @@ export class MediaRoom {
   private mediaReady = false;
   private closed = false;
   private pendingProducers: Extract<ServerMessage, { type: "newProducer" }>[] = [];
+  /** 是否正在自动重连（防止并发触发多条重连流程） */
+  private reconnecting = false;
 
   private status: MediaRoomStatus = "idle";
   private peerId: string | null = null;
@@ -136,6 +141,10 @@ export class MediaRoom {
     this.displayName = opts.displayName;
     if (opts.micEnabled != null) this.micEnabled = opts.micEnabled;
     if (opts.camEnabled != null) this.camEnabled = opts.camEnabled;
+    // WebSocket 意外断开时触发自动重连
+    this.signal.setUnexpectedCloseHandler(() => {
+      void this.handleDisconnect();
+    });
   }
 
   subscribe(listener: Listener): () => void {
@@ -179,6 +188,12 @@ export class MediaRoom {
     this.emit();
 
     await this.signal.connect();
+    // 防止重连循环重复订阅消息回调
+    if (this.closed) throw new Error("room_closed");
+    if (this.unsub) {
+      this.unsub();
+      this.unsub = null;
+    }
     this.unsub = this.signal.onMessage((msg) => this.onSignal(msg));
 
     this.signal.send({
@@ -482,6 +497,132 @@ export class MediaRoom {
     this.status = "ended";
     this.endedReason = "left";
     this.emit();
+  }
+
+  /**
+   * WebSocket 意外断开 → 清理媒体资源后按指数退避自动重加入会。
+   */
+  private async handleDisconnect(): Promise<void> {
+    if (this.closed || this.reconnecting) return;
+    // 仅在已入会 / 等候室中自动重连，其余状态由调用方处理
+    if (this.status !== "joined" && this.status !== "waiting") return;
+
+    this.reconnecting = true;
+    this.status = "reconnecting";
+    this.error = null;
+    this.endedReason = null;
+    this.emit();
+
+    // 释放 SFU/媒体资源（保留 closed=false、token、聊天记录与麦克风/摄像头意图）
+    this.teardownMedia();
+    this.rejectPending(new Error("connection_lost"));
+
+    const maxAttempts = 5;
+    for (let attempt = 1; attempt <= maxAttempts && !this.closed; attempt++) {
+      if (attempt > 1) {
+        await sleep(Math.min(1000 * 2 ** (attempt - 2), 8000));
+      }
+      if (this.closed) break;
+      try {
+        await this.join();
+        if (!this.closed) {
+          this.reconnecting = false;
+          this.error = null;
+          // 屏幕共享无法无人值守恢复（需要再次授权选择），重连后置为未共享
+          this.sharingScreen = false;
+        }
+        return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // 不可恢复的错误：终止自动重连
+        if (
+          msg.includes("ended") ||
+          msg.includes("invalid_token") ||
+          msg.includes("online_limit_reached") ||
+          msg.includes("kicked") ||
+          msg.includes("room_closed")
+        ) {
+          this.reconnecting = false;
+          this.status = "error";
+          this.error = msg;
+          this.emit();
+          return;
+        }
+        // 其余错误（网络抖动、服务未就绪等）按退避继续重试
+      }
+    }
+
+    this.reconnecting = false;
+    if (!this.closed) {
+      this.status = "error";
+      this.error = "reconnect_failed";
+      this.emit();
+    }
+  }
+
+  /** 释放 SFU/媒体资源，但不置 closed，以便后续自动重连复用本实例。 */
+  private teardownMedia(): void {
+    this.mediaReady = false;
+    this.device = null;
+
+    for (const c of this.consumers.values()) {
+      try {
+        c.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    this.consumers.clear();
+    this.consumerMeta.clear();
+
+    for (const p of [this.audioProducer, this.videoProducer, this.screenProducer]) {
+      if (p && !p.closed) {
+        try {
+          p.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    this.audioProducer = null;
+    this.videoProducer = null;
+    this.screenProducer = null;
+    this.sharingScreen = false;
+
+    for (const t of [this.sendTransport, this.recvTransport]) {
+      if (t && !t.closed) {
+        try {
+          t.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    this.sendTransport = null;
+    this.recvTransport = null;
+
+    if (this.localStream) {
+      for (const t of this.localStream.getTracks()) t.stop();
+      this.localStream = null;
+    }
+    if (this.localScreenStream) {
+      for (const t of this.localScreenStream.getTracks()) t.stop();
+      this.localScreenStream = null;
+    }
+    for (const stream of this.remoteStreams.values()) {
+      for (const t of stream.getTracks()) t.stop();
+    }
+    this.remoteStreams.clear();
+    for (const stream of this.screenStreams.values()) {
+      for (const t of stream.getTracks()) t.stop();
+    }
+    this.screenStreams.clear();
+    this.screenFocusPeerId = null;
+  }
+
+  private rejectPending(err: Error): void {
+    for (const entry of this.pending) entry.reject(err);
+    this.pending = [];
   }
 
   private emit(): void {
@@ -1046,6 +1187,7 @@ export class MediaRoom {
   private cleanup(): void {
     this.closed = true;
     this.mediaReady = false;
+    this.reconnecting = false;
 
     for (const c of this.consumers.values()) {
       try {

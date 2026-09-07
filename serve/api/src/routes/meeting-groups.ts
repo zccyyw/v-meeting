@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Db, ResultHeader } from "../db.js";
 import type { Redis } from "ioredis";
 import { loadSessionUser } from "../session-user.js";
-import { nowSql } from "../sql-utils.js";
+import { nowSql, insertIgnorePrefix, conflictSuffix } from "../sql-utils.js";
 import { isUniqueViolation } from "../db.js";
 import { generateMeetingCode } from "../meeting-code.js";
 
@@ -356,11 +356,13 @@ export async function meetingGroupRoutes(app: FastifyInstance, db: Db, redis: Re
       return reply.code(503).send({ error: "meeting_create_failed" });
     }
 
-    // 批量插入邀请名单
+    // 批量插入邀请名单（忽略重复，兼容三方言）
+    const invitePrefix = insertIgnorePrefix(db);
+    const inviteSuffix = conflictSuffix(db, "meeting_id, user_id");
     for (const m of members) {
       await db.query(
-        `INSERT INTO meeting_invitations (meeting_id, user_id, display_name, status, invited_at)
-         VALUES (?, ?, ?, 'pending', ${nowSql(db)})`,
+        `${invitePrefix} INTO meeting_invitations (meeting_id, user_id, display_name, status, invited_at)
+         VALUES (?, ?, ?, 'pending', ${nowSql(db)}) ${inviteSuffix}`,
         [meetingId, m.userId, m.displayName],
       );
     }
