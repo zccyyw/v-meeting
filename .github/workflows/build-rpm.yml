@@ -330,8 +330,13 @@ jobs:
         run: |
           echo "→ Building RPM for ${{ matrix.arch }} (version ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }})"
 
-          # 构建 Docker builder 镜像（内含 fpm + rpmbuild + 编译工具链）
+          # 构建 Docker builder 镜像（内含 fpm + rpmbuild + 编译工具链）。
+          # 注意：arm64 时 build 必须与下方 run 使用相同平台。若 build 不带
+          # --platform，会在 x64 runner 上产出 amd64 镜像，随后 docker run
+          # --platform linux/arm64 因平台不匹配而忽略本地镜像、转去 registry
+          # 拉取 meeting-rpm-builder → pull access denied (exit 125)。
           docker build \
+            ${{ matrix.arch == 'arm64' && '--platform linux/arm64' || '' }} \
             -t meeting-rpm-builder \
             -f deploy/rpm/Dockerfile.build \
             .
@@ -412,7 +417,10 @@ jobs:
           # 必须在此重建 meeting-rpm-builder。注意不要用 `|| true` 吞掉失败：
           # 镜像缺失会让下方 docker run 以 125 提前退出，且内部 `|| echo`
           # 兜不住，导致步骤直接变红。
+          # arm64 时 build 必须与下方 run 使用相同平台（--platform linux/arm64），
+          # 否则本地镜像平台不匹配导致 docker run 转去 registry 拉取而失败。
           docker build \
+            ${{ matrix.arch == 'arm64' && '--platform linux/arm64' || '' }} \
             -t meeting-rpm-builder \
             -f deploy/rpm/Dockerfile.build \
             .

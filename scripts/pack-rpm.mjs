@@ -189,6 +189,10 @@ if (noDocker) {
     "build",
     "-t", builderImage,
     "-f", dockerfile,
+    // arm64 交叉构建：build 必须与下方 run 使用相同平台，否则本地镜像平台
+    // 不匹配会让 docker run --platform linux/arm64 忽略本地镜像、转去
+    // registry 拉取 meeting-rpm-builder → pull access denied。
+    ...(arch === "arm64" ? ["--platform", "linux/arm64"] : []),
     "--build-arg", `BASE_IMAGE=${baseImage}`,
   ];
   if (aptMirror) {
