@@ -4,7 +4,7 @@
 # The project source is mounted at runtime (not baked into the image).
 #
 # Build args (all optional, for mirror configuration):
-#   BASE_IMAGE   – Docker base image (default: node:22-bullseye)
+#   BASE_IMAGE   – Docker base image (default: node:22-bookworm)
 #   APT_MIRROR   – apt mirror domain, e.g. mirrors.aliyun.com
 #   GEM_MIRROR   – RubyGems mirror URL, e.g. https://gems.ruby-china.com
 #   NPM_REGISTRY – npm registry URL, e.g. https://registry.npmmirror.com
@@ -14,13 +14,17 @@
 #
 #   # With China mirrors:
 #   docker build -t meeting-rpm-builder -f deploy/rpm/Dockerfile.build \
-#     --build-arg BASE_IMAGE=docker.m.daocloud.io/library/node:22-bullseye \
+#     --build-arg BASE_IMAGE=docker.m.daocloud.io/library/node:22-bookworm \
 #     --build-arg APT_MIRROR=mirrors.aliyun.com \
 #     --build-arg GEM_MIRROR=https://gems.ruby-china.com \
 #     --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
 #     .
 
-ARG BASE_IMAGE=node:22-bullseye
+# 注意：不要使用 node:22-bullseye —— Debian 11 已于 2024-08 停止常规安全支持，
+# deb.debian.org/debian-security 不再提供 bullseye 更新包，安装 ruby/python3-pip
+# 等依赖时会对旧安全版本报 404（如 libruby2.7_...deb11u6、python3-setuptools_...deb11u2）。
+# bookworm (Debian 12) 仍在支持期内，且与 serve/api、serve/realtime 的镜像一致。
+ARG BASE_IMAGE=node:22-bookworm
 FROM ${BASE_IMAGE}
 
 # ─── Configure apt mirror (optional) ───
@@ -37,11 +41,11 @@ RUN if [ -n "$APT_MIRROR" ]; then \
     fi
 
 # ─── Install Ruby, fpm, rpm, python(pip) and native build tools ───
-# node:22-bullseye (buildpack-deps full) already includes build-essential and
+# node:22-bookworm (buildpack-deps full) already includes build-essential and
 # python3, but NOT python3-pip — mediasoup's postinstall invokes
 #   python3 -m pip install --no-user --target ... invoke
-# so pip is mandatory. Bullseye's apt pip (20.3) predates `--no-user`
-# (requires pip >= 21.3), hence we upgrade pip right after install.
+# so pip is mandatory. (Bookworm ships pip 23.x, which supports --no-user;
+# we still upgrade to the latest for good measure.)
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 RUN apt-get update && apt-get install -y --no-install-recommends \

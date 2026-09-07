@@ -23,7 +23,7 @@
  *
  *   # Mirror configuration (for China / restricted networks):
  *   USE_CN_MIRROR  Set to "1" to auto-configure all China mirrors
- *   BASE_IMAGE     Docker base image (default: node:20-bullseye)
+ *   BASE_IMAGE     Docker base image (default: node:22-bookworm)
  *   APT_MIRROR     apt mirror domain, e.g. mirrors.aliyun.com
  *   NPM_REGISTRY   npm registry URL, e.g. https://registry.npmmirror.com
  *   NODE_MIRROR    Node.js download mirror, e.g. https://npmmirror.com/mirrors/node
@@ -67,7 +67,9 @@ const useCn = process.env.USE_CN_MIRROR === "1";
 
 const baseImage =
   process.env.BASE_IMAGE ||
-  (useCn ? "docker.m.daocloud.io/library/node:22-bullseye" : "node:22-bullseye");
+  (useCn
+    ? "docker.m.daocloud.io/library/node:22-bookworm"
+    : "node:22-bookworm");
 const aptMirror = process.env.APT_MIRROR || (useCn ? "mirrors.aliyun.com" : "");
 const npmRegistry =
   process.env.NPM_REGISTRY || (useCn ? "https://registry.npmmirror.com" : "");

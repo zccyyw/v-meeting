@@ -250,9 +250,8 @@ jobs:
               -v "meeting-native-build-modules-${{ matrix.arch }}:/workspace/node_modules" \
               -e PACK_NATIVE_FORCE=1 \
               -w /workspace \
-            node:22-bullseye bash -c "
+            node:22-bookworm bash -c "
               apt-get update && apt-get install -y python3 python3-pip python3-setuptools make g++ cmake --no-install-recommends
-              # bullseye apt pip 太旧（缺 --no-user），mediasoup postinstall 需要新 pip
               python3 -m pip install --no-input --upgrade pip
               npm ci --ignore-scripts
               export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
