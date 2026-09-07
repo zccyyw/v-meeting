@@ -251,7 +251,9 @@ jobs:
               -e PACK_NATIVE_FORCE=1 \
               -w /workspace \
             node:22-bullseye bash -c "
-              apt-get update && apt-get install -y python3 python3-pip make g++ cmake --no-install-recommends
+              apt-get update && apt-get install -y python3 python3-pip python3-setuptools make g++ cmake --no-install-recommends
+              # bullseye apt pip 太旧（缺 --no-user），mediasoup postinstall 需要新 pip
+              python3 -m pip install --no-input --upgrade pip
               npm ci --ignore-scripts
               export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
               export PIP_INDEX_URL='https://pypi.tuna.tsinghua.edu.cn/simple'
@@ -283,7 +285,8 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   rpm:
     needs: prepare
-    if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'rpm'
+    # deb job 依赖本 job 的 RPM 产物，因此"仅选 deb"时也必须先构建 rpm
+    if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'rpm' || needs.prepare.outputs.build_type == 'deb'
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
@@ -386,11 +389,14 @@ jobs:
       - name: Build DEB from RPM
         run: |
           echo "→ Converting RPM to DEB"
-          # 使用 Docker builder 镜像（已含 fpm）
+          # deb job 运行在全新 runner（独立 VM），没有 rpm job 构建的镜像，
+          # 必须在此重建 meeting-rpm-builder。注意不要用 `|| true` 吞掉失败：
+          # 镜像缺失会让下方 docker run 以 125 提前退出，且内部 `|| echo`
+          # 兜不住，导致步骤直接变红。
           docker build \
             -t meeting-rpm-builder \
             -f deploy/rpm/Dockerfile.build \
-            . 2>/dev/null || true
+            .
 
           mkdir -p dist/deb
 
@@ -409,8 +415,7 @@ jobs:
                   --iteration ${{ needs.prepare.outputs.release }} \
                   -p /output/meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.deb \
                   \$rpm_file && \
-                echo 'DEB conversion complete' || \
-                echo 'DEB conversion failed (non-critical)'"
+                echo 'DEB conversion complete'"
 
       - name: Upload DEB artifact
         uses: actions/upload-artifact@v4
@@ -418,7 +423,7 @@ jobs:
           name: meeting-deb-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
           path: dist/deb/meeting-*.deb
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error
 
   # ═══════════════════════════════════════════════════════════════════
   # 构建完成汇总
