@@ -1,169 +1,172 @@
-# 项目部署说明 - DEB 包
+# 项目部署说明文档
+# DEB 包部署
 
-适用于 **统信 UOS、中科方德（DEB 系）、Debian / Ubuntu** 等 DEB 系操作系统。
+## 一、服务器配置
 
-**核心特性**：内嵌 Node.js 运行时（目标机无需预装）、默认 SQLite + 内存 Redis（零外部依赖）、systemd 托管、`gateway.mjs` 内置 HTTPS、**不依赖任何 .sh 脚本**。
+| 配置项 | 最低配置 | 推荐配置 | 说明 |
+| --- | --- | --- | --- |
+| CPU | 4 核 | 8 核以上 | mediasoup 音视频转发需要一定算力 |
+| 内存 | 8 GB | 16 GB 以上 | 内存占用与并发会议数相关 |
+| 磁盘 | 100 GB | 200 GB 以上 | 系统 + 应用 + 数据库 + 录制文件存储 |
+| 网络 | 百兆 | 千兆以上 | WebRTC 音视频对带宽和延迟敏感 |
 
----
-
-## 一、服务器配置要求
-
-| 项目 | 要求 |
-| --- | --- |
-| CPU | 4 核及以上（推荐 8 核） |
-| 内存 | 8 GB 及以上（推荐 16 GB） |
-| 磁盘 | 50 GB 及以上（录制文件会持续占用） |
-| 操作系统 | 统信 UOS 20 / 中科方德（DEB 系）/ Debian 11+ / Ubuntu 20.04+ |
-| 依赖 | 无（内嵌 Node.js、默认 SQLite + 内存 Redis、证书生成纯 JS） |
+以上为 50 人以下并发会议的合理基线，更多并发请按线性增长评估。
 
 ## 二、操作系统与架构要求
 
-| 架构 | 安装包 | 典型 CPU |
+| 项目 | 要求 | 说明 |
 | --- | --- | --- |
-| x86_64 | `meeting-<ver>-<rel>_amd64.deb` | 海光、兆芯 |
-| aarch64 | `meeting-<ver>-<rel>_arm64.deb` | 鲲鹏、飞腾 |
+| 操作系统 | Linux（DEB 系） | 统信 UOS、中科方德（DEB 系）、Debian、Ubuntu 等 |
+| CPU 架构 | x86_64（海光/兆芯）或 aarch64（鲲鹏/飞腾） | 安装包架构必须与目标机 CPU 一致，跨架构无法安装 |
+| Node.js | 无需预装 | DEB 内嵌 Node.js 22 运行时（要求系统 glibc 2.28 及以上；不满足的系统请改用 Docker 镜像部署） |
+| Redis | 无需预装 | 默认使用进程内内存存储（REDIS_HOST=memory），单节点零依赖 |
+| 数据库 | 无需预装 | 默认 SQLite，数据文件在 /opt/meeting/data/meeting.sqlite；可选切换 MySQL 8 / PostgreSQL 12+ |
+| 管理方式 | systemd | 服务由 systemd 托管，单元文件安装到 /usr/lib/systemd/system/ |
 
-> ⚠️ **安装包架构必须与目标机 CPU 架构一致**，跨架构无法安装。
+DEB 包与 RPM 包内容一致：内嵌 Node.js、默认 SQLite + 内存 Redis 零外部依赖、不依赖任何 .sh 脚本、systemd 启动时自动执行数据库迁移，仅包格式与管理命令不同。
 
-## 三、端口要求
+## 三、开放端口
 
-| 端口 | 协议 | 用途 |
-| --- | --- | --- |
-| 8088 | TCP | 网关（Web + API + WebSocket 入口） |
-| 40000-41000 | UDP | WebRTC 媒体（可通过 `RTC_MIN_PORT` / `RTC_MAX_PORT` 调整） |
+| 端口 | 协议 | 用途 | 说明 |
+| --- | --- | --- | --- |
+| 8088 | TCP | Web 访问入口（内置网关，自动 HTTPS） | 可通过 GATEWAY_PORT 修改 |
+| 40000-41000 | UDP | WebRTC 音视频媒体 | 防火墙/安全组必须单独放行 |
+| 8080 / 8082 | TCP | API / 信令（内部端口） | 仅供本机内部访问，无需对外放行 |
 
-> 若部署在云平台，安全组需**单独放行 UDP 40000-41000 入方向**，否则能进会议但看不到对方、听不到声音。
+注意：WebRTC 音视频走 UDP 40000-41000，与 Web 访问的 TCP 端口是两套独立通路。云平台通常默认只放行 80/443，必须单独放行该 UDP 段入方向，否则会议能进入但看不到对方画面、听不到声音。
+
+放行示例（ufw）：
+
+```bash
+sudo ufw allow 8088/tcp
+sudo ufw allow 40000:41000/udp
+```
+
+连通性验证：部署后在浏览器打开会议页面，服务器上抓包确认 UDP 媒体流到达：
+
+```bash
+sudo tcpdump -i any -n 'udp and portrange 40000-41000'
+```
 
 ## 四、安装说明
 
-> 📦 安装包由 GitHub Actions 构建（推送 `v*` tag 自动产出 x64 + arm64 全部产物），从 Actions → Artifacts 下载 `meeting-deb-<arch>-<ver>-<rel>` 即可。
+### 步骤 1：安装 DEB 包
 
-### 4.1 首次安装
+将 DEB 安装包（meeting-<版本>-<发行号>.deb）拷贝到目标机后执行：
 
 ```bash
-# 1) 安装
-sudo dpkg -i meeting-0.0.8-1_amd64.deb
-# 若提示依赖缺失（一般不会出现）
+sudo dpkg -i meeting-<版本>-<发行号>.deb
+```
+
+若提示依赖缺失（一般不会出现，包已不带自动依赖）：
+
+```bash
 sudo apt-get install -f
+```
 
-# 2) 配置（交互式，推荐）
+安装过程自动完成：创建系统用户 meeting、部署文件到 /opt/meeting、安装 systemd 单元、创建 data/logs/certs 目录并设置属主、刷新 systemd。
+
+### 步骤 2：配置
+
+方式一，交互式配置（推荐）：
+
+```bash
 sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/configure.mjs
-# 交互引导：数据库 → Redis → WebRTC IP → 端口 → 证书 → 迁移 → 管理员 → 启动
+```
 
-# 或手动配置
+方式二，手动配置：
+
+```bash
 sudo cp /opt/meeting/conf/env.example /opt/meeting/conf/.env
 sudo vi /opt/meeting/conf/.env
 ```
 
-必改项：
+必改项：MEDIASOUP_ANNOUNCED_IP 设为客户端可达的服务器 IP（切勿填 127.0.0.1）。默认 DB_DRIVER=sqlite、REDIS_HOST=memory 即可零依赖运行；如需切换 MySQL 或 PostgreSQL，按 env.example 内注释填写连接参数，并提前建库。
 
-| 变量 | 示例 | 说明 |
-| --- | --- | --- |
-| `MEDIASOUP_ANNOUNCED_IP` | `10.0.0.10` | **客户端可达的服务器 IP**，切勿用 127.0.0.1 |
-| `DB_DRIVER` | `sqlite` | `sqlite`（默认）/ `mysql` / `postgres` |
-| `REDIS_HOST` | `memory` | `memory`（默认，单节点）/ `127.0.0.1` |
+### 步骤 3：生成证书（可选）
 
 ```bash
-# 3) 生成证书（可选，纯 JS 不依赖 OpenSSL）
 sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/gen-cert.mjs <服务器IP>
-# 信创环境推荐 CA 模式（ca.crt 导入客户端信任库）
-sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/gen-cert.mjs --ca <服务器IP>
+```
 
-# 4) 启动服务
+生成证书后网关自动启用 HTTPS（浏览器入口变为 https）。信创环境请使用 --ca 参数以 CA 签发模式生成根证书与服务器证书，并将 ca.crt 导入客户端浏览器/系统信任机构。
+
+### 步骤 4：启动服务
+
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now meeting-api meeting-realtime meeting-gateway
 ```
 
-安装时自动完成：创建 `meeting` 用户 → 部署 `/opt/meeting/` → 安装 systemd 单元 → 创建 `data/`、`logs/`、`certs/` → 设置属主 → `daemon-reload`。
+API 服务启动前会自动执行数据库迁移并写入默认账号，无需手动操作。
 
-> 💡 `meeting-api.service` 的 `ExecStartPre` 会在启动时**自动执行数据库迁移**、 `ExecStartPost` 自动写入管理员，无需手动操作。
+### 步骤 5：访问验证
 
-### 4.2 访问验证
-
-| 项 | 地址 |
-| --- | --- |
-| 浏览器入口 | `https://<服务器IP>:8088/`（有证书）或 `http://<服务器IP>:8088/` |
-| 健康检查 | `curl -k https://127.0.0.1:8088/api/healthz` |
-| 默认账号 | `admin / admin123` |
-
-### 4.3 服务管理
+浏览器打开 https://<服务器IP>:8088/（未生成证书则为 http），使用默认账号登录；或执行健康检查：
 
 ```bash
-sudo systemctl start|stop|restart meeting-api
-sudo systemctl start|stop|restart meeting-realtime
-sudo systemctl start|stop|restart meeting-gateway
-
-sudo systemctl status meeting-api meeting-realtime meeting-gateway
-
-# 实时日志
-sudo journalctl -u meeting-api -f
-# 或日志文件（标准输出与错误合并为同一文件）
-tail -f /opt/meeting/logs/*.log
+curl -k https://127.0.0.1:8088/api/healthz
 ```
 
-无 systemd 时（纯 Node.js）：
+## 五、升级说明
+
+升级前备份（必做）：
 
 ```bash
-sudo -u meeting /opt/meeting/runtime/bin/node /opt/meeting/bin/start-all.mjs
-sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/stop-all.mjs
-```
-
-## 五、默认账号说明
-
-| 账号 | 密码 | 角色 | 说明 |
-| --- | --- | --- | --- |
-| admin | admin123 | 超级管理员 | 全部权限 |
-| system | System@123 | 超级管理员 | 隐藏系统用户 |
-| sysadmin | Admin@123 | 系统管理员 | 首次登录提示修改密码 |
-| authadmin | Admin@123 | 授权管理员 | 会议/用户审批 |
-| auditadmin | Admin@123 | 审计管理员 | 仅查看日志 |
-| meeting | Admin@123 | 普通用户 | 首次登录提示修改密码 |
-
-> 生产环境部署后请立即修改所有默认密码。三员分立：系统管理员管用户但不能审批；授权管理员审批但不能直接操作用户；审计管理员仅查看日志。
-
-## 六、升级说明
-
-```bash
-# 0) 备份（必做）
 sudo cp /opt/meeting/conf/.env /opt/meeting/conf/.env.bak
-sudo cp /opt/meeting/data/meeting.sqlite ./meeting-$(date +%F).sqlite   # SQLite 场景
+sudo cp /opt/meeting/data/meeting.sqlite ./meeting-backup-$(date +%F).sqlite
+```
 
-# 1) 直接覆盖升级（保留 .env / data / certs）
-sudo dpkg -i meeting-0.0.9-1_amd64.deb
+执行升级：
 
-# 2) 重启服务（API 启动时自动迁移）
+```bash
+sudo dpkg -i meeting-<新版本>-<发行号>.deb
 sudo systemctl restart meeting-api meeting-realtime meeting-gateway
 ```
 
-> `dpkg -i` 覆盖安装会保留 `/opt/meeting/conf/.env`、`/opt/meeting/data/`、`/opt/meeting/certs/`，**无需手工执行迁移脚本**。
+直接覆盖升级，保留 /opt/meeting/conf/.env、data、certs；API 服务重启时自动执行数据库迁移，无需手动跑迁移脚本。数据库迁移通常不可逆，回滚请优先使用备份恢复。
 
-### 升级后验收
+升级后检查：健康检查返回正常、admin 可登录、创建快速会议可入会、预约会议提交后可审批并可发起、双人流媒体音视频正常、群组置顶正常。
 
-- [ ] `curl -k https://<IP>:8088/api/healthz` 返回 `{"ok":true}`
-- [ ] `admin` 可登录；快速会议可入会
-- [ ] 预约会议可提交申请，`authadmin` 审批通过后可发起
-- [ ] 屏幕共享全屏无无限嵌套（共享者本地不显示自己的共享预览）
-- [ ] 音视频、聊天、主持人管控正常
-- [ ] 日志正常写入 `/opt/meeting/logs/*.log`
-
-## 七、卸载说明
+## 六、卸载说明
 
 ```bash
-# 卸载（保留配置与数据）
 sudo dpkg -r meeting
-# 连同配置清除（谨慎）
-sudo dpkg -P meeting
+```
 
-# 如需彻底清理数据
+卸载保留配置与数据。如需连同配置一并清除：
+
+```bash
+sudo dpkg -P meeting
+```
+
+如需彻底清理数据（谨慎）：
+
+```bash
 sudo rm -rf /opt/meeting/data /opt/meeting/logs
 ```
 
-## 八、国产系统注意事项
+## 七、默认账号
 
-| 事项 | 说明 |
-| --- | --- |
-| systemd 版本 | 单元已兼容 **systemd 219**（麒麟 V10 SP1）：日志由服务内重定向写入 `/opt/meeting/logs/*.log` |
-| SELinux | 麒麟默认 `enforcing`，8088 端口需放行：`semanage port -a -t http_port_t -p tcp 8088` |
-| 防火墙 | `firewall-cmd --add-port=8088/tcp --add-port=40000-41000/udp --permanent && firewall-cmd --reload` |
-| 证书 | 内网用 `gen-cert.mjs --ca <IP>` 生成 CA 证书，`ca.crt` 导入客户端信任库 |
-| 浏览器 | 奇安信浏览器（涉密版）/ UOS 浏览器 / Chrome 100+ 均可；前端构建目标 ES2020 |
+| 账号 | 初始密码 | 角色 | 说明 |
+| --- | --- | --- | --- |
+| admin | admin123 | 超级管理员 | 全部权限 |
+| sysadmin | Admin@123 | 系统管理员 | 首次登录强制修改密码 |
+| authadmin | Admin@123 | 授权管理员 | 首次登录强制修改密码 |
+| auditadmin | Admin@123 | 审计管理员 | 首次登录强制修改密码 |
+| meeting | Admin@123 | 普通用户 | 首次登录强制修改密码 |
+
+三员分立原则：系统管理员管理用户但不能审批会议申请；授权管理员审批但不能直接操作用户；审计管理员仅查看审计日志。
+
+注意：生产环境部署后请立即修改全部默认密码；连续 5 次输错密码账号将锁定 60 秒。
+
+## 八、注意事项
+
+- 架构一致性：安装包架构（x86_64/aarch64）必须与目标机 CPU 一致。
+- glibc 版本：内嵌 Node.js 要求系统 glibc 2.28 及以上；不满足的系统请改用 Docker 镜像部署。
+- Node 命令路径：目标机无需安装 node，所有管理脚本使用完整路径 /opt/meeting/runtime/bin/node 执行。
+- systemd 兼容：服务单元已兼容 systemd 219，日志统一写入 /opt/meeting/logs/ 下文件。
+- SELinux：如开启 enforcing 模式，需放行网关端口：semanage port -a -t http_port_t -p tcp 8088。
+- 客户端浏览器：推荐奇安信浏览器（涉密版）、UOS 浏览器或 Chrome 100+；前端构建目标为 ES2020，兼容较老 Chromium 内核。
+- 会议无声音/无画面：绝大多数为 UDP 40000-41000 未放行，见"三、开放端口"抓包排查。
+- 证书信任：信创涉密浏览器不信任自签名证书，必须使用 CA 签发模式并导入根证书。

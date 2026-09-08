@@ -1,164 +1,148 @@
-# 项目部署说明 - 离线 Docker 镜像
+# 项目部署说明文档
+# 离线 Docker 镜像部署
 
-## 一、服务器配置要求
+## 一、服务器配置
 
 | 配置项 | 最低配置 | 推荐配置 | 说明 |
 | --- | --- | --- | --- |
-| 内存 | 8 GB | 16 GB 以上 | mediasoup 媒体处理和并发会议数决定内存占用 |
-| 磁盘 | 100 GB | 200 GB 以上 | 系统 + 应用 + 数据库 + 录制文件存储 |
-| CPU | 4 核 | 8 核以上 | mediasoup C++ worker 需要一定算力 |
+| CPU | 4 核 | 8 核以上 | mediasoup 音视频转发需要一定算力 |
+| 内存 | 8 GB | 16 GB 以上 | 含数据库、Redis 容器的整体内存占用 |
+| 磁盘 | 100 GB | 200 GB 以上 | 系统 + 镜像 + 数据卷 + 录制文件存储 |
 | 网络 | 百兆 | 千兆以上 | WebRTC 音视频对带宽和延迟敏感 |
+
+以上为 50 人以下并发会议的合理基线，更多并发请按线性增长评估。
 
 ## 二、操作系统与架构要求
 
 | 项目 | 要求 | 说明 |
 | --- | --- | --- |
-| 操作系统 | Linux | CentOS 7+、Ubuntu 20.04+、麒麟 V10、UOS、中科方德等；需安装 Docker 20+ |
-| CPU 架构 | x86_64 或 aarch64（鲲鹏/飞腾） | 构建机与目标机必须相同 CPU 架构；mediasoup 原生模块不可跨架构 |
-| Docker | 20+ + Compose v2.20+ | 目标机需预装 Docker |
-| 构建机 | 同架构 Linux + Docker + Node.js 20+ | 需联网，用于打包镜像 |
+| 操作系统 | Linux（含银河麒麟 V10、统信 UOS、中科方德等国产系统） | 容器内自带运行时与 glibc，与宿主系统版本解耦，麒麟 V10 SP1 亦可运行 |
+| CPU 架构 | x86_64（海光/兆芯）或 aarch64（鲲鹏/飞腾） | 镜像架构必须与目标机 CPU 一致；构建机也必须为同架构 |
+| Docker | 20 及以上 | 目标机仅需 docker load 与 docker-compose up，无需外网 |
+| Docker Compose | v2.20+ | 使用 include 指令 |
+| Node.js / 数据库 / Redis | 无需安装 | 全部内置在离线镜像中 |
 
-## 三、安装说明
+离线包由 GitHub Actions 自动构建（或同架构构建机执行 npm run pack:docker 产出），拷贝到目标机加载即可，全程无需访问 npm 网络。
 
-### 步骤 1 — 构建离线包（构建机，需联网与 Docker）
+## 三、开放端口
 
-构建机要求：与目标机相同 CPU 架构，Node.js 20+（运行打包脚本），Docker 20+。
-
-```bash
-npm run pack:docker
-# 产物：dist/docker/ 目录
-# ARM64（如鲲鹏、飞腾）构建：
-DOCKER_PLATFORM=linux/arm64 npm run pack:docker
-```
-
-产物内容：
-
-```
-dist/docker/
-├── meeting-app-<platform>-latest.tar      # 应用镜像（api/realtime/web）
-├── meeting-base-<platform>-latest.tar     # 基础镜像（mysql/pg/redis/caddy）
-├── docker-compose.yml                      # 编排文件
-├── docker-compose.yml
-├── Caddyfile
-├── .env.example
-├── load-images.sh                          # 一键加载镜像
-├── deploy/docker/gen-selfsigned.sh         # 证书生成脚本
-└── README.txt
-```
-
-### 步骤 2 — 目标机部署
-
-```bash
-# 拷贝整个 dist/docker/ 目录到目标机后
-cd dist/docker
-
-# 1) 加载全部镜像
-bash load-images.sh
-
-# 2) 配置环境
-cp .env.example .env
-vi .env                    # 改 MEDIASOUP_ANNOUNCED_IP、数据库密码等
-
-# 3) 生成证书（可选）
-# 自签证书（内网测试）
-bash deploy/docker/gen-selfsigned.sh <服务器IP>
-# 或 CA 签发证书（信创环境推荐）
-bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>
-
-# 4) 启动（默认 SQLite + 自动初始化）
-docker-compose up -d
-```
-
-> 离线包内的 compose 文件与源码完全一致，docker-compose up -d 命令无需任何额外参数。
-
-### 步骤 3 — 访问验证
-
-| 项 | 地址 |
-| --- | --- |
-| 浏览器入口 | https://<服务器IP>/ |
-| 默认账号 | admin / admin123（超级管理员）；另有三员账号见下方说明 |
-| 健康检查 | curl -k https://127.0.0.1/api/healthz |
-
-## 四、默认账号说明
-
-系统初始化时自动创建以下账号：
-
-| 账号 | 密码 | 角色 | 说明 |
+| 端口 | 协议 | 用途 | 说明 |
 | --- | --- | --- | --- |
-| admin | admin123 | 超级管理员 | 全部权限 |
-| system | System@123 | 超级管理员 | 隐藏系统用户 |
-| sysadmin | Admin@123 | 系统管理员 | 首次登录提示修改密码 |
-| authadmin | Admin@123 | 授权管理员 | 首次登录提示修改密码 |
-| auditadmin | Admin@123 | 审计管理员 | 首次登录提示修改密码 |
-| meeting | Admin@123 | 普通用户 | 首次登录提示修改密码 |
+| 80 / 443 | TCP | Web 访问入口（Caddy 反向代理，自动 HTTPS） | 浏览器访问入口 |
+| 40000-41000 | UDP | WebRTC 音视频媒体 | 防火墙/安全组必须单独放行 |
+| 8080 / 8081 / 8082 | TCP | API / Web / 信令（容器内部端口） | 经 Caddy 反代，无需对外放行 |
+| 3306 / 5432 / 6379 | TCP | 数据库 / Redis（容器内部端口） | 无需对外放行 |
 
-> 生产环境部署后请立即修改所有默认密码。
+注意：WebRTC 音视频走 UDP 40000-41000，与 Web 访问的 TCP 端口是两套独立通路。云平台通常默认只放行 80/443，必须单独放行该 UDP 段入方向，否则会议能进入但看不到对方画面、听不到声音。
 
-## 五、首次安装与升级说明
-
-> 📦 安装包由 GitHub Actions 构建（推送 `v*` tag 自动产出 x64 + arm64 全部产物）：从 Actions → Artifacts 下载 `meeting-docker-<arch>-<ver>-<rel>`，解压后即为本文的 `dist/docker/` 目录内容；也可在**同架构构建机**上执行 `npm run pack:docker` 自行打包。
-
-### 5.1 首次安装（汇总）
+连通性验证：部署后在浏览器打开会议页面，服务器上抓包确认 UDP 媒体流到达：
 
 ```bash
-# 1) 加载全部镜像
+sudo tcpdump -i any -n 'udp and portrange 40000-41000'
+```
+
+## 四、安装说明
+
+### 步骤 1：传输离线包
+
+将离线包目录（含应用镜像 tar、基础镜像 tar、docker-compose.yml、Caddyfile、.env.example、load-images.sh、证书脚本）整体拷贝到目标机。
+
+### 步骤 2：加载镜像
+
+```bash
+cd <离线包目录>
 bash load-images.sh
+```
 
-# 2) 配置环境
+### 步骤 3：配置环境
+
+```bash
 cp .env.example .env
-vi .env                      # 必改：MEDIASOUP_ANNOUNCED_IP=服务器IP；数据库密码等
+vi .env
+```
 
-# 3) 生成证书（可选，信创环境推荐 CA 模式）
-bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>
+必改项：MEDIASOUP_ANNOUNCED_IP 设为客户端可达的服务器 IP（切勿填 127.0.0.1）；COMPOSE_PROFILES 选择数据库类型（默认 sqlite 零依赖）；使用 postgres / mysql profile 时必须修改默认数据库密码。
 
-# 4) 启动（默认 SQLite + 自动初始化迁移与管理员）
+### 步骤 4：生成证书（可选）
+
+```bash
+bash deploy/docker/gen-selfsigned.sh <服务器IP或域名>
+```
+
+信创环境请使用 --ca 参数以 CA 签发模式生成根证书与服务器证书，并将 ca.crt 导入客户端浏览器/系统信任机构。
+
+### 步骤 5：启动与验证
+
+```bash
 docker-compose up -d
+```
 
-# 5) 验证
-docker-compose ps
+首次启动时 api 容器自动执行数据库迁移并写入默认账号。浏览器打开 https://<服务器IP>/，或执行健康检查：
+
+```bash
 curl -k https://127.0.0.1/api/healthz
 ```
 
-### 5.2 升级（汇总）
+## 五、升级说明
+
+升级前备份（必做）：备份 .env 与数据卷（SQLite 数据文件或数据库 dump）。
+
+升级步骤（构建机产出新离线包后）：
 
 ```bash
-# 0) 备份（推荐）
-cp .env .env.bak
-docker run --rm -v meeting-data:/data -v $(pwd)/backup:/backup alpine \
-  cp -a /data /backup/meeting-data-$(date +%Y%m%d)
-
-# 1) 获取新镜像包（构建机重新打包或从 Actions 下载）
-#    scp dist/docker/meeting-app-*.tar dist/docker/meeting-base-*.tar user@target:/tmp/
-
-# 2) 加载新镜像（自动覆盖同名旧镜像）
+# 1. 新离线包拷贝到目标机
+# 2. 加载新镜像
+cd <新离线包目录>
 bash load-images.sh
-
-# 3) 启动（自动迁移）
+# 3. 重启服务（沿用原目录的 .env，数据卷保留）
+cd <原部署目录>
 docker-compose up -d
 ```
 
-> `docker-compose up -d` 会自动用新镜像重建容器。`.env` 和数据卷保持不变，api 容器启动时**自动执行迁移与 seed**，无需手工操作。
+docker-compose up -d 自动用新镜像重建容器，.env 与数据卷保持不变，api 容器启动时自动执行数据库迁移。数据库迁移通常不可逆，回滚请优先使用备份恢复。
 
-### 5.3 升级后验收
-
-- [ ] `curl -k https://<IP>/api/healthz` 返回 `{"ok":true}`
-- [ ] `admin` 可登录；快速会议可入会
-- [ ] 预约会议提交后进入待审批，`authadmin` 审批通过可发起
-- [ ] 屏幕共享全屏无无限嵌套；「沉浸模式」可用
-- [ ] 音视频、聊天、主持人管控正常
-- [ ] 浏览器控制台无 502 / ws 错误；PWA 缓存已更新
+升级后检查：健康检查返回正常、admin 可登录、创建快速会议可入会、预约会议提交后可审批并可发起、双人流媒体音视频正常、群组置顶正常；如页面样式异常，清浏览器缓存强制刷新（PWA 缓存更新）。
 
 ## 六、卸载说明
 
 ```bash
-# 1. 停止并删除容器
+cd <部署目录>
 docker-compose down
-# 清数据卷（谨慎）
-docker-compose down -v
-
-# 2. 删除已加载的镜像
-docker rmi meeting-app:latest meeting-base:latest
-
-# 3. 清理构建缓存（可选）
-docker builder prune -f
 ```
+
+以上保留数据卷。彻底清理（含数据库与录制数据，谨慎）：
+
+```bash
+docker-compose down -v
+```
+
+删除已加载的镜像：
+
+```bash
+docker images | grep meeting
+docker rmi meeting-app:latest meeting-base:latest
+```
+
+## 七、默认账号
+
+| 账号 | 初始密码 | 角色 | 说明 |
+| --- | --- | --- | --- |
+| admin | admin123 | 超级管理员 | 全部权限 |
+| sysadmin | Admin@123 | 系统管理员 | 首次登录强制修改密码 |
+| authadmin | Admin@123 | 授权管理员 | 首次登录强制修改密码 |
+| auditadmin | Admin@123 | 审计管理员 | 首次登录强制修改密码 |
+| meeting | Admin@123 | 普通用户 | 首次登录强制修改密码 |
+
+三员分立原则：系统管理员管理用户但不能审批会议申请；授权管理员审批但不能直接操作用户；审计管理员仅查看审计日志。
+
+注意：生产环境部署后请立即修改全部默认密码；连续 5 次输错密码账号将锁定 60 秒。
+
+## 八、注意事项
+
+- 架构一致性：镜像架构（x86_64/aarch64）必须与目标机 CPU 一致，构建机也须同架构。
+- Docker 版本：麒麟/UOS 软件源的 docker.io 版本较旧，建议使用官方静态二进制安装 Docker 20+ 与 Compose v2。
+- npm 私服：构建机连淘宝 npm 镜像也不可达时，可在项目根放置 .npmrc 指向内网私服，或直接使用 CI 产物。
+- SELinux：如开启 enforcing 模式，需按系统策略放行容器端口映射。
+- 客户端浏览器：推荐奇安信浏览器（涉密版）、UOS 浏览器或 Chrome 100+。
+- 会议无声音/无画面：绝大多数为 UDP 40000-41000 未放行，见"三、开放端口"抓包排查；同时确认 MEDIASOUP_ANNOUNCED_IP 为客户端可达 IP。
+- PWA 缓存：升级后如页面异常，请清除浏览器缓存或强制刷新。

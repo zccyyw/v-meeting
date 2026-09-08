@@ -47,7 +47,8 @@ function parseMd(md) {
     }
     // Headings
     if (line.startsWith("# ")) {
-      paras.push(new Paragraph({ text: line.slice(2).trim(), heading: HeadingLevel.HEADING_1, spacing: { before: 240, after: 120 } }));
+      // 标题 1：主标题与副标题均居中（格式要求）
+      paras.push(new Paragraph({ text: line.slice(2).trim(), heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER, spacing: { before: 240, after: 120 } }));
       i++; continue;
     }
     if (line.startsWith("## ")) {
