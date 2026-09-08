@@ -56,6 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ruby \
       ruby-dev \
       rpm \
+      cpio \
       curl \
       ca-certificates \
       python3 \
