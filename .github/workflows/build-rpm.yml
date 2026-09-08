@@ -139,8 +139,10 @@ jobs:
 
       - name: Build mediasoup worker
         run: |
-          export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
-          export PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+          # 优先下载官方预编译 worker（x64 原生 runner 也可秒级完成），
+          # 失败自动回退本地编译；runner 位于境外，pip 源文件使用官方源。
+          echo "→ prefer mediasoup-worker prebuilt download (fallback: local build)"
+          export PIP_INDEX_URL="https://pypi.org/simple"
           GHPROXY="https://gh-proxy.com"
           if [ -d node_modules/mediasoup/worker/subprojects ]; then
             node ./serve/realtime/patch-mediasoup-wrap.cjs "$GHPROXY"
@@ -233,14 +235,11 @@ jobs:
 
       - name: Build mediasoup worker
         run: |
-          # arm64 优先下载官方预编译 worker（秒级，失败自动回退本地编译）；
-          # x64 保持原行为：本地编译（CN 网络预编译下载被墙故 skip）。
-          if [ "${{ matrix.arch }}" != "arm64" ]; then
-            export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
-          else
-            echo "→ arm64: prefer mediasoup-worker prebuilt download (fallback: local build)"
-          fi
-          export PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+          # 默认优先下载官方预编译 worker（x64/arm64 均有 kernel6 产物，秒级）；
+          # 失败自动回退本地编译。runner 位于境外，清华 PyPI 不可达，
+          # 故 pip 源使用官方 PyPI（仅回退编译时才会用到）。
+          echo "→ prefer mediasoup-worker prebuilt download (fallback: local build)"
+          export PIP_INDEX_URL="https://pypi.org/simple"
           GHPROXY="https://gh-proxy.com"
           if [ -d node_modules/mediasoup/worker/subprojects ]; then
             node ./serve/realtime/patch-mediasoup-wrap.cjs "$GHPROXY"

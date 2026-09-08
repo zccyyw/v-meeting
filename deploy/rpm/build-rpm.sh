@@ -93,23 +93,21 @@ else
 fi
 
 # ─── Build project ───
-# mediasoup worker 获取策略：
-#   x64  → 本地编译（原行为，已验证可行；CN 网络预编译下载被墙故 skip）
-#   arm64 → 优先下载官方预编译 worker（GitHub Actions runner 直连 GitHub，
-#          下载秒级），下载失败自动回退本地编译。
-#          原因：arm64 走 qemu 模拟，本地编译 C++ worker 耗时数小时，
-#          两次编译（workspace + staging）会超过 GitHub Actions 单 job
-#          6 小时上限，导致 job 被取消（"The operation was canceled."）。
-#          mediasoup postinstall 在未设置 SKIP 时优先下载 prebuilt，
-#          404/校验失败自动回退编译，行为安全。
-if [ "$TARGET_ARCH" = "arm64" ]; then
-  unset MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD
-  echo "→ arm64: mediasoup worker prefers prebuilt download (fallback: local build)"
-else
+# mediasoup worker 获取策略：默认优先下载官方预编译二进制（x64/arm64 均有
+# kernel6 发布产物，秒级完成）；下载/校验失败自动回退本地编译。
+# 本地编译依赖 pip 安装 meson/ninja/invoke，而 CI runner 位于境外、
+# 清华 PyPI 镜像不可达（会报 "No matching distribution found for invoke"），
+# 因此默认不再强制本地编译。国内网络需要强制本地编译时：
+#   BUILD_WORKER_LOCALLY=1 ... npm run pack:rpm
+#   PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple ...（默认镜像）
+if [ "${BUILD_WORKER_LOCALLY:-}" = "1" ]; then
   export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
-  echo "→ x64: mediasoup worker builds locally (prebuilt download skipped)"
+  echo "→ mediasoup worker: local build requested"
+else
+  unset MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD
+  echo "→ mediasoup worker: prefer prebuilt download (fallback: local build)"
 fi
-export PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
+export PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.org/simple}"
 GHPROXY="${GHPROXY:-https://gh-proxy.com}"
 
 npm install --no-audit --no-fund --ignore-scripts

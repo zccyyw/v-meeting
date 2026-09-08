@@ -1,17 +1,16 @@
 FROM node:22-bookworm AS deps
 WORKDIR /app
-# mediasoup on old kernels (e.g. CentOS 7, kernel 3.10): no prebuilt worker
-# exists for kernel<6 in mediasoup 3.22.0, so we MUST build locally. Local build
-# needs pip (meson/ninja/invoke) + libuv source + WrapDB patch, all of which are
-# blocked/timeout on CN networks. We work around it by:
-#   1) Tsinghua PyPI mirror for pip packages (meson/ninja/invoke)
-#   2) --ignore-scripts so mediasoup postinstall doesn't run before we patch it
-#   3) rewrite libuv.wrap URLs to gh-proxy + GitHub wrapdb releases (reachable)
-#   4) run mediasoup postinstall manually to trigger local C++ build
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+# mediasoup worker 获取策略：
+#   默认优先下载官方预编译二进制（秒级；x64/arm64 均有 kernel6 发布产物）；
+#   下载/校验失败时自动回退本地 C++ 编译（需 pip 安装 meson/ninja/invoke）。
+# 本地编译在 qemu 下耗时数小时且依赖 PyPI，因此默认关闭。需要时显式开启：
+#   --build-arg SKIP_WORKER_PREBUILT=true
+#   --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+# 另：低内核（kernel<6，如 CentOS 7）无对应预编译产物，也会自动回退本地编译。
+# 默认官方 PyPI：CI（境外 runner）可直接访问；国内网络按上面方式覆盖。
+ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG GHPROXY=https://gh-proxy.com
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
-ENV MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -43,17 +42,19 @@ RUN npm ci --ignore-scripts -w @meeting/shared -w @meeting/db -w @meeting/realti
 # Patch mediasoup's meson wrap files to use gh-proxy mirror, then build worker.
 COPY serve/realtime/patch-mediasoup-wrap.cjs ./patch-mediasoup-wrap.cjs
 ENV PYTHON=/opt/mediasoup-venv/bin/python
-# TARGETPLATFORM 由 buildx 自动注入：arm64 交叉构建（qemu 模拟）时本地编译
-# worker 耗时数小时，改为优先下载官方预编译 worker（下载/校验失败自动回退
-# 本地编译）；x64（含 CN 网络本地构建）保持原行为——跳过预编译下载。
-ARG TARGETPLATFORM
+# 默认优先下载官方预编译 worker（秒级，x64/arm64 均有对应二进制）；
+# 本地编译在 qemu 下需数小时、且依赖 pip 安装 invoke，仅作为下载失败时的
+# 自动回退路径。国内网络无法访问 GitHub Releases 时显式开启本地编译：
+#   --build-arg SKIP_WORKER_PREBUILT=true
+ARG SKIP_WORKER_PREBUILT=false
 RUN node ./patch-mediasoup-wrap.cjs ${GHPROXY} \
   && cd node_modules/mediasoup \
-  && if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
-       echo "→ arm64: prefer mediasoup-worker prebuilt download"; \
-       unset MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD; \
-     else \
+  && if [ "${SKIP_WORKER_PREBUILT}" = "true" ]; then \
+       echo "→ local mediasoup-worker build requested"; \
        export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true; \
+     else \
+       echo "→ prefer mediasoup-worker prebuilt download"; \
+       unset MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD; \
      fi \
   && node npm-scripts.mjs postinstall \
   && cd /app && npm rebuild better-sqlite3
