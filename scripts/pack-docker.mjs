@@ -94,12 +94,9 @@ for (const base of baseImages) {
 const baseTar = `meeting-base-${platformSlug}-${tag}.tar`;
 run("docker", ["save", "-o", join(out, baseTar), ...baseImages]);
 
-// 复制 compose 编排文件与配套资源，使离线包可独立 docker compose up
-const composeFiles = [
-  "docker-compose.yml",
-  "docker-compose.prod.yml",
-  "docker-compose.postgres.yml",
-];
+// 复制 compose 编排文件与配套资源，使离线包可独立 docker-compose up
+// 已合并为单一 docker-compose.yml（profiles 控制数据库，不再有 prod/postgres 分文件）
+const composeFiles = ["docker-compose.yml"];
 for (const f of composeFiles) {
   if (existsSync(join(root, f))) {
     copyFileSync(join(root, f), join(out, f));
@@ -145,7 +142,7 @@ writeFileSync(
     '  echo "-> docker load -i $tar"',
     '  docker load -i "$DIR/$tar"',
     "done",
-    'echo "OK: 全部镜像已加载，执行 docker compose up -d 启动"',
+    'echo "OK: 全部镜像已加载，执行 docker-compose up -d 启动"',
     "",
   ].join("\n"),
 );
@@ -168,13 +165,13 @@ writeFileSync(
     "  1. bash load-images.sh              # 加载全部镜像",
     "  2. cp .env.example .env && vi .env   # 改 MEDIASOUP_ANNOUNCED_IP 等",
     "  3. bash deploy/docker/gen-selfsigned.sh <服务器IP>  # 生成自签证书（可选）",
-    "  4. docker compose up -d              # 启动（默认 SQLite + 自动初始化）",
+    "  4. docker-compose up -d              # 启动（默认 SQLite + 自动初始化）",
     "",
     "切 PostgreSQL/MySQL：在 .env 设 COMPOSE_PROFILES=postgres 或 mysql（DB_DRIVER 自动跟随）",
     "默认 SQLite 无需独立数据库容器，数据存于 meeting-data volume",
     "",
-    "停止：docker compose down",
-    "重建：docker compose up -d --build",
+    "停止：docker-compose down",
+    "重建：docker-compose up -d --build",
     "",
     `Docs: docs/项目打包与部署说明.md`,
     "",

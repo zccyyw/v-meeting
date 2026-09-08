@@ -52,8 +52,10 @@ export async function getWorker() {
     const mediasoup = await loadMediasoup();
     worker = await mediasoup.createWorker({
       logLevel: "warn",
+      // 默认 1000 个端口：每人 2 个 transport（send/recv），
+      // 100 个端口仅够约 50 并发参会者，重连期旧 transport 未释放会更快耗尽。
       rtcMinPort: Number(process.env.RTC_MIN_PORT ?? 40000),
-      rtcMaxPort: Number(process.env.RTC_MAX_PORT ?? 40100),
+      rtcMaxPort: Number(process.env.RTC_MAX_PORT ?? 41000),
     });
     worker.on("died", () => {
       console.error("mediasoup worker died");

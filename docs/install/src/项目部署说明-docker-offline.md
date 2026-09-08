@@ -38,7 +38,7 @@ dist/docker/
 ├── meeting-app-<platform>-latest.tar      # 应用镜像（api/realtime/web）
 ├── meeting-base-<platform>-latest.tar     # 基础镜像（mysql/pg/redis/caddy）
 ├── docker-compose.yml                      # 编排文件
-├── docker-compose.prod.yml
+├── docker-compose.yml
 ├── Caddyfile
 ├── .env.example
 ├── load-images.sh                          # 一键加载镜像
@@ -86,12 +86,11 @@ docker-compose up -d
 | 账号 | 密码 | 角色 | 说明 |
 | --- | --- | --- | --- |
 | admin | admin123 | 超级管理员 | 全部权限 |
-| system | system123 | 超级管理员 | 隐藏系统用户 |
+| system | System@123 | 超级管理员 | 隐藏系统用户 |
 | sysadmin | Admin@123 | 系统管理员 | 首次登录提示修改密码 |
 | authadmin | Admin@123 | 授权管理员 | 首次登录提示修改密码 |
 | auditadmin | Admin@123 | 审计管理员 | 首次登录提示修改密码 |
 | meeting | Admin@123 | 普通用户 | 首次登录提示修改密码 |
-| test1-test5 | 123456 | 普通用户 | 测试用户 |
 
 > 生产环境部署后请立即修改所有默认密码。
 
@@ -113,10 +112,10 @@ vi .env                      # 必改：MEDIASOUP_ANNOUNCED_IP=服务器IP；数
 bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>
 
 # 4) 启动（默认 SQLite + 自动初始化迁移与管理员）
-docker compose up -d
+docker-compose up -d
 
 # 5) 验证
-docker compose ps
+docker-compose ps
 curl -k https://127.0.0.1/api/healthz
 ```
 
@@ -135,10 +134,10 @@ docker run --rm -v meeting-data:/data -v $(pwd)/backup:/backup alpine \
 bash load-images.sh
 
 # 3) 启动（自动迁移）
-docker compose up -d
+docker-compose up -d
 ```
 
-> `docker compose up -d` 会自动用新镜像重建容器。`.env` 和数据卷保持不变，api 容器启动时**自动执行迁移与 seed**，无需手工操作。
+> `docker-compose up -d` 会自动用新镜像重建容器。`.env` 和数据卷保持不变，api 容器启动时**自动执行迁移与 seed**，无需手工操作。
 
 ### 5.3 升级后验收
 

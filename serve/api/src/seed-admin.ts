@@ -4,14 +4,21 @@ import { createPool, type Db } from "./db.js";
 import { hashPassword } from "./auth.js";
 import { hasSysUser } from "./sql-utils.js";
 
-/** 默认测试用户列表（密码 123456，普通角色 role_id=2） */
-const TEST_USERS = [
-  { username: "test1", nickName: "测试用户1" },
-  { username: "test2", nickName: "测试用户2" },
-  { username: "test3", nickName: "测试用户3" },
-  { username: "test4", nickName: "测试用户4" },
-  { username: "test5", nickName: "测试用户5" },
-];
+/**
+ * 测试用户列表（密码 123456，普通角色 role_id=2）。
+ * 生产交付包不再创建测试账号（弱口令 + 无必要），此处保持为空数组；
+ * 本地开发需要时自行添加，或设 SEED_TEST_USERS=1 配合下方开关。
+ */
+const TEST_USERS: { username: string; nickName: string }[] =
+  process.env.SEED_TEST_USERS === "1"
+    ? [
+        { username: "test1", nickName: "测试用户1" },
+        { username: "test2", nickName: "测试用户2" },
+        { username: "test3", nickName: "测试用户3" },
+        { username: "test4", nickName: "测试用户4" },
+        { username: "test5", nickName: "测试用户5" },
+      ]
+    : [];
 
 /**
  * 三员 + 普通用户默认账号（密码 Admin@123，首次登录提示修改密码）。
@@ -138,9 +145,9 @@ export async function seedAdmin(db?: Db) {
     await seedUserRole(db, "admin", 1);
     seeded.push("admin");
 
-    // system 隐藏用户（超级管理员 role_id=1，密码 system123）
+    // system 隐藏用户（超级管理员 role_id=1，密码 System@123）
     // 用于系统级操作，对非 system 用户不可见
-    const systemHash = await hashPassword("system123");
+    const systemHash = await hashPassword("System@123");
     await seedSysUser(db, "system", systemHash, "系统用户");
     await seedUserRole(db, "system", 1);
     seeded.push("system");
@@ -194,12 +201,11 @@ if (isMain) {
     .then((r) => {
       console.log(`seeded ${r.seeded.length} users: ${r.seeded.join(", ")}`);
       console.log(`  admin       / admin123   (超级管理员)`);
-      console.log(`  system      / system123  (系统隐藏用户)`);
+      console.log(`  system      / System@123 (系统隐藏用户)`);
       console.log(`  sysadmin    / Admin@123  (系统管理员)`);
       console.log(`  authadmin   / Admin@123  (授权管理员)`);
       console.log(`  auditadmin  / Admin@123  (审计管理员)`);
       console.log(`  meeting     / Admin@123  (普通用户)`);
-      console.log(`  test1-5     / 123456     (测试用户)`);
       process.exit(0);
     })
     .catch((err) => {

@@ -32,7 +32,7 @@ meeting/
 │   └── native/            # 离线包：install.sh + systemd + gateway
 ├── scripts/               # 打包与开发脚本
 ├── docs/                  # 项目文档
-├── docker-compose.yml              # 默认入口（docker compose up 直接读）
+├── docker-compose.yml              # 默认入口（docker-compose up 直接读）
 ├── docker-compose.prod.yml         # 生产编排（SQLite/MySQL/PG/Redis/api/realtime/web/caddy）
 ├── docker-compose.postgres.yml     # PostgreSQL overlay（旧式 -f 调用可选）
 ├── Caddyfile                      # 生产反向代理配置
@@ -88,7 +88,7 @@ npm run dev
 | 前端 (Vite) | 8081 | `FRONT_PORT` |
 | API (Fastify) | 8080 | `API_PORT` |
 | 信令 (WebSocket) | 8082 | `WS_PORT` |
-| mediasoup RTC | 40000-40100/udp | `RTC_MIN_PORT` / `RTC_MAX_PORT` |
+| mediasoup RTC | 40000-41000/udp | `RTC_MIN_PORT` / `RTC_MAX_PORT` |
 
 ## 功能清单
 
@@ -151,7 +151,7 @@ npm run dev
 ```bash
 cp .env.production.example .env
 # 编辑 .env，至少改 MEDIASOUP_ANNOUNCED_IP 为服务器公网/局域网 IP
-docker compose up -d --build
+docker-compose up -d --build
 # 访问 https://localhost
 ```
 
@@ -234,7 +234,7 @@ sudo ./install.sh
 # ── Docker 离线包（.tar 镜像）──
 bash load-images.sh
 cp .env.example .env && vi .env
-docker compose up -d
+docker-compose up -d
 
 # ── 配置（RPM/DEB/Native 通用）──
 sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/configure.mjs
@@ -304,11 +304,10 @@ NO_DOCKER=1 USE_CN_MIRROR=1 USE_SYSTEM_NODE=1 npm run pack:rpm
 | 用户名 | 密码 | 昵称 | 角色 | 说明 |
 |--------|------|------|------|------|
 | `admin` | `admin123` | 管理员 | 超级管理员 (role_id=1) | 拥有所有权限，首次登录提示修改密码 |
-| `system` | `system123` | 系统用户 | 超级管理员 (role_id=1) | 隐藏用户，对非 system 用户不可见，用于系统级操作 |
+| `system` | `System@123` | 系统用户 | 超级管理员 (role_id=1) | 隐藏用户，对非 system 用户不可见，用于系统级操作 |
 | `sysadmin` | `Admin@123` | 系统管理员 | 系统管理员 (role_id=3) | 三员之一，管理系统配置 |
 | `authadmin` | `Admin@123` | 授权管理员 | 授权管理员 (role_id=4) | 三员之一，管理用户审批 |
 | `auditadmin` | `Admin@123` | 审计管理员 | 审计管理员 (role_id=5) | 三员之一，管理操作审计 |
 | `meeting` | `Admin@123` | 普通用户 | 普通用户 (role_id=2) | 仅会议功能，无管理后台权限 |
-| `test1` ~ `test5` | `123456` | 测试用户1~5 | 普通用户 (role_id=2) | 测试用账号 |
 
 > ⚠️ 生产环境部署后请立即修改所有默认密码。

@@ -1,6 +1,198 @@
-# 默认入口文件，直接 docker compose up -d 即可启动
-# 数据库由 .env 里的 COMPOSE_PROFILE 控制（postgres 或 mysql）
-# 在线构建：  docker compose up -d --build
-# 离线加载后：docker compose up -d
-include:
-  - docker-compose.prod.yml
+# Meeting 生产编排（统一入口）
+#
+# 用法：
+#   docker-compose up -d            # 离线镜像部署
+#   docker-compose up -d --build    # 在线构建部署
+#
+# 数据库由 .env 里的 COMPOSE_PROFILES 控制：
+#   sqlite（默认，零依赖） / mysql / postgres
+#
+# 注意：本文件使用 profiles 与 depends_on.required:false，需要 **Docker Compose v2.20+**。
+# 麒麟 V10 SP1 等自带旧版 Docker 的环境，请使用离线包内附带的 docker-compose v2 二进制，
+# 或改用 RPM / DEB 包部署。详见 docs/项目打包与部署说明.md。
+
+services:
+  # 数据库/缓存容器仅通过内部网络访问（不向宿主机发布端口）。
+  # 需要宿主机直连调试时再显式取消注释对应 ports。
+  mysql:
+    image: mysql:8.4
+    profiles: ["mysql"]
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
+      MYSQL_USER: ${MYSQL_USER:-meeting}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command: ["--character-set-server=utf8mb4"]
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD='${MYSQL_ROOT_PASSWORD:-rootpass}' mysqladmin ping -h 127.0.0.1 -uroot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres:
+    image: postgres:12-alpine
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-meeting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meetingpass}
+      POSTGRES_DB: ${POSTGRES_DB:-meeting}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-meeting} -d ${POSTGRES_DB:-meeting}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Redis 存放登录会话等敏感数据：必须设密码、不对外发布端口。
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-meetingpass}"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD:-meetingpass}' ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: serve/api/Dockerfile
+    image: ${MEETING_API_IMAGE:-meeting-api:latest}
+    restart: unless-stopped
+    environment:
+      DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-meeting}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-meeting}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-meetingpass}
+      PGDATABASE: ${POSTGRES_DB:-meeting}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-meetingpass}
+      API_PORT: 8080
+      RECORDINGS_DIR: ${RECORDINGS_DIR:-/app/data/recordings}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+        required: false
+      postgres:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    expose:
+      - "8080"
+    volumes:
+      - meeting-data:/app/data
+
+  realtime:
+    build:
+      context: .
+      dockerfile: serve/realtime/Dockerfile
+    image: ${MEETING_REALTIME_IMAGE:-meeting-realtime:latest}
+    restart: unless-stopped
+    environment:
+      DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-meeting}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-meeting}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-meetingpass}
+      PGDATABASE: ${POSTGRES_DB:-meeting}
+      WS_PORT: 8082
+      MEDIASOUP_LISTEN_IP: ${MEDIASOUP_LISTEN_IP:-0.0.0.0}
+      MEDIASOUP_ANNOUNCED_IP: ${MEDIASOUP_ANNOUNCED_IP}
+      RTC_MIN_PORT: 40000
+      RTC_MAX_PORT: 41000
+    depends_on:
+      mysql:
+        condition: service_healthy
+        required: false
+      postgres:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8082/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    ports:
+      - "40000-41000:40000-41000/udp"
+    expose:
+      - "8082"
+    volumes:
+      - meeting-data:/app/data
+
+  web:
+    build:
+      context: .
+      dockerfile: front/Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-/api}
+        VITE_WS_URL: ${VITE_WS_URL:-auto}
+        VITE_APP_NAME: ${VITE_APP_NAME:-Meeting}
+        VITE_APP_LOGO: ${VITE_APP_LOGO:-/favicon.svg}
+    image: ${MEETING_WEB_IMAGE:-meeting-web:latest}
+    restart: unless-stopped
+    # CentOS 7 (kernel 3.10) overlayfs pwrite() bug causes nginx PID write to
+    # fail with EPERM. Mount /run as tmpfs to bypass the overlay filesystem.
+    tmpfs:
+      - /run
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/docker/certs:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      realtime:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+  postgres-data:
+  redis-data:
+  meeting-data:
+  caddy-data:
+  caddy-config:

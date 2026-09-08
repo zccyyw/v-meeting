@@ -16,7 +16,7 @@
 | Node.js | **20+**（`node -v`），需已装在 PATH |
 | 数据库 | MySQL 8 或 PostgreSQL 12+（本机或可达地址） |
 | Redis | 7.x（本机或可达地址） |
-| 防火墙 | 放行 `GATEWAY_PORT`（默认 8088）、UDP `40000-40100`（WebRTC） |
+| 防火墙 | 放行 `GATEWAY_PORT`（默认 8088）、UDP `40000-41000`（WebRTC） |
 
 建库示例（MySQL）：
 
@@ -263,6 +263,6 @@ sudo rm -rf /opt/meeting
 |------|------|
 | 架构不符 | 看包内 `ARCH.txt`，换对应 tar |
 | mediasoup / realtime 起不来 | 确认包在目标同架构 Linux 上构建；装 `python3 make g++` 后于构建机重打 |
-| 能开页面不能音视频 | 查 `MEDIASOUP_ANNOUNCED_IP`、UDP 40000-40100 |
+| 能开页面不能音视频 | 查 `MEDIASOUP_ANNOUNCED_IP`、UDP 40000-41000 |
 | DB 连接失败 | 查 `.env` 与本机库监听、防火墙 |
 | 仅 API 502 | `systemctl status meeting-api`，看 `/opt/meeting/logs/api.err.log` |

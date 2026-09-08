@@ -146,12 +146,11 @@ sudo systemctl enable --now meeting-api meeting-realtime meeting-gateway
 | 账号 | 密码 | 角色 | 说明 |
 | --- | --- | --- | --- |
 | admin | admin123 | 超级管理员 | 全部权限 |
-| system | system123 | 超级管理员 | 隐藏系统用户 |
+| system | System@123 | 超级管理员 | 隐藏系统用户 |
 | sysadmin | Admin@123 | 系统管理员 | 首次登录提示修改密码 |
 | authadmin | Admin@123 | 授权管理员 | 首次登录提示修改密码 |
 | auditadmin | Admin@123 | 审计管理员 | 首次登录提示修改密码 |
 | meeting | Admin@123 | 普通用户 | 首次登录提示修改密码 |
-| test1-test5 | 123456 | 普通用户 | 测试用户 |
 
 > 生产环境部署后请立即修改所有默认密码。三员分立：系统管理员管用户但不能审批；授权管理员审批但不能直接操作用户；审计管理员仅查看日志。
 

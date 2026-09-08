@@ -100,7 +100,7 @@ EOF
   echo "  ca.crt         → 导入客户端浏览器/系统根信任机构"
   echo "  fullchain.pem  → Caddy 服务器证书"
   echo "  privkey.pem    → Caddy 服务器私钥"
-  echo "  Next: docker compose ... up -d --force-recreate caddy"
+  echo "  Next: docker-compose ... up -d --force-recreate caddy"
 else
   # ========== 模式一：自签 ==========
   echo "=== 自签模式（内网测试用）==="
@@ -133,7 +133,7 @@ EOF
   chmod 600 "$DIR/privkey.pem"
   echo "OK: $DIR/fullchain.pem"
   echo "OK: $DIR/privkey.pem"
-  echo "Next: docker compose ... up -d --force-recreate caddy"
+  echo "Next: docker-compose ... up -d --force-recreate caddy"
   echo ""
   echo "提示: 信创环境请用 --ca 模式: bash $0 --ca $HOST"
 fi

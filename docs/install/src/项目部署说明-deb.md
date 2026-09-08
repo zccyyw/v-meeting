@@ -30,9 +30,9 @@
 | 端口 | 协议 | 用途 |
 | --- | --- | --- |
 | 8088 | TCP | 网关（Web + API + WebSocket 入口） |
-| 40000-40100 | UDP | WebRTC 媒体（可通过 `RTC_MIN_PORT` / `RTC_MAX_PORT` 调整） |
+| 40000-41000 | UDP | WebRTC 媒体（可通过 `RTC_MIN_PORT` / `RTC_MAX_PORT` 调整） |
 
-> 若部署在云平台，安全组需**单独放行 UDP 40000-40100 入方向**，否则能进会议但看不到对方、听不到声音。
+> 若部署在云平台，安全组需**单独放行 UDP 40000-41000 入方向**，否则能进会议但看不到对方、听不到声音。
 
 ## 四、安装说明
 
@@ -113,12 +113,11 @@ sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/stop-all.mjs
 | 账号 | 密码 | 角色 | 说明 |
 | --- | --- | --- | --- |
 | admin | admin123 | 超级管理员 | 全部权限 |
-| system | system123 | 超级管理员 | 隐藏系统用户 |
+| system | System@123 | 超级管理员 | 隐藏系统用户 |
 | sysadmin | Admin@123 | 系统管理员 | 首次登录提示修改密码 |
 | authadmin | Admin@123 | 授权管理员 | 会议/用户审批 |
 | auditadmin | Admin@123 | 审计管理员 | 仅查看日志 |
 | meeting | Admin@123 | 普通用户 | 首次登录提示修改密码 |
-| test1-test5 | 123456 | 普通用户 | 测试用户 |
 
 > 生产环境部署后请立即修改所有默认密码。三员分立：系统管理员管用户但不能审批；授权管理员审批但不能直接操作用户；审计管理员仅查看日志。
 
@@ -165,6 +164,6 @@ sudo rm -rf /opt/meeting/data /opt/meeting/logs
 | --- | --- |
 | systemd 版本 | 单元已兼容 **systemd 219**（麒麟 V10 SP1）：日志由服务内重定向写入 `/opt/meeting/logs/*.log` |
 | SELinux | 麒麟默认 `enforcing`，8088 端口需放行：`semanage port -a -t http_port_t -p tcp 8088` |
-| 防火墙 | `firewall-cmd --add-port=8088/tcp --add-port=40000-40100/udp --permanent && firewall-cmd --reload` |
+| 防火墙 | `firewall-cmd --add-port=8088/tcp --add-port=40000-41000/udp --permanent && firewall-cmd --reload` |
 | 证书 | 内网用 `gen-cert.mjs --ca <IP>` 生成 CA 证书，`ca.crt` 导入客户端信任库 |
 | 浏览器 | 奇安信浏览器（涉密版）/ UOS 浏览器 / Chrome 100+ 均可；前端构建目标 ES2020 |
