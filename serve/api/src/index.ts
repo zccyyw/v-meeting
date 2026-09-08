@@ -91,16 +91,22 @@ await meetingGroupRoutes(app, db, redis);
 registerOperLogHook(app, db, redis);
 
 // 定时清理过期日志（每 24 小时执行一次）
-setInterval(async () => {
+const logCleanupTimer = setInterval(async () => {
   try {
     const deleted = await cleanupExpiredLogs(db);
     if (deleted > 0) {
       app.log.info({ deleted }, "expired oper logs cleaned up");
+      // 大批量 DELETE 后 WAL 瞬时膨胀，主动 checkpoint 归零便于磁盘监控与备份
+      if (db.driver === "sqlite") {
+        await db.query("PRAGMA wal_checkpoint(TRUNCATE)").catch(() => {});
+      }
     }
   } catch (err) {
     app.log.error({ err }, "failed to cleanup expired oper logs");
   }
 }, 24 * 60 * 60 * 1000);
+// 不阻止进程正常退出
+logCleanupTimer.unref();
 
 app.get("/healthz", async () => ({ ok: true }));
 

@@ -142,8 +142,6 @@ export function createSignalHandler(db: Db) {
   /** Per-meetingId lock so concurrent first joins share one room/router. */
   const roomInit = new Map<string, Promise<RoomState>>();
   const wsToPeer = new Map<WebSocket, string>();
-  /** peerId → meetingId 映射，O(1) 查找 peer 所属 room */
-  const peerIdToRoom = new Map<string, string>();
 
   async function getOrCreateRoom(
     meetingId: string,
@@ -239,7 +237,6 @@ export function createSignalHandler(db: Db) {
     if (media) {
       await closePeerMedia(state, media);
       state.peers.delete(id);
-      peerIdToRoom.delete(id);
     }
     const peer = state.room.getPeer(id);
     const wasAdmitted = peer && !peer.inWaitingRoom;
@@ -313,7 +310,6 @@ export function createSignalHandler(db: Db) {
     };
     state.peers.set(id, media);
     wsToPeer.set(ws, id);
-    peerIdToRoom.set(id, auth.meetingId);
 
     if (peer.inWaitingRoom) {
       send(ws, { type: "waiting", peerId: id, displayName });

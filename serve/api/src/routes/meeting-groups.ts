@@ -387,11 +387,12 @@ export async function meetingGroupRoutes(app: FastifyInstance, db: Db, redis: Re
     }
 
     // 批量插入邀请名单（忽略重复，兼容三方言）
+    // 注意：insertIgnorePrefix 各方言返回值已含 INTO（如 "INSERT OR IGNORE INTO"）
     const invitePrefix = insertIgnorePrefix(db);
     const inviteSuffix = conflictSuffix(db, "meeting_id, user_id");
     for (const m of members) {
       await db.query(
-        `${invitePrefix} INTO meeting_invitations (meeting_id, user_id, display_name, status, invited_at)
+        `${invitePrefix} meeting_invitations (meeting_id, user_id, display_name, status, invited_at)
          VALUES (?, ?, ?, 'pending', ${nowSql(db)}) ${inviteSuffix}`,
         [meetingId, m.userId, m.displayName],
       );

@@ -12,13 +12,18 @@ export function createSqliteDb(): Db {
     driver: "sqlite",
     query(sql: string, params: unknown[] = []) {
       const stmt = db.prepare(sql);
+      // better-sqlite3 只接受 number/string/bigint/buffer/null 绑定参数，
+      // 不支持 Date 对象（mysql2/pg 均支持）。统一在此归一化为 ISO-8601
+      // （带 T/Z），保证 auth-bridge 的 new Date(row.expires_at) 精确解析，
+      // 避免无时区字符串被按本地时间解析导致的偏移。
+      const norm = params.map((p) => (p instanceof Date ? p.toISOString() : p));
       // better-sqlite3 要求：返回结果行的语句用 all()，其余（INSERT/UPDATE/
       // DELETE/CREATE/ALTER/DROP/PRAGMA 等）必须用 run()，否则抛
       // "This statement does not return data. Use run() instead"。
       // 用 stmt.reader 判断（官方提供的元数据），比正则匹配 SQL 前缀更可靠：
       // 旧实现只识别 INSERT/UPDATE/DELETE，导致 DDL（迁移建表）直接崩溃。
       if (!stmt.reader) {
-        const info = stmt.run(...params);
+        const info = stmt.run(...norm);
         const header: ResultHeader = {
           insertId: Number(info.lastInsertRowid ?? 0),
           affectedRows: info.changes,

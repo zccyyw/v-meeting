@@ -8,6 +8,22 @@ import { Redis } from "ioredis";
 class MemoryRedis {
   private store = new Map<string, { value: string; expireAt?: number }>();
 
+  constructor() {
+    // 周期性清扫过期条目：惰性删除（get 触碰时）之外，login_attempts:*/
+    // login_lock:*/session_force:* 等不再被访问的 key 会永久驻留，
+    // 用户名喷洒场景下内存无上限增长。60s 全量清扫一次即可封顶。
+    const sweeper = setInterval(() => this.sweep(), 60_000);
+    // 不阻止进程正常退出
+    sweeper.unref();
+  }
+
+  /** 删除所有已过期条目（全量遍历，O(n)，n 为当前 key 数）。 */
+  private sweep() {
+    for (const [k, v] of this.store) {
+      if (this.isExpired(v)) this.store.delete(k);
+    }
+  }
+
   private isExpired(entry: { value: string; expireAt?: number }) {
     return entry.expireAt !== undefined && Date.now() > entry.expireAt;
   }

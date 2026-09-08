@@ -196,6 +196,9 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     if (!row) return reply.code(404).send({ error: "not_found" });
     if (row.status !== "approved")
       return reply.code(400).send({ error: "not_approved" });
+    // 幂等保护：已发起过的申请不可再次发起（否则会重复建会）
+    if (row.meeting_id != null)
+      return reply.code(400).send({ error: "already_started", meetingId: Number(row.meeting_id) });
 
     // 仅申请人或管理员可发起
     if (row.applicant_id !== user.id && !user.roles.includes("admin"))
