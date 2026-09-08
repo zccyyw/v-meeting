@@ -13,12 +13,12 @@ Environment=FRONT_ROOT=/opt/meeting/app/front
 Environment=API_UPSTREAM=http://127.0.0.1:8080
 Environment=WS_UPSTREAM=http://127.0.0.1:8082
 Environment=CERT_DIR=/opt/meeting/certs
-ExecStart=/opt/meeting/runtime/bin/node /opt/meeting/bin/gateway.mjs
+# systemd 219 (Kylin V10 SP1) does not support StandardOutput=append:;
+# redirect inside the command instead. `exec` keeps PID/signals on node.
+ExecStart=/bin/sh -c "exec /opt/meeting/runtime/bin/node /opt/meeting/bin/gateway.mjs >> /opt/meeting/logs/gateway.log 2>&1"
 Restart=on-failure
 RestartSec=3
 LimitNOFILE=65535
-StandardOutput=append:/opt/meeting/logs/gateway.log
-StandardError=append:/opt/meeting/logs/gateway.err.log
 
 [Install]
 WantedBy=multi-user.target

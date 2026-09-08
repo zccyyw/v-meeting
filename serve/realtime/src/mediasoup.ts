@@ -22,6 +22,21 @@ const mediaCodecs: RtpCodecCapability[] = [
     preferredPayloadType: 96,
     parameters: { "x-google-start-bitrate": 1000 },
   },
+  {
+    // 信创浏览器（火狐 ESR / 部分裁剪版 Chromium）对 VP8 支持有限，
+    // 增加 H264（constrained baseline，兼容性最好）作为协商备选。
+    // 服务器为 SFU 纯转发，不参与编解码，无授权问题。
+    kind: "video",
+    mimeType: "video/H264",
+    clockRate: 90000,
+    preferredPayloadType: 97,
+    parameters: {
+      "packetization-mode": 1,
+      "profile-level-id": "42e01f",
+      "level-asymmetry-allowed": 1,
+      "x-google-start-bitrate": 1000,
+    },
+  },
 ];
 
 let worker: Worker;

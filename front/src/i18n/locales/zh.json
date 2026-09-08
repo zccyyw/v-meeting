@@ -278,7 +278,7 @@
     "youSuffix": "{{name}}（我）",
     "screenShareOf": "{{name}} 的屏幕",
     "screenShareMonitorHint": "正在共享整个屏幕，画面若出现嵌套属正常现象，建议改用共享应用窗口",
-    "sharingSelfScreen": "你正在共享屏幕",
+    "sharingSelfScreen": "正在共享屏幕（已隐藏本地预览）",
     "meetingCode": "会议号",
     "copyCode": "复制会议号",
     "copyLink": "复制连接",

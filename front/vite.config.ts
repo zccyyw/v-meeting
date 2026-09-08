@@ -15,6 +15,12 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir: repoRoot,
+    build: {
+      // 信创浏览器（奇安信涉密版等）内核较老（可能 ≤ Chrome 102），
+      // 显式降到 es2020 避免默认 target（≈Chrome 107+）产出的语法不被支持。
+      // 已扫描确认业务代码无 es2021+ 运行时 API 依赖，转译即可覆盖。
+      target: "es2020",
+    },
     define: {
       // 注入 AES-GCM 加密密钥到前端（与后端 MEETING_CRYPTO_KEY 保持一致）
       __MEETING_CRYPTO_KEY__: JSON.stringify(env.MEETING_CRYPTO_KEY ?? ""),

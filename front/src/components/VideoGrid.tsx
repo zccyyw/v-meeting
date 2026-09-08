@@ -546,6 +546,11 @@ export function VideoGrid({
     if (!localScreenStream) return false;
     const track = localScreenStream.getVideoTracks()[0];
     const surface = track?.getSettings?.().displaySurface;
+    // 老内核/信创浏览器（如奇安信涉密版）getSettings() 不返回 displaySurface，
+    // 此时无法判断共享面类型 —— 保守视为自捕获（本地预览显示占位符），
+    // 否则共享全屏时预览 tile 渲染共享流本身，造成无限嵌套画面。
+    // 该占位符同时切断本地预览、屏幕上的会议窗口、canvas 录制三条嵌套链路。
+    if (surface == null) return true;
     return surface === "monitor" || surface === "window" || surface === "browser";
   })();
 

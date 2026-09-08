@@ -278,7 +278,7 @@
     "youSuffix": "{{name}} (You)",
     "screenShareOf": "{{name}}'s screen",
     "screenShareMonitorHint": "Sharing entire screen. Nested image is normal. Consider sharing an app window instead.",
-    "sharingSelfScreen": "You are sharing your screen",
+    "sharingSelfScreen": "Screen sharing (local preview hidden)",
     "meetingCode": "Meeting ID",
     "copyCode": "Copy ID",
     "copyLink": "Copy link",
