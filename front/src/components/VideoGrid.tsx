@@ -6,7 +6,7 @@ import { useSpeaking } from "@/media/useSpeaking";
 
 export type LayoutCols = "auto" | 4 | 6;
 
-type Tile = {
+export type Tile = {
   key: string;
   peerId: string;
   stream: MediaStream | null;
@@ -49,7 +49,7 @@ function hasActiveCamera(stream: MediaStream | null | undefined): boolean {
 }
 
 /** Draggable side list — can be dragged as a floating panel; collapsible. */
-function DraggableSideList({
+export function DraggableSideList({
   tiles,
   isTraining,
   handTitle,
@@ -547,9 +547,8 @@ export function VideoGrid({
     const track = localScreenStream.getVideoTracks()[0];
     const surface = track?.getSettings?.().displaySurface;
     // 老内核/信创浏览器（如奇安信涉密版）getSettings() 不返回 displaySurface，
-    // 此时无法判断共享面类型 —— 保守视为自捕获（本地预览显示占位符），
-    // 否则共享全屏时预览 tile 渲染共享流本身，造成无限嵌套画面。
-    // 该占位符同时切断本地预览、屏幕上的会议窗口、canvas 录制三条嵌套链路。
+    // 此时无法判断共享面类型 —— 保守视为自捕获。
+    // 自捕获时该 tile 不进入视频网格（方案 1），共享状态由控制栏/沉浸条呈现。
     if (surface == null) return true;
     return surface === "monitor" || surface === "window" || surface === "browser";
   })();
@@ -567,7 +566,9 @@ export function VideoGrid({
     },
   ];
 
-  if (localScreenStream) {
+  if (localScreenStream && !localScreenIsSelf) {
+    // 非自捕获（如共享其他应用窗口且浏览器能识别共享面）时显示本地共享预览；
+    // 自捕获时跳过：共享流会被自身采集，渲染它会形成无限嵌套画面。
     tiles.push({
       key: "local-screen",
       peerId: localPeerId ?? "local",
@@ -576,7 +577,7 @@ export function VideoGrid({
       muted: true,
       handRaised: false,
       isScreen: true,
-      localSelfScreen: localScreenIsSelf,
+      localSelfScreen: false,
     });
   }
 

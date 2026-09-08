@@ -9,7 +9,8 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { DanmuOverlay } from "@/components/DanmuOverlay";
 import { HostControls } from "@/components/HostControls";
 import { Modal } from "@/components/Modal";
-import { VideoGrid, type LayoutCols } from "@/components/VideoGrid";
+import { VideoGrid, type LayoutCols, type Tile } from "@/components/VideoGrid";
+import { ImmersiveStrip } from "@/components/ImmersiveStrip";
 import { WaitingRoom } from "@/components/WaitingRoom";
 import { InvitationPanel } from "@/components/InvitationPanel";
 import { MediaRoom, type MediaRoomSnapshot } from "@/media/room";
@@ -87,6 +88,8 @@ function MeetingPageInner() {
   const danmuIdRef = useRef(0);
   const lastChatLenRef = useRef(0);
   const [recording, setRecording] = useState(false);
+  const [immersive, setImmersive] = useState(false);
+  const [shareElapsed, setShareElapsed] = useState(0);
   const recorderHandleRef = useRef<RecorderHandle | null>(null);
   const recordStartRef = useRef<number>(0);
   const [recordElapsed, setRecordElapsed] = useState(0);
@@ -117,6 +120,22 @@ function MeetingPageInner() {
     }, 1000);
     return () => window.clearInterval(t);
   }, [recording]);
+
+  // 共享时长计时（沉浸条显示）
+  useEffect(() => {
+    if (!snap.sharingScreen) {
+      setShareElapsed(0);
+      return;
+    }
+    const started = Date.now();
+    const t = window.setInterval(() => setShareElapsed(Date.now() - started), 1000);
+    return () => window.clearInterval(t);
+  }, [snap.sharingScreen]);
+
+  // 停止共享时自动退出沉浸模式
+  useEffect(() => {
+    if (!snap.sharingScreen) setImmersive(false);
+  }, [snap.sharingScreen]);
 
   // 监听他人录制状态变化 -> Toast + 聊天系统消息
   useEffect(() => {
@@ -363,6 +382,33 @@ function MeetingPageInner() {
     if (ok) await flashCopied();
   }
 
+  // 沉浸模式小窗数据：本地 + 远端摄像头（不含共享流，故不会画面嵌套）
+  const immersiveTiles: Tile[] = [
+    {
+      key: "local",
+      peerId: snap.peerId ?? "local",
+      stream: snap.localStream,
+      label: `${displayName}（${t("meeting.me")}）`,
+      muted: true,
+      micMuted: !snap.micEnabled,
+      handRaised: snap.handRaised,
+      forceAvatar: !snap.camEnabled,
+    },
+    ...[...snap.remoteStreams].map(([peerId, stream]) => {
+      const peer = snap.peers.find((p) => p.peerId === peerId);
+      return {
+        key: peerId,
+        peerId,
+        stream,
+        label: peer?.displayName ?? peerId.slice(0, 8),
+        muted: true,
+        micMuted: !(peer?.micEnabled ?? true),
+        handRaised: peer?.handRaised ?? false,
+        forceAvatar: !(peer?.camEnabled ?? false),
+      };
+    }),
+  ];
+
   if (!token) {
     return (
       <main className="page">
@@ -536,6 +582,18 @@ function MeetingPageInner() {
                 : snap.layout === "speaker"
                   ? t("meeting.layoutTraining")
                   : t("meeting.layoutGrid")}
+            </button>
+          )}
+
+          {inMeeting && snap.sharingScreen && (
+            <button
+              type="button"
+              className="meeting-header-btn"
+              onClick={() => setImmersive((v) => !v)}
+            >
+              {immersive
+                ? t("meeting.exitImmersive")
+                : t("meeting.enterImmersive")}
             </button>
           )}
 
@@ -729,7 +787,15 @@ function MeetingPageInner() {
           onDeny={(id) => roomRef.current?.deny(id)}
         />
 
-        {inMeeting && (
+        {inMeeting && immersive ? (
+          <div className="meeting-immersive">
+            <ImmersiveStrip
+              tiles={immersiveTiles}
+              sharingLabel={`${t("meeting.sharing")} ${formatDuration(shareElapsed)}`}
+              onExit={() => setImmersive(false)}
+            />
+          </div>
+        ) : inMeeting && (
           <div className="meeting-main">
             <div className="meeting-videos">
               <VideoGrid

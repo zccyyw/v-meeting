@@ -532,6 +532,22 @@ input:not(.ant-input):focus {
 .invite-list-status { font-size: 0.75rem; color: var(--meeting-muted); white-space: nowrap; }
 .invite-panel-floating { position: fixed; top: 50%; right: 1.5rem; transform: translateY(-50%); width: 280px; max-height: 60vh; z-index: 1000; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
 .invite-list-dept { display: block; font-size: 0.72rem; color: rgba(255,255,255,0.55); margin-top: 1px; }
+
+/* ── 沉浸模式（共享全屏时使用）：仅摄像头小窗 + 共享状态条 ── */
+.meeting-immersive { position: relative; flex: 1; min-height: 0; }
+.immersive-strip { position: absolute; left: 1rem; bottom: 1rem; z-index: 80; max-width: 60rem; }
+.immersive-bar { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.75rem; margin-bottom: 0.4rem; border-radius: 10px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.12); color: #e8e8e8; font-size: 0.78rem; backdrop-filter: blur(4px); }
+.immersive-bar-status { display: flex; align-items: center; gap: 0.35rem; font-weight: 600; white-space: nowrap; }
+.immersive-bar-hint { color: rgba(255,255,255,0.55); font-size: 0.72rem; }
+.immersive-bar-exit { margin-left: auto; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.08); color: #e8e8e8; font-size: 0.72rem; padding: 0.15rem 0.6rem; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.immersive-bar-exit:hover { background: rgba(255,255,255,0.16); }
+.immersive-strip .video-sidelist { flex-direction: row; max-width: 100%; min-width: 0; width: auto; gap: 0.4rem; padding: 0.25rem; background: rgba(0,0,0,0.5); border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); }
+.immersive-strip .video-sidelist .video-tile { width: 8.5rem; min-width: 8.5rem; }
+.immersive-strip .video-sidelist-toolbar { width: 100%; }
+@media (max-width: 768px) {
+  .immersive-bar-hint { display: none; }
+  .immersive-strip { left: 0.5rem; bottom: 0.5rem; right: 0.5rem; }
+}
 .btn-invite-toggle { border: 1px solid var(--meeting-bar-border); background: #26292e; color: #e8e8e8; font-size: 0.8rem; padding: 0.35rem 0.85rem; border-radius: 8px; cursor: pointer; margin-top: 0.5rem; }
 .btn-invite-toggle:hover { background: rgba(255,255,255,0.08); }
 .btn-invite-toggle.is-active { background: var(--meeting-accent, #1668dc); border-color: var(--meeting-accent, #1668dc); color: #fff; }
