@@ -43,8 +43,10 @@ copyDir(join(root, "serve/realtime/dist"), join(out, "realtime"));
 copyDir(join(root, "front/dist"), join(out, "front"));
 
 mkdirSync(join(out, "deploy"), { recursive: true });
+// compose 已合并为单一 docker-compose.yml（profiles 控制数据库，
+// 不再有 docker-compose.prod.yml / docker-compose.postgres.yml）
 for (const f of [
-  "docker-compose.prod.yml",
+  "docker-compose.yml",
   "Caddyfile",
   ".env.production.example",
 ]) {
