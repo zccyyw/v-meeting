@@ -2,11 +2,13 @@
 
 本目录存放**三种数据库的最新完整表结构**（与 `serve/api/src/sql/<driver>/` 迁移全部执行后的最终态一致）：
 
+文件按 `数据库名-类型.sql` 命名：
+
 | 文件 | 数据库 | 生成方式 |
 |------|--------|---------|
-| `schema-sqlite.sql` | SQLite 3 | 从实际执行全部迁移后的数据库导出（**权威**，含索引与触发器） |
-| `schema-mysql.sql` | MySQL 8 | 合并 `serve/api/src/sql/mysql/` 全部迁移的建表语句 + `migrate.ts` 中的动态列（`sys_user` 表、`meetings.record_allowed`、`sys_oper_log.oper_object/classification`） |
-| `schema-postgres.sql` | PostgreSQL 12+ | 同上（postgres 方言） |
+| `meeting-sqlite.sql` | SQLite 3 | 从实际执行全部迁移后的数据库导出（**权威**，含索引与触发器） |
+| `meeting-mysql.sql` | MySQL 8 | 合并 `serve/api/src/sql/mysql/` 全部迁移的建表语句 + `migrate.ts` 中的动态列（`sys_user` 表、`meetings.record_allowed`、`sys_oper_log.oper_object/classification`） |
+| `meeting-postgres.sql` | PostgreSQL 12+ | 同上（postgres 方言） |
 
 **表清单（18 张，三方言一致）**：
 `meetings` `meeting_invitations` `meeting_join_tokens` `meeting_applications` `meeting_groups` `meeting_group_members` `recordings` `users`¹ `sys_user` `sys_dept` `sys_role` `sys_menu` `sys_user_role` `sys_role_menu` `sys_config` `sys_notice` `sys_oper_log` `sys_user_approval`
