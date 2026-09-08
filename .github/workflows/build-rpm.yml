@@ -82,10 +82,17 @@ jobs:
     steps:
       - id: set-matrix
         run: |
+          # 仓库为 public：arm64 使用 GitHub 官方免费原生 ARM runner
+          # (ubuntu-24.04-arm)，彻底摆脱 qemu 模拟（原 x64+qemu 下单个
+          # arm64 job 需 3~6 小时，原生 ARM runner 可降至 20~40 分钟）。
           if [ "${{ github.event_name }}" = "push" ]; then
-            echo 'matrix={"include":[{"arch":"x64"},{"arch":"arm64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"arch":"x64","runner":"ubuntu-latest"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]}' >> "$GITHUB_OUTPUT"
           else
-            echo "matrix={\"include\":[{\"arch\":\"${{ inputs.target_arch }}\"}]}" >> "$GITHUB_OUTPUT"
+            if [ "${{ inputs.target_arch }}" = "arm64" ]; then
+              echo 'matrix={"include":[{"arch":"arm64","runner":"ubuntu-24.04-arm"}]}' >> "$GITHUB_OUTPUT"
+            else
+              echo 'matrix={"include":[{"arch":"x64","runner":"ubuntu-latest"}]}' >> "$GITHUB_OUTPUT"
+            fi
           fi
       - id: set-params
         run: |
@@ -161,7 +168,7 @@ jobs:
   docker:
     needs: prepare
     if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'docker'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
       fail-fast: false
@@ -173,13 +180,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      # ARM64 交叉编译：启用 qemu
-      - name: Set up QEMU
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Build Docker offline bundle
         env:
@@ -206,7 +206,7 @@ jobs:
   native:
     needs: prepare
     if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'native'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
       fail-fast: false
@@ -228,19 +228,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      # ARM64 交叉编译需要 qemu 模拟 Linux/arm64 环境
-      - name: Set up QEMU
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
       - name: Build mediasoup worker
         run: |
-          export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
+          # arm64 优先下载官方预编译 worker（秒级，失败自动回退本地编译）；
+          # x64 保持原行为：本地编译（CN 网络预编译下载被墙故 skip）。
+          if [ "${{ matrix.arch }}" != "arm64" ]; then
+            export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
+          else
+            echo "→ arm64: prefer mediasoup-worker prebuilt download (fallback: local build)"
+          fi
           export PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
           GHPROXY="https://gh-proxy.com"
           if [ -d node_modules/mediasoup/worker/subprojects ]; then
@@ -255,44 +254,10 @@ jobs:
         env:
           PACK_NATIVE_FORCE: "1"
         run: |
-          # pack:native 默认在非 Linux 上拒绝执行，设置 PACK_NATIVE_FORCE=1 跳过
-          # 但 ARM64 交叉编译时 mediasoup 原生模块可能不匹配目标架构
-          # 对于 ARM64，使用 Docker 容器构建更可靠
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            echo "→ ARM64 native build via Docker container"
-            docker run --rm \
-              --platform linux/arm64 \
-              -v "$PWD:/workspace" \
-              -v "meeting-native-build-modules-${{ matrix.arch }}:/workspace/node_modules" \
-              -e PACK_NATIVE_FORCE=1 \
-              -w /workspace \
-            node:22-bookworm bash -c "
-              apt-get update && apt-get install -y python3 python3-pip python3-setuptools python3-venv make g++ cmake --no-install-recommends
-              # Debian 12 (PEP 668) 下系统 python 禁止裸 pip install，
-              # 建 venv（自带 pip、不受 externally-managed 限制）并让 mediasoup 使用它
-              python3 -m venv /opt/mediasoup-venv
-              /opt/mediasoup-venv/bin/python -m pip install --no-input --upgrade pip
-              npm ci --ignore-scripts
-              # arm64 (qemu) 不强制本地编译 worker：优先下载官方预编译
-              # （runner 直连 GitHub 秒级），失败自动回退本地编译。
-              # qemu 下本地编译耗时数小时会触发 job 6 小时超时被取消。
-              unset MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD
-              export PIP_INDEX_URL='https://pypi.tuna.tsinghua.edu.cn/simple'
-              export PYTHON=/opt/mediasoup-venv/bin/python
-              GHPROXY='https://gh-proxy.com'
-              if [ -d node_modules/mediasoup/worker/subprojects ]; then
-                node ./serve/realtime/patch-mediasoup-wrap.cjs \$GHPROXY
-                cd node_modules/mediasoup
-                node npm-scripts.mjs postinstall
-              fi
-              cd /workspace
-              npm rebuild better-sqlite3
-              npm run pack:native
-            "
-          else
-            echo "→ x64 native build on runner"
-            npm run pack:native
-          fi
+          # 原生架构 runner（x64 用 ubuntu-latest / arm64 用 ubuntu-24.04-arm）
+          # 直接在宿主机打包，产物架构即 runner 架构，无需 qemu 容器。
+          echo "→ ${{ matrix.arch }} native build on ${{ matrix.runner }}"
+          npm run pack:native
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -309,20 +274,13 @@ jobs:
     needs: prepare
     # deb job 依赖本 job 的 RPM 产物，因此"仅选 deb"时也必须先构建 rpm
     if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'rpm' || needs.prepare.outputs.build_type == 'deb'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
       fail-fast: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # ARM64 交叉编译：启用 qemu
-      - name: Set up QEMU
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Build RPM
         env:
@@ -331,24 +289,20 @@ jobs:
           RPM_RELEASE: ${{ needs.prepare.outputs.release }}
           NODE_VERSION: ${{ env.NODE_TAR_VERSION }}
         run: |
-          echo "→ Building RPM for ${{ matrix.arch }} (version ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }})"
+          echo "→ Building RPM for ${{ matrix.arch }} on ${{ matrix.runner }} (version ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }})"
 
           # 构建 Docker builder 镜像（内含 fpm + rpmbuild + 编译工具链）。
-          # 注意：arm64 时 build 必须与下方 run 使用相同平台。若 build 不带
-          # --platform，会在 x64 runner 上产出 amd64 镜像，随后 docker run
-          # --platform linux/arm64 因平台不匹配而忽略本地镜像、转去 registry
-          # 拉取 meeting-rpm-builder → pull access denied (exit 125)。
+          # 原生架构 runner 上 docker build 自动使用对应架构的 node:22-bookworm
+          # 变体（x64→amd64、arm64→arm64），无需 --platform，也就无需 qemu。
           docker build \
-            ${{ matrix.arch == 'arm64' && '--platform linux/arm64' || '' }} \
             -t meeting-rpm-builder \
             -f deploy/rpm/Dockerfile.build \
             .
 
           mkdir -p dist/rpm
 
-          # 在 Docker 容器内执行构建
+          # 在 Docker 容器内执行构建（平台与 runner 一致，原生执行）
           docker run --rm \
-            ${{ matrix.arch == 'arm64' && '--platform linux/arm64' || '' }} \
             -v "$PWD:/workspace" \
             -v "$PWD/dist/rpm:/output" \
             -v "meeting-rpm-build-modules-${{ matrix.arch }}:/workspace/node_modules" \
@@ -387,7 +341,7 @@ jobs:
   deb:
     needs: [prepare, rpm]
     if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'deb'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
       fail-fast: false
@@ -399,13 +353,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      # ARM64 交叉编译：启用 qemu
-      - name: Set up QEMU
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Download RPM artifact
         uses: actions/download-artifact@v4
@@ -420,10 +367,8 @@ jobs:
           # 必须在此重建 meeting-rpm-builder。注意不要用 `|| true` 吞掉失败：
           # 镜像缺失会让下方 docker run 以 125 提前退出，且内部 `|| echo`
           # 兜不住，导致步骤直接变红。
-          # arm64 时 build 必须与下方 run 使用相同平台（--platform linux/arm64），
-          # 否则本地镜像平台不匹配导致 docker run 转去 registry 拉取而失败。
+          # 原生架构 runner 上直接构建，无需 --platform。
           docker build \
-            ${{ matrix.arch == 'arm64' && '--platform linux/arm64' || '' }} \
             -t meeting-rpm-builder \
             -f deploy/rpm/Dockerfile.build \
             .
@@ -431,7 +376,6 @@ jobs:
           mkdir -p dist/deb
 
           docker run --rm \
-            ${{ matrix.arch == 'arm64' && '--platform linux/arm64' || '' }} \
             -v "$PWD/dist/rpm:/input:ro" \
             -v "$PWD/dist/deb:/output" \
             --entrypoint bash \
