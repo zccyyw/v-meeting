@@ -159,17 +159,52 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## 五、升级说明
 
+> 📦 安装包由 GitHub Actions 构建（推送 `v*` tag 自动产出 x64 + arm64 全部产物），从 Actions → Artifacts 下载 `meeting-native-<arch>-<ver>-<rel>` 即可；也可在**同架构 Linux 构建机**上执行 `npm run pack:native` 自行打包。
+
+### 5.1 首次安装（汇总）
+
 ```bash
-# 1. 打新包（构建机）
-npm run pack:native
-# 2. 目标机解压新包
+# 1) 解压
+tar -xzf meeting-linux-arm64-YYYYMMDD.tar.gz
+cd meeting-linux-arm64-YYYYMMDD
+
+# 2) 安装（创建 meeting 用户、部署 /opt/meeting、安装 systemd 单元、迁移+种子、启动服务）
+sudo ./install.sh
+
+# 3) 修改配置
+sudo vi /opt/meeting/conf/.env        # 至少改 MEDIASOUP_ANNOUNCED_IP 为服务器 IP
+sudo systemctl restart meeting-api meeting-realtime meeting-gateway
+
+# 4) 验证
+curl http://127.0.0.1:8088/api/healthz
+# 浏览器访问 http://<服务器IP>:8088/
+```
+
+### 5.2 升级（汇总）
+
+```bash
+# 0) 备份（必做）
+sudo cp /opt/meeting/conf/.env /opt/meeting/conf/.env.bak
+
+# 1) 获取新包（构建机打包或从 Actions 下载）
+# 2) 目标机解压新包
 tar -xzf meeting-linux-arm64-NEWDATE.tar.gz
 cd meeting-linux-arm64-NEWDATE
-# 3. 重新安装（保留已有 .env，自动 migrate）
+
+# 3) 重新安装（保留已有 .env，自动 migrate）
 sudo ./install.sh
 ```
 
-> install.sh 会保留 /opt/meeting/conf/.env，覆盖 app/ 并重新 migrate。
+> `install.sh` 会保留 `/opt/meeting/conf/.env`，覆盖 `app/` 并重新执行 migrate，**无需手工跑迁移**。
+
+### 5.3 升级后验收
+
+- [ ] `curl http://<IP>:8088/api/healthz` 返回 `{"ok":true}`
+- [ ] `admin` 可登录；快速会议可入会
+- [ ] 预约会议走审批流（`authadmin` 审批后可发起）
+- [ ] 屏幕共享全屏无无限嵌套；「沉浸模式」可用
+- [ ] 音视频、聊天、主持人管控正常
+- [ ] 日志：`tail -f /opt/meeting/logs/*.log`（标准输出与错误合并到同一文件）
 
 ## 六、卸载说明
 

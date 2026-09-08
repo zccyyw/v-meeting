@@ -157,14 +157,49 @@ sudo systemctl enable --now meeting-api meeting-realtime meeting-gateway
 
 ## 五、升级说明
 
+> 📦 安装包由 GitHub Actions 构建（推送 `v*` tag 自动产出 x64 + arm64 全部产物），从 Actions → Artifacts 下载 `meeting-rpm-<arch>-<ver>-<rel>` 即可，无需本地构建。
+
+### 5.1 首次安装（汇总）
+
 ```bash
-# 直接升级安装（保留 .env 配置和数据，自动迁移）
-sudo rpm -Uvh meeting-0.2-1.el7.x86_64.rpm
-# 重启服务
+# 1) 安装
+sudo rpm -ivh meeting-0.0.8-1.x86_64.rpm          # arm64 用 aarch64.rpm
+
+# 2) 配置（交互式推荐，或手动 cp env.example 改 .env）
+sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/configure.mjs
+
+# 3) 启动（ExecStartPre 自动执行数据库迁移与种子管理员）
+sudo systemctl daemon-reload
+sudo systemctl enable --now meeting-api meeting-realtime meeting-gateway
+
+# 4) 验证
+curl -k https://127.0.0.1:8088/api/healthz
+```
+
+### 5.2 升级（汇总）
+
+```bash
+# 0) 备份（必做）
+sudo cp /opt/meeting/conf/.env /opt/meeting/conf/.env.bak
+sudo cp /opt/meeting/data/meeting.sqlite ./meeting-$(date +%F).sqlite   # SQLite 场景
+
+# 1) 直接升级安装（保留 .env 配置和数据，自动迁移）
+sudo rpm -Uvh meeting-0.0.9-1.x86_64.rpm
+
+# 2) 重启服务
 sudo systemctl restart meeting-api meeting-realtime meeting-gateway
 ```
 
-> rpm -Uvh 会保留 /opt/meeting/conf/.env、/opt/meeting/data/、/opt/meeting/certs/ 不被覆盖。API 服务重启时 ExecStartPre 会自动执行数据库迁移。
+> `rpm -Uvh` 会保留 `/opt/meeting/conf/.env`、`/opt/meeting/data/`、`/opt/meeting/certs/` 不被覆盖。API 服务重启时 `ExecStartPre` 会自动执行数据库迁移，**无需手工执行迁移脚本**。
+
+### 5.3 升级后验收
+
+- [ ] `curl -k https://<IP>:8088/api/healthz` 返回 `{"ok":true}`
+- [ ] `admin` 可登录；快速会议可入会
+- [ ] 预约会议可提交申请，`authadmin` 审批通过后可发起会议
+- [ ] 屏幕共享全屏无无限嵌套（共享者本地不显示自己的共享预览）
+- [ ] 音视频、聊天、主持人管控正常
+- [ ] 日志：`tail -f /opt/meeting/logs/api.log`（标准输出与错误合并到同一文件）
 
 ## 六、卸载说明
 

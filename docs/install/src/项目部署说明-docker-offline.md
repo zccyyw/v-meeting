@@ -95,23 +95,59 @@ docker-compose up -d
 
 > 生产环境部署后请立即修改所有默认密码。
 
-## 五、升级说明
+## 五、首次安装与升级说明
+
+> 📦 安装包由 GitHub Actions 构建（推送 `v*` tag 自动产出 x64 + arm64 全部产物）：从 Actions → Artifacts 下载 `meeting-docker-<arch>-<ver>-<rel>`，解压后即为本文的 `dist/docker/` 目录内容；也可在**同架构构建机**上执行 `npm run pack:docker` 自行打包。
+
+### 5.1 首次安装（汇总）
 
 ```bash
-# 1. 构建机重新打包
-npm run pack:docker
-
-# 2. 拷贝到目标机
-scp dist/docker/meeting-app-*.tar dist/docker/meeting-base-*.tar user@target:/tmp/
-
-# 3. 目标机加载新镜像
+# 1) 加载全部镜像
 bash load-images.sh
 
-# 4. 重启服务（自动迁移）
-docker-compose up -d
+# 2) 配置环境
+cp .env.example .env
+vi .env                      # 必改：MEDIASOUP_ANNOUNCED_IP=服务器IP；数据库密码等
+
+# 3) 生成证书（可选，信创环境推荐 CA 模式）
+bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>
+
+# 4) 启动（默认 SQLite + 自动初始化迁移与管理员）
+docker compose up -d
+
+# 5) 验证
+docker compose ps
+curl -k https://127.0.0.1/api/healthz
 ```
 
-> docker-compose up -d 会自动用新镜像重建容器。.env 和数据卷保持不变，api 容器启动时自动执行迁移与 seed。
+### 5.2 升级（汇总）
+
+```bash
+# 0) 备份（推荐）
+cp .env .env.bak
+docker run --rm -v meeting-data:/data -v $(pwd)/backup:/backup alpine \
+  cp -a /data /backup/meeting-data-$(date +%Y%m%d)
+
+# 1) 获取新镜像包（构建机重新打包或从 Actions 下载）
+#    scp dist/docker/meeting-app-*.tar dist/docker/meeting-base-*.tar user@target:/tmp/
+
+# 2) 加载新镜像（自动覆盖同名旧镜像）
+bash load-images.sh
+
+# 3) 启动（自动迁移）
+docker compose up -d
+```
+
+> `docker compose up -d` 会自动用新镜像重建容器。`.env` 和数据卷保持不变，api 容器启动时**自动执行迁移与 seed**，无需手工操作。
+
+### 5.3 升级后验收
+
+- [ ] `curl -k https://<IP>/api/healthz` 返回 `{"ok":true}`
+- [ ] `admin` 可登录；快速会议可入会
+- [ ] 预约会议提交后进入待审批，`authadmin` 审批通过可发起
+- [ ] 屏幕共享全屏无无限嵌套；「沉浸模式」可用
+- [ ] 音视频、聊天、主持人管控正常
+- [ ] 浏览器控制台无 502 / ws 错误；PWA 缓存已更新
 
 ## 六、卸载说明
 

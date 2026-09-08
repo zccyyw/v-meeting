@@ -151,7 +151,18 @@ docker-compose up -d
 
 > 生产环境部署后请立即修改所有默认密码。
 
-## 七、升级说明（离线部署）
+## 七、首次安装与升级说明
+
+> 📦 安装包由 GitHub Actions 构建（推送 `v*` tag 自动产出 x64 + arm64 全部产物），从 Actions → Artifacts 下载对应产物即可。
+
+### 7.1 首次安装（汇总）
+
+- **在线构建**：`cp .env.production.example .env` → 改 `MEDIASOUP_ANNOUNCED_IP` → `docker compose up -d --build`
+- **离线镜像**：`bash load-images.sh` → `cp .env.example .env` → `docker compose up -d`
+
+详细步骤见本文 [四、安装说明](#四安装说明)。首次启动 api 容器会自动执行数据库迁移并写入默认管理员。
+
+### 7.2 升级（离线部署）
 
 **步骤 1 — 停止当前服务**
 
