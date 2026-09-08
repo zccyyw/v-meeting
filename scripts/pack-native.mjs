@@ -21,7 +21,6 @@ const platform = process.platform;
 const arch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : process.arch;
 const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 const outRoot = join(root, "dist", "native");
-const stage = join(outRoot, "staging");
 const bundleName = `meeting-linux-${arch}-${stamp}`;
 const bundleDir = join(outRoot, bundleName);
 
@@ -55,9 +54,7 @@ if (platform !== "linux") {
 
 console.log(`→ pack-native for linux-${arch}`);
 
-rmSync(stage, { recursive: true, force: true });
 rmSync(bundleDir, { recursive: true, force: true });
-mkdirSync(stage, { recursive: true });
 
 console.log("→ build packages");
 run("npm", ["run", "build:shared"]);
@@ -70,40 +67,23 @@ run("npm", ["run", "build", "-w", "@meeting/front"], {
   },
 });
 
-const stagingPkg = {
-  name: "meeting-native-bundle",
-  private: true,
-  workspaces: ["serve/shared", "serve/db", "serve/api", "serve/realtime"],
-};
-writeFileSync(join(stage, "package.json"), JSON.stringify(stagingPkg, null, 2));
-
-for (const name of ["shared", "db", "api", "realtime"]) {
-  const src = join(root, "serve", name);
-  const dest = join(stage, "serve", name);
-  mkdirSync(dest, { recursive: true });
-  copy(join(src, "package.json"), join(dest, "package.json"));
-  copy(join(src, "dist"), join(dest, "dist"));
-  if (name === "api") {
-    copy(join(src, "src", "sql"), join(dest, "dist", "sql"));
-  }
-}
-
-// Strip devDependencies from workspace package.json copies for cleaner install
-for (const name of ["shared", "db", "api", "realtime"]) {
-  const p = join(stage, "serve", name, "package.json");
-  const j = JSON.parse(readFileSync(p, "utf8"));
-  delete j.devDependencies;
-  delete j.scripts?.test;
-  writeFileSync(p, JSON.stringify(j, null, 2));
-}
-
-console.log("→ npm install --omit=dev (build host needs network once)");
-run("npm", ["install", "--omit=dev", "--no-audit", "--no-fund"], { cwd: stage });
+// 生产依赖：复用构建宿主已安装的 node_modules（原生模块架构与宿主一致——
+// CI 的 arm64 构建运行在 arm64 容器中）。不在 staging 重复 npm install：
+// 1) 避免 mediasoup postinstall 二次获取/编译 worker（qemu 下曾耗时数小时）
+// 2) 避免 qemu 下全量解压数万个文件
+// 先用 npm prune --omit=dev 裁掉 devDependencies，再复制进 bundle。
+console.log("→ npm prune --omit=dev (reuse build-host node_modules)");
+run("npm", ["prune", "--omit=dev", "--no-audit", "--no-fund"]);
 
 mkdirSync(bundleDir, { recursive: true });
-copy(join(stage, "package.json"), join(bundleDir, "app", "package.json"));
-copy(join(stage, "node_modules"), join(bundleDir, "app", "node_modules"));
-copy(join(stage, "serve"), join(bundleDir, "app", "serve"));
+copy(join(root, "node_modules"), join(bundleDir, "app", "node_modules"));
+for (const name of ["shared", "db", "api", "realtime"]) {
+  const nmDir = join(root, "serve", name, "node_modules");
+  if (existsSync(nmDir)) {
+    copy(nmDir, join(bundleDir, "app", "serve", name, "node_modules"));
+  }
+}
+copy(join(root, "serve"), join(bundleDir, "app", "serve"));
 copy(join(root, "front", "dist"), join(bundleDir, "app", "front"));
 
 copy(join(root, "deploy", "native", "bin"), join(bundleDir, "bin"));
@@ -139,8 +119,6 @@ const tarPath = join(outRoot, `${bundleName}.tar.gz`);
 rmSync(tarPath, { force: true });
 console.log(`→ tar ${tarPath}`);
 run("tar", ["-czf", tarPath, "-C", outRoot, bundleName]);
-
-rmSync(stage, { recursive: true, force: true });
 
 writeFileSync(
   join(outRoot, "README.txt"),

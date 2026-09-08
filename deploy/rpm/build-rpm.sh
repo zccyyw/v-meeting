@@ -165,18 +165,26 @@ for name in shared db api realtime; do
   fi
 done
 
-# Install production dependencies
-cd "$STAGE/opt/meeting/app"
-cat > package.json <<'PKGJSON'
-{"name":"meeting-app","private":true,"workspaces":["serve/shared","serve/db","serve/api","serve/realtime"]}
-PKGJSON
+# ─── Production dependencies: reuse workspace node_modules ───
+# 不在 staging 重新 npm install：
+#   1. 避免 mediasoup postinstall 二次获取/编译 worker（qemu arm64 下曾耗时数小时）
+#   2. 避免 qemu 下全量解压数万个文件（30 分钟以上）
+# 做法：构建完成后 npm prune --omit=dev 裁掉 devDependencies，
+#       再把 workspace 的 node_modules（根 + 各子包）复制进 staging。
+#       npm workspaces 的包链接（@meeting/* → serve/*）为相对 symlink，
+#       cp -a 复制后在 staging 目录结构中依然有效。
+echo "→ Pruning devDependencies from workspace node_modules..."
+cd "$WORKSPACE_DIR"
+npm prune --omit=dev --no-audit --no-fund
 
-# Strip devDependencies from workspace packages
+echo "→ Copying production node_modules to staging..."
+mkdir -p "$STAGE/opt/meeting/app"
+cp -a "$WORKSPACE_DIR/node_modules" "$STAGE/opt/meeting/app/node_modules"
 for name in shared db api realtime; do
-  p="$STAGE/opt/meeting/app/serve/$name/package.json"
-  node -e "const f='$p';const j=require(f);delete j.devDependencies;delete j.scripts;require('fs').writeFileSync(f,JSON.stringify(j,null,2))"
+  if [ -d "$WORKSPACE_DIR/serve/$name/node_modules" ]; then
+    cp -a "$WORKSPACE_DIR/serve/$name/node_modules" "$STAGE/opt/meeting/app/serve/$name/node_modules"
+  fi
 done
-npm install --omit=dev --no-audit --no-fund
 
 # Copy front static files
 cp -r "$WORKSPACE_DIR/front/dist" "$STAGE/opt/meeting/app/front"

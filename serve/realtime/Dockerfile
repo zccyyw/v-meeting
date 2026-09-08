@@ -43,8 +43,19 @@ RUN npm ci --ignore-scripts -w @meeting/shared -w @meeting/db -w @meeting/realti
 # Patch mediasoup's meson wrap files to use gh-proxy mirror, then build worker.
 COPY serve/realtime/patch-mediasoup-wrap.cjs ./patch-mediasoup-wrap.cjs
 ENV PYTHON=/opt/mediasoup-venv/bin/python
+# TARGETPLATFORM 由 buildx 自动注入：arm64 交叉构建（qemu 模拟）时本地编译
+# worker 耗时数小时，改为优先下载官方预编译 worker（下载/校验失败自动回退
+# 本地编译）；x64（含 CN 网络本地构建）保持原行为——跳过预编译下载。
+ARG TARGETPLATFORM
 RUN node ./patch-mediasoup-wrap.cjs ${GHPROXY} \
-  && cd node_modules/mediasoup && node npm-scripts.mjs postinstall \
+  && cd node_modules/mediasoup \
+  && if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
+       echo "→ arm64: prefer mediasoup-worker prebuilt download"; \
+       unset MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD; \
+     else \
+       export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true; \
+     fi \
+  && node npm-scripts.mjs postinstall \
   && cd /app && npm rebuild better-sqlite3
 
 COPY serve/shared ./serve/shared
