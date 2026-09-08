@@ -27,3 +27,5 @@ coverage
 .superpowers/
 截图/
 *.tsbuildinfo
+# 临时文件
+.tmp-*

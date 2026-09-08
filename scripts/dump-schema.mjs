@@ -18,7 +18,7 @@ import { createPool } from "../serve/db/dist/index.js";
 import { migrate } from "../serve/api/dist/migrate.js";
 
 const driver = process.argv[2] || "sqlite";
-const outFile = `serve/sql/schema-${driver}.sql`;
+const outFile = `serve/sql/meeting-${driver}.sql`;
 
 const header = (extra = []) => [
   "-- ============================================================",
@@ -32,33 +32,41 @@ const header = (extra = []) => [
 
 async function dumpSqlite() {
   process.env.DB_DRIVER = "sqlite";
-  process.env.SQLITE_PATH = process.env.SQLITE_PATH || ".tmp-schema.sqlite";
+  // 使用系统临时目录，避免在工作区残留 .tmp 文件
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const tmpDb = join(tmpdir(), `meeting-schema-dump-${process.pid}.sqlite`);
+  process.env.SQLITE_PATH = process.env.SQLITE_PATH || tmpDb;
   const db = await createPool();
-  await migrate(db);
-  await migrate(db); // 幂等校验
-  const [rows] = await db.query(
-    "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, name",
-  );
-  const tables = rows.filter((r) => r.type === "table");
-  const indexes = rows.filter((r) => r.type === "index");
-  const triggers = rows.filter((r) => r.type === "trigger");
-  const out = [
-    ...header([
-      `-- 表：${tables.length}；索引：${indexes.length}；触发器：${triggers.length}`,
-    ]),
-    "-- ---------- 表 ----------",
-  ];
-  for (const t of tables) out.push(t.sql.trim() + ";", "");
-  if (indexes.length) {
-    out.push("-- ---------- 索引 ----------");
-    for (const i of indexes) out.push(i.sql.trim() + ";", "");
+  try {
+    await migrate(db);
+    await migrate(db); // 幂等校验
+    const [rows] = await db.query(
+      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, name",
+    );
+    const tables = rows.filter((r) => r.type === "table");
+    const indexes = rows.filter((r) => r.type === "index");
+    const triggers = rows.filter((r) => r.type === "trigger");
+    const out = [
+      ...header([
+        `-- 表：${tables.length}；索引：${indexes.length}；触发器：${triggers.length}`,
+      ]),
+      "-- ---------- 表 ----------",
+    ];
+    for (const t of tables) out.push(t.sql.trim() + ";", "");
+    if (indexes.length) {
+      out.push("-- ---------- 索引 ----------");
+      for (const i of indexes) out.push(i.sql.trim() + ";", "");
+    }
+    if (triggers.length) {
+      out.push("-- ---------- 触发器 ----------");
+      for (const t of triggers) out.push(t.sql.trim() + ";", "");
+    }
+    return out.join("\n");
+  } finally {
+    await db.end().catch(() => {});
+    await import("node:fs").then((fs) => fs.rmSync(tmpDb, { force: true }));
   }
-  if (triggers.length) {
-    out.push("-- ---------- 触发器 ----------");
-    for (const t of triggers) out.push(t.sql.trim() + ";", "");
-  }
-  await db.end();
-  return out.join("\n");
 }
 
 async function dumpMySql() {
