@@ -273,7 +273,10 @@ jobs:
               python3 -m venv /opt/mediasoup-venv
               /opt/mediasoup-venv/bin/python -m pip install --no-input --upgrade pip
               npm ci --ignore-scripts
-              export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
+              # arm64 (qemu) 不强制本地编译 worker：优先下载官方预编译
+              # （runner 直连 GitHub 秒级），失败自动回退本地编译。
+              # qemu 下本地编译耗时数小时会触发 job 6 小时超时被取消。
+              unset MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD
               export PIP_INDEX_URL='https://pypi.tuna.tsinghua.edu.cn/simple'
               export PYTHON=/opt/mediasoup-venv/bin/python
               GHPROXY='https://gh-proxy.com'

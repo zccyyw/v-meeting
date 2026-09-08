@@ -93,14 +93,22 @@ else
 fi
 
 # ─── Build project ───
-# mediasoup needs to compile its C++ worker locally (GitHub prebuilt download
-# is blocked on CN networks). We replicate the same approach as
-# serve/realtime/Dockerfile:
-#   1. --ignore-scripts to skip postinstall during npm install
-#   2. Patch mediasoup's meson wrap files to use gh-proxy
-#   3. Run mediasoup postinstall manually
-#   4. Rebuild better-sqlite3 (also skipped by --ignore-scripts)
-export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
+# mediasoup worker 获取策略：
+#   x64  → 本地编译（原行为，已验证可行；CN 网络预编译下载被墙故 skip）
+#   arm64 → 优先下载官方预编译 worker（GitHub Actions runner 直连 GitHub，
+#          下载秒级），下载失败自动回退本地编译。
+#          原因：arm64 走 qemu 模拟，本地编译 C++ worker 耗时数小时，
+#          两次编译（workspace + staging）会超过 GitHub Actions 单 job
+#          6 小时上限，导致 job 被取消（"The operation was canceled."）。
+#          mediasoup postinstall 在未设置 SKIP 时优先下载 prebuilt，
+#          404/校验失败自动回退编译，行为安全。
+if [ "$TARGET_ARCH" = "arm64" ]; then
+  unset MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD
+  echo "→ arm64: mediasoup worker prefers prebuilt download (fallback: local build)"
+else
+  export MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
+  echo "→ x64: mediasoup worker builds locally (prebuilt download skipped)"
+fi
 export PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 GHPROXY="${GHPROXY:-https://gh-proxy.com}"
 
