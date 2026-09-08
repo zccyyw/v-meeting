@@ -113,3 +113,45 @@ app.get("/sys-config/public", async () => {
 
 const port = Number(process.env.API_PORT ?? 8080);
 await app.listen({ port, host: "0.0.0.0" });
+
+// ── 优雅停机 ──
+// systemctl stop / docker stop 时先停止接收新请求、等待进行中的请求（含
+// 1GB 录制上传）完成，再关闭数据库连接，避免中断上传与 SQLite 事务。
+// 与 realtime 服务的 SIGTERM 处理保持一致。
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  app.log.info({ signal }, "shutting down gracefully");
+  const forceExit = setTimeout(() => {
+    app.log.warn("graceful shutdown timed out, forcing exit");
+    process.exit(1);
+  }, Number(process.env.SHUTDOWN_TIMEOUT_MS ?? 30000));
+  forceExit.unref();
+
+  try {
+    await app.close();
+    app.log.info("http server closed");
+  } catch (err) {
+    app.log.error({ err }, "failed to close http server");
+  }
+  try {
+    await db.end();
+  } catch (err) {
+    app.log.error({ err }, "failed to close database pool");
+  }
+  try {
+    // ioredis 与内存 Redis 均提供 disconnect()
+    await redis.disconnect();
+  } catch {
+    /* 关闭失败不影响退出 */
+  }
+  clearTimeout(forceExit);
+  process.exit(0);
+}
+
+for (const sig of ["SIGTERM", "SIGINT"] as const) {
+  process.on(sig, () => {
+    void shutdown(sig);
+  });
+}

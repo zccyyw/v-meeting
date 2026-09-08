@@ -74,7 +74,9 @@ export async function createWebRtcTransport(router: Router) {
   const listenIps = [
     {
       ip: process.env.MEDIASOUP_LISTEN_IP ?? "0.0.0.0",
-      announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP ?? "127.0.0.1",
+      // 用 || 兜底：compose 中未设置时环境变量为空字符串，?? 不会触发兜底，
+      // 会导致 announcedIp 为空、客户端拿不到可达候选地址（媒体全部不通）。
+      announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || "127.0.0.1",
     },
   ];
   const transport = await router.createWebRtcTransport({

@@ -72,5 +72,5 @@ ENV NODE_ENV=production
 COPY --from=deps /app /app
 WORKDIR /app/serve/realtime
 EXPOSE 8082
-EXPOSE 40000-40100/udp
+EXPOSE 40000-41000/udp
 CMD ["node", "dist/index.js"]

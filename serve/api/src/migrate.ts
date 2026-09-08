@@ -376,9 +376,21 @@ async function migrateRecordingsIndexes(db: Db): Promise<number> {
  * MySQL doesn't support ON CONFLICT; use ON DUPLICATE KEY UPDATE (no-op).
  * Column is qualified with table name to avoid ambiguity in INSERT ... SELECT.
  */
+/** 按驱动返回 INSERT 前缀：SQLite 用 INSERT OR IGNORE 规避冲突。 */
+function insertIgnore(db: Db): string {
+  return db.driver === "sqlite" ? "INSERT OR IGNORE INTO" : "INSERT INTO";
+}
+
 function conflictNoOp(db: Db, tableName: string, pkCol: string): string {
   if (db.driver === "mysql")
     return `ON DUPLICATE KEY UPDATE ${tableName}.${pkCol} = ${tableName}.${pkCol}`;
+  // SQLite 的 UPSERT 要求给出**与主键/唯一约束完全匹配**的冲突目标：
+  // 不带目标会报 "near DO: syntax error"，目标不匹配会报
+  // "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint"。
+  // 这些关联表是复合主键，按表名映射到正确的目标列。
+  // SQLite 不支持对 INSERT ... SELECT 使用 UPSERT（ON CONFLICT 只能跟 VALUES），
+  // 因此 SQLite 分支返回空串，改由 insertIgnore() 的 INSERT OR IGNORE 处理。
+  if (db.driver === "sqlite") return "";
   return "ON CONFLICT DO NOTHING";
 }
 
@@ -456,13 +468,13 @@ async function migrateSysUser(db: Db): Promise<number> {
     if (hasRoleCol) {
       // admin 角色用户关联到 role_id=1
       await db.query(
-        `INSERT INTO sys_user_role (user_id, role_id)
+        `${insertIgnore(db)} sys_user_role (user_id, role_id)
          SELECT user_id, 1 FROM sys_user WHERE role = 'admin'
          ${conflictNoOp(db, "sys_user_role", "user_id")}`,
       );
       // 普通用户关联到 role_id=2
       await db.query(
-        `INSERT INTO sys_user_role (user_id, role_id)
+        `${insertIgnore(db)} sys_user_role (user_id, role_id)
          SELECT user_id, 2 FROM sys_user WHERE role = 'user' OR role IS NULL OR role NOT IN ('admin')
          ${conflictNoOp(db, "sys_user_role", "user_id")}`,
       );
@@ -484,7 +496,7 @@ async function migrateSysUser(db: Db): Promise<number> {
 
     // ── Step 6: 给超级管理员角色分配所有菜单 ──
     await db.query(
-      `INSERT INTO sys_role_menu (role_id, menu_id)
+      `${insertIgnore(db)} sys_role_menu (role_id, menu_id)
        SELECT 1, menu_id FROM sys_menu
        ${conflictNoOp(db, "sys_role_menu", "role_id")}`,
     );
@@ -512,7 +524,7 @@ async function migrateSysUser(db: Db): Promise<number> {
   // 如果 sys_user 已存在，确保 admin 角色有所有菜单
   if (sysUserExists) {
     await db.query(
-      `INSERT INTO sys_role_menu (role_id, menu_id)
+      `${insertIgnore(db)} sys_role_menu (role_id, menu_id)
        SELECT 1, menu_id FROM sys_menu
        WHERE menu_id NOT IN (SELECT menu_id FROM sys_role_menu WHERE role_id = 1)
        ${conflictNoOp(db, "sys_role_menu", "role_id")}`,

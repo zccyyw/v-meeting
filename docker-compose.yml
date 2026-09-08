@@ -67,6 +67,8 @@ services:
       dockerfile: serve/api/Dockerfile
     image: ${MEETING_API_IMAGE:-meeting-api:latest}
     restart: unless-stopped
+    # 优雅停机：给 API 30s 完成进行中的请求（含录制上传）后再 SIGKILL
+    stop_grace_period: 30s
     environment:
       DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
       MYSQL_HOST: mysql
@@ -110,6 +112,7 @@ services:
       dockerfile: serve/realtime/Dockerfile
     image: ${MEETING_REALTIME_IMAGE:-meeting-realtime:latest}
     restart: unless-stopped
+    stop_grace_period: 30s
     environment:
       DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
       MYSQL_HOST: mysql

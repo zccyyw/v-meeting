@@ -12,20 +12,26 @@ export function createSqliteDb(): Db {
     driver: "sqlite",
     query(sql: string, params: unknown[] = []) {
       const stmt = db.prepare(sql);
+      // better-sqlite3 要求：返回结果行的语句用 all()，其余（INSERT/UPDATE/
+      // DELETE/CREATE/ALTER/DROP/PRAGMA 等）必须用 run()，否则抛
+      // "This statement does not return data. Use run() instead"。
+      // 用 stmt.reader 判断（官方提供的元数据），比正则匹配 SQL 前缀更可靠：
+      // 旧实现只识别 INSERT/UPDATE/DELETE，导致 DDL（迁移建表）直接崩溃。
+      if (!stmt.reader) {
+        const info = stmt.run(...params);
+        const header: ResultHeader = {
+          insertId: Number(info.lastInsertRowid ?? 0),
+          affectedRows: info.changes,
+        };
+        return Promise.resolve([header, info] as [QueryResult, unknown]);
+      }
       const isInsert = /^\s*INSERT\s+/i.test(sql);
-      const isModify = /^\s*(UPDATE|DELETE)\s+/i.test(sql);
-
       if (isInsert) {
         const info = stmt.run(...params);
         const header: ResultHeader = {
           insertId: Number(info.lastInsertRowid),
           affectedRows: info.changes,
         };
-        return Promise.resolve([header, info] as [QueryResult, unknown]);
-      }
-      if (isModify) {
-        const info = stmt.run(...params);
-        const header: ResultHeader = { insertId: 0, affectedRows: info.changes };
         return Promise.resolve([header, info] as [QueryResult, unknown]);
       }
       const rows = stmt.all(...params) as Record<string, unknown>[];

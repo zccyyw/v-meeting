@@ -77,7 +77,7 @@ GATEWAY_PORT=8088
 MEDIASOUP_ANNOUNCED_IP=127.0.0.1
 MEDIASOUP_LISTEN_IP=0.0.0.0
 RTC_MIN_PORT=40000
-RTC_MAX_PORT=40100
+RTC_MAX_PORT=41000
 `;
   }
   return fs.readFileSync(ENV_EXAMPLE, "utf8");
@@ -228,7 +228,7 @@ async function generateConfig() {
   // Set MEDIASOUP_LISTEN_IP and RTC ports to defaults if missing
   if (!config.MEDIASOUP_LISTEN_IP) config.MEDIASOUP_LISTEN_IP = "0.0.0.0";
   if (!config.RTC_MIN_PORT) config.RTC_MIN_PORT = "40000";
-  if (!config.RTC_MAX_PORT) config.RTC_MAX_PORT = "40100";
+  if (!config.RTC_MAX_PORT) config.RTC_MAX_PORT = "41000";
 
   for (const [key, value] of Object.entries(config)) {
     const regex = new RegExp(`^${key}=.*$`, "m");
