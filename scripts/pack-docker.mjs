@@ -36,9 +36,13 @@ mkdirSync(out, { recursive: true });
 
 const tag = process.env.IMAGE_TAG || "latest";
 const platform = (process.env.DOCKER_PLATFORM || "").trim();
+// 产物命名：显式平台取平台名（linux/arm64 -> arm64）；未指定时取宿主架构
+// （x64 构建机 -> x64），避免出现不自解释的 "host"，并与 arm64 命名风格一致。
 const platformSlug = platform
   ? platform.replace("linux/", "").replace("/", "-")
-  : "host";
+  : process.arch === "arm64"
+    ? "arm64"
+    : "x64";
 const built = [];
 
 console.log(

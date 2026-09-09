@@ -50,15 +50,20 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 
 ## 四、安装说明
 
-### 步骤 1：获取并传输安装包
+### 步骤 1：上传并解压安装包
 
-从 GitHub 仓库 Actions 页面下载对应架构的 DEB 构建产物（meeting-deb-x64-*.zip 或 meeting-deb-arm64-*.zip，内含 meeting-<版本>-<发行号>.deb），传输到目标机：
+已获取到 DEB 构建产物 zip（meeting-deb-x64-*.zip 或 meeting-deb-arm64-*.zip，架构必须与目标机 CPU 一致），手动上传到服务器并解压：
 
 ```bash
-scp meeting-<版本>-<发行号>.deb user@<目标机IP>:/tmp/
+scp meeting-deb-*.zip user@<目标机IP>:/tmp/
 ```
 
-安装前确认目标机 CPU 架构与安装包一致：
+```bash
+cd /tmp
+unzip meeting-deb-*.zip
+```
+
+解压后得到 DEB 安装包（meeting-<版本>-<发行号>.deb）。确认目标机 CPU 架构与安装包一致：
 
 ```bash
 uname -m    # 输出 x86_64 或 aarch64，与安装包架构对应
@@ -93,15 +98,21 @@ sudo cp /opt/meeting/conf/env.example /opt/meeting/conf/.env
 sudo vi /opt/meeting/conf/.env
 ```
 
-必改项：MEDIASOUP_ANNOUNCED_IP 设为客户端可达的服务器 IP（切勿填 127.0.0.1）。默认 DB_DRIVER=sqlite、REDIS_HOST=memory 即可零依赖运行；如需切换 MySQL 或 PostgreSQL，按 env.example 内注释填写连接参数，并提前建库。
+必改项：
 
-### 步骤 4：生成证书（可选）
+| 变量 | 说明 |
+| --- | --- |
+| MEDIASOUP_ANNOUNCED_IP | 客户端可达的服务器 IP，切勿填 127.0.0.1 |
+| DB_DRIVER | 数据库类型：sqlite（默认，零依赖）/ mysql / postgres，切换后按 env.example 注释填写连接参数并提前建库 |
+| REDIS_HOST | 默认 memory（进程内存储，单节点零依赖）；多节点部署时改为实际 Redis 地址 |
+
+### 步骤 4：生成证书
 
 ```bash
-sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/gen-cert.mjs <服务器IP>
+sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/gen-cert.mjs --ca <服务器IP>
 ```
 
-生成证书后网关自动启用 HTTPS（浏览器入口变为 https）。信创环境请使用 --ca 参数以 CA 签发模式生成根证书与服务器证书，并将 ca.crt 导入客户端浏览器/系统信任机构。
+以 CA 签发模式生成根证书与服务器证书（信创环境必须），并将 ca.crt 导入客户端浏览器/系统信任机构。生成证书后网关自动启用 HTTPS（浏览器入口变为 https）。
 
 ### 步骤 5：启动服务
 

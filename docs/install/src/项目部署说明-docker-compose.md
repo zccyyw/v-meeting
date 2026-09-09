@@ -82,13 +82,13 @@ vi .env
 | MEDIASOUP_LISTEN_IP | 监听地址，默认 0.0.0.0 |
 | 数据库密码类变量 | 使用 postgres / mysql profile 时必须修改默认密码 |
 
-### 步骤 3：生成证书（可选）
+### 步骤 3：生成证书
 
 ```bash
-bash deploy/docker/gen-selfsigned.sh <服务器IP或域名>
+bash deploy/docker/gen-selfsigned.sh --ca <服务器IP或域名>
 ```
 
-信创环境请使用 --ca 参数以 CA 签发模式生成根证书与服务器证书，并将 ca.crt 导入客户端浏览器/系统信任机构。生产环境建议替换为正式证书放入 deploy/docker/certs/。
+以 CA 签发模式生成根证书与服务器证书（信创环境必须），并将 ca.crt 导入客户端浏览器/系统信任机构。生产环境建议替换为正式证书放入 deploy/docker/certs/。
 
 ### 步骤 4：构建并启动
 

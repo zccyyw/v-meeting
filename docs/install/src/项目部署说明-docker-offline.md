@@ -43,21 +43,13 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 
 ## 四、安装说明
 
-### 步骤 1：获取并传输离线包
+### 步骤 1：上传并解压安装包
 
-离线包来源：GitHub 仓库 Actions 页面下载对应架构的构建产物（meeting-docker-x64-*.zip 或 meeting-docker-arm64-*.zip，产物架构必须与目标机 CPU 一致），或在同架构构建机上执行 npm run pack:docker 自行打包。
-
-传输整个目录到目标机（内网环境可用 U 盘/光盘摆渡）：
+已获取到离线包 zip（meeting-docker-x64-*.zip 或 meeting-docker-arm64-*.zip，架构必须与目标机 CPU 一致），手动上传到服务器并解压：
 
 ```bash
-scp -r dist/docker user@<目标机IP>:/opt/meeting-offline/
+scp meeting-docker-*.zip user@<目标机IP>:/opt/meeting-offline/
 ```
-
-注意：请整体拷贝目录（scp -r 或先 tar 打包再传输），不要用通配符逐个拷贝文件，避免遗漏。
-
-### 步骤 2：解压
-
-在目标机上解压构建产物 zip：
 
 ```bash
 cd /opt/meeting-offline
@@ -65,7 +57,7 @@ unzip meeting-docker-*.zip -d meeting-docker
 cd meeting-docker
 ```
 
-### 步骤 3：脚本授权并确认文件完整
+### 步骤 2：脚本授权并确认文件完整
 
 为脚本添加执行权限：
 
@@ -82,7 +74,7 @@ ls -la
 
 应包含：meeting-app-*.tar（应用镜像）、meeting-base-*.tar（基础镜像）、docker-compose.yml、Caddyfile、env.example（环境配置模板）、load-images.sh（镜像加载脚本）、deploy/docker/gen-selfsigned.sh（证书生成脚本）。
 
-### 步骤 4：加载镜像
+### 步骤 3：加载镜像
 
 ```bash
 bash load-images.sh
@@ -90,38 +82,32 @@ bash load-images.sh
 
 脚本自动加载目录内全部镜像 tar（应用镜像与 PostgreSQL/MySQL/Redis/Caddy 基础镜像）。加载完成可执行 docker images 确认。
 
-### 步骤 5：配置环境
+### 步骤 4：配置环境
 
 ```bash
-cp .env.example .env
+cp env.example .env
 vi .env
 ```
 
 必改项：
 
-**MEDIASOUP_ANNOUNCED_IP** 设为客户端可达的服务器 IP（切勿填 127.0.0.1）；
+| 变量 | 说明 |
+| --- | --- |
+| MEDIASOUP_ANNOUNCED_IP | 客户端可达的服务器 IP，切勿填 127.0.0.1 |
+| COMPOSE_PROFILES | 数据库类型：sqlite（默认，零依赖）/ postgres / mysql |
+| 数据库密码类变量 | 使用 postgres / mysql profile 时必须修改默认密码 |
 
-**COMPOSE_PROFILES** 选择数据库类型（默认 sqlite 零依赖）；
-
-**PS: **使用 postgres / mysql profile 时必须修改默认数据库密码。
-
-### 步骤 6：生成证书（可选）
+### 步骤 5：生成证书
 
 ```bash
 bash deploy/docker/gen-selfsigned.sh --ca <服务器IP或域名>
 ```
 
-信创环境请使用 --ca 参数以 CA 签发模式生成根证书与服务器证书，并将 ca.crt 导入客户端浏览器/系统信任机构。
+以 CA 签发模式生成根证书与服务器证书（信创环境必须），并将 ca.crt 导入客户端浏览器/系统信任机构。
 
-### 步骤 7：启动与验证
+### 步骤 6：启动与验证
 
 ```bash
-docker images | grep meeting   # 确认实际 tag（应为 0.0.10）
-
-docker tag meeting-api:0.0.10 meeting-api:latest
-docker tag meeting-realtime:0.0.10 meeting-realtime:latest
-docker tag meeting-web:0.0.10 meeting-web:latest
-
 docker-compose up -d
 ```
 

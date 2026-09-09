@@ -49,12 +49,19 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 
 ## 四、安装说明
 
-### 步骤 1：获取并传输离线包
+### 步骤 1：上传并解压安装包
 
-从 GitHub 仓库 Actions 页面下载对应架构的 Native 构建产物（meeting-native-x64-*.zip 或 meeting-native-arm64-*.zip，内含 meeting-linux-<架构>-<日期>.tar.gz），传输到目标机：
+已获取到 Native 构建产物 zip（meeting-native-x64-*.zip 或 meeting-native-arm64-*.zip，架构必须与目标机 CPU 一致），手动上传到服务器并解压（zip 内为 tar.gz 离线包，需两层解压）：
 
 ```bash
-scp meeting-linux-<架构>-<日期>.tar.gz user@<目标机IP>:/tmp/
+scp meeting-native-*.zip user@<目标机IP>:/tmp/
+```
+
+```bash
+cd /tmp
+unzip meeting-native-*.zip
+tar -xzf meeting-linux-<架构>-<日期>.tar.gz
+cd meeting-linux-<架构>-<日期>
 ```
 
 安装前确认目标机 Node.js 版本（需 20+）与 CPU 架构：
@@ -64,19 +71,16 @@ node -v     # 需 v20 及以上
 uname -m    # 输出 x86_64 或 aarch64，与离线包架构对应
 ```
 
-### 步骤 2：解压并授权脚本
+### 步骤 2：脚本授权
 
 ```bash
-cd /tmp
-tar -xzf meeting-linux-<架构>-<日期>.tar.gz
-cd meeting-linux-<架构>-<日期>
 chmod +x install.sh
 ```
 
-如从 Windows 中转过文件，建议统一修复行尾与权限：
+如从 Windows 中转过文件，建议统一修复行尾：
 
 ```bash
-sudo yum install -y dos2unix 2>/dev/null; dos2unix install.sh 2>/dev/null || true
+dos2unix install.sh 2>/dev/null || true
 ```
 
 ### 步骤 3：执行安装
@@ -95,7 +99,15 @@ sudo ./install.sh
 sudo vi /opt/meeting/conf/.env
 ```
 
-必改项：MEDIASOUP_ANNOUNCED_IP 设为客户端可达的服务器 IP（切勿填 127.0.0.1）；数据库与 Redis 连接参数（SQLite 默认零依赖）。改完后重启：
+必改项：
+
+| 变量 | 说明 |
+| --- | --- |
+| MEDIASOUP_ANNOUNCED_IP | 客户端可达的服务器 IP，切勿填 127.0.0.1 |
+| DB_DRIVER | 数据库类型：sqlite（默认，零依赖）/ mysql / postgres，切换后填写对应连接参数并提前建库 |
+| REDIS_HOST | 部署环境 Redis 地址（native 方式需预装 Redis 7.x） |
+
+改完后重启：
 
 ```bash
 sudo systemctl restart meeting-api meeting-realtime meeting-gateway
