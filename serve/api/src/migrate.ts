@@ -225,6 +225,29 @@ async function migrateMeetingRecordAllowed(db: Db): Promise<number> {
   return 1;
 }
 
+/**
+ * 判断是否为"对象已存在"类错误——迁移需幂等，此类错误应跳过而非中断启动。
+ *
+ * 注意：MySQL 重复列的错误码是 ER_DUP_FIELDNAME（1060）而非 ER_DUP_FIELD；
+ * 历史上误写为 ER_DUP_FIELD，导致 MySQL 下重复列容错完全失效
+ * （表现为服务启动时 "Duplicate column name 'xxx'" 崩溃）。
+ */
+function isIdempotentError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  const errno = (err as { errno?: number })?.errno;
+  return (
+    code === "ER_DUP_KEYNAME" ||      // MySQL: duplicate index (1061)
+    code === "ER_DUP_FIELDNAME" ||    // MySQL: duplicate column (1060)
+    code === "ER_DUP_FIELD" ||        // 兼容旧写法/部分驱动
+    errno === 1060 ||                 // MySQL: duplicate column（按 errno 兜底）
+    errno === 1061 ||                 // MySQL: duplicate index（按 errno 兜底）
+    code === "42P07" ||               // PostgreSQL: duplicate table/index
+    code === "42701" ||               // PostgreSQL: duplicate column
+    code === "42P06" ||               // PostgreSQL: duplicate schema
+    code === "SQLITE_ERROR"           // SQLite: generic (e.g. index/column exists)
+  );
+}
+
 /** Split SQL file into statements; keep dollar-quoted bodies intact. */
 function splitSqlStatements(sql: string): string[] {
   const out: string[] = [];
@@ -604,11 +627,7 @@ export async function migrate(db?: Db) {
           await db.query(statement);
           count += 1;
         } catch (err: unknown) {
-          const code = (err as { code?: string })?.code;
-          if (code === "ER_DUP_KEYNAME" || code === "ER_DUP_FIELD" ||
-              code === "42P07" || code === "42701" || code === "SQLITE_ERROR") {
-            continue;
-          }
+          if (isIdempotentError(err)) continue;
           throw err;
         }
       }
@@ -626,11 +645,7 @@ export async function migrate(db?: Db) {
           await db.query(statement);
           count += 1;
         } catch (err: unknown) {
-          const code = (err as { code?: string })?.code;
-          if (code === "ER_DUP_KEYNAME" || code === "ER_DUP_FIELD" ||
-              code === "42P07" || code === "42701" || code === "SQLITE_ERROR") {
-            continue;
-          }
+          if (isIdempotentError(err)) continue;
           throw err;
         }
       }
@@ -644,15 +659,9 @@ export async function migrate(db?: Db) {
         await db.query(statement);
         count += 1;
       } catch (err: unknown) {
-        // MySQL 不支持 CREATE INDEX IF NOT EXISTS，忽略重复索引/列已存在错误
-        const code = (err as { code?: string })?.code;
-        if (
-          code === "ER_DUP_KEYNAME" ||     // MySQL: duplicate index
-          code === "ER_DUP_FIELD" ||        // MySQL: duplicate column
-          code === "42P07" ||              // PostgreSQL: duplicate table/index
-          code === "42701" ||              // PostgreSQL: duplicate column
-          code === "SQLITE_ERROR"          // SQLite: generic (e.g. index exists)
-        ) {
+        // MySQL 不支持 CREATE INDEX / ADD COLUMN IF NOT EXISTS，
+        // 忽略重复索引、重复列等"已存在"错误以保证迁移幂等。
+        if (isIdempotentError(err)) {
           // 幂等：已存在则跳过
           continue;
         }
