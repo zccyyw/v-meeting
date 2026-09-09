@@ -54,10 +54,6 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 已获取到 Native 构建产物 zip（meeting-native-x64-*.zip 或 meeting-native-arm64-*.zip，架构必须与目标机 CPU 一致），手动上传到服务器并解压（zip 内为 tar.gz 离线包，需两层解压）：
 
 ```bash
-scp meeting-native-*.zip user@<目标机IP>:/tmp/
-```
-
-```bash
 cd /tmp
 unzip meeting-native-*.zip
 tar -xzf meeting-linux-<架构>-<日期>.tar.gz

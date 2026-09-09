@@ -60,10 +60,8 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 git clone <仓库地址> meeting
 cd meeting
 
-# 方式二：本地打包上传（内网环境）
-tar -czf meeting-src.tar.gz --exclude node_modules --exclude dist .
-scp meeting-src.tar.gz user@<目标机IP>:/opt/
-# 目标机解压：mkdir -p /opt/meeting && tar -xzf /opt/meeting-src.tar.gz -C /opt/meeting && cd /opt/meeting
+# 方式二：本地打包后手动上传到服务器（内网环境），再解压
+mkdir -p /opt/meeting && tar -xzf meeting-src.tar.gz -C /opt/meeting && cd /opt/meeting
 ```
 
 ### 步骤 2：准备环境文件

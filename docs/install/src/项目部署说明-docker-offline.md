@@ -48,10 +48,6 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 已获取到离线包 zip（meeting-docker-x64-*.zip 或 meeting-docker-arm64-*.zip，架构必须与目标机 CPU 一致），手动上传到服务器并解压：
 
 ```bash
-scp meeting-docker-*.zip user@<目标机IP>:/opt/meeting-offline/
-```
-
-```bash
 cd /opt/meeting-offline
 unzip meeting-docker-*.zip -d meeting-docker
 cd meeting-docker

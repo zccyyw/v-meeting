@@ -56,10 +56,6 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 已获取到 RPM 构建产物 zip（meeting-rpm-x64-*.zip 或 meeting-rpm-arm64-*.zip，架构必须与目标机 CPU 一致），手动上传到服务器并解压：
 
 ```bash
-scp meeting-rpm-*.zip user@<目标机IP>:/tmp/
-```
-
-```bash
 cd /tmp
 unzip meeting-rpm-*.zip
 ```

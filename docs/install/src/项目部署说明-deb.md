@@ -55,10 +55,6 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 已获取到 DEB 构建产物 zip（meeting-deb-x64-*.zip 或 meeting-deb-arm64-*.zip，架构必须与目标机 CPU 一致），手动上传到服务器并解压：
 
 ```bash
-scp meeting-deb-*.zip user@<目标机IP>:/tmp/
-```
-
-```bash
 cd /tmp
 unzip meeting-deb-*.zip
 ```
