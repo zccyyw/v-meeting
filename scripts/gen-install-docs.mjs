@@ -71,6 +71,7 @@ function tdCell(text, cols) {
     columnSpan: cols,
     width: { size: Math.round(CONTENT_W / cols), type: WidthType.DXA },
     children: [new Paragraph({
+      alignment: AlignmentType.LEFT,
       children: [new TextRun({ text: text.trim(), size: S.table })],
     })],
   });
@@ -97,6 +98,7 @@ function parseMd(md) {
       }));
       paras.push(new Paragraph({
         children: runs,
+        alignment: AlignmentType.LEFT, // 显式左对齐：两端对齐会把 <w:br/> 前的短行拉伸铺满行宽
         spacing: { before: 120, after: 160, line: 300 },
         shading: { fill: CODE_BG },
         indent: { left: 240, right: 240 },
