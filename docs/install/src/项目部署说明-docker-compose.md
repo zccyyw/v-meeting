@@ -68,6 +68,8 @@ scp meeting-src.tar.gz user@<目标机IP>:/opt/
 
 ### 步骤 2：准备环境文件
 
+提示：本项目根目录有三份环境模板，用途不同、不可混用——本方式使用 `.env.production.example`；本地开发用 `.env.example`；RPM/DEB/离线发布包主机部署用 `deploy/native/conf/env.example`。
+
 ```bash
 cp .env.production.example .env
 vi .env

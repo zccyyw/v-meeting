@@ -95,6 +95,8 @@ sudo ./install.sh
 
 ### 步骤 4：配置
 
+`/opt/meeting/conf/.env` 由安装脚本基于 `conf/env.example`（即仓库 `deploy/native/conf/env.example`）生成；本地开发用 `.env.example`，Docker 部署用 `.env.production.example`，三者不可混用。
+
 ```bash
 sudo vi /opt/meeting/conf/.env
 ```

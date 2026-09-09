@@ -45,8 +45,14 @@ meeting/
 ├── client/                # 预留：未来原生 / 桌面客户端
 ├── docker-compose.yml     # 统一编排（SQLite/MySQL/PG 由 profiles 切换）
 ├── Caddyfile              # 生产反向代理配置
-└── .env.example           # 本地开发环境变量模板
+├── .env.example           # 本地开发环境变量模板
+└── .env.production.example # Docker Compose / 离线镜像部署环境变量模板
 ```
+
+> 📌 **三份环境模板不可混用**（差异见各文件头部说明）：
+> - `.env.example` — 本地开发（无 Docker，`npm run dev`）
+> - `.env.production.example` — Docker Compose 在线部署 / Docker 离线镜像部署（会被打包为离线包内的 `env.example`）
+> - `deploy/native/conf/env.example` — RPM / DEB / 离线发布包主机部署
 
 > 💡 数据库与缓存**默认零依赖**（SQLite + 内存 Redis），无需安装 MySQL / Redis 即可运行。
 

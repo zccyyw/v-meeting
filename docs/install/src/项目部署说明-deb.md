@@ -91,7 +91,7 @@ sudo apt-get install -f
 sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/configure.mjs
 ```
 
-方式二，手动配置：
+方式二，手动配置（`/opt/meeting/conf/env.example` 即仓库 `deploy/native/conf/env.example`；本地开发用 `.env.example`，Docker 部署用 `.env.production.example`，三者不可混用）：
 
 ```bash
 sudo cp /opt/meeting/conf/env.example /opt/meeting/conf/.env

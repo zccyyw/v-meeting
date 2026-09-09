@@ -84,6 +84,8 @@ bash load-images.sh
 
 ### 步骤 4：配置环境
 
+提示：离线包内的 `env.example` 即仓库 `.env.production.example` 的拷贝；本地开发用 `.env.example`，主机部署用 `deploy/native/conf/env.example`，三者不可混用。
+
 ```bash
 cp env.example .env
 vi .env
