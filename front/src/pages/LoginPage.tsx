@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { App as AntApp, Button, Card, Form, Input, Typography, Layout } from "antd";
-import { UserOutlined, LockOutlined } from "@ant-design/icons";
-import { AuthApi } from "@/api/client";
+import { UserOutlined, LockOutlined, DownloadOutlined } from "@ant-design/icons";
+import { AuthApi, API_BASE } from "@/api/client";
 import { setPendingJoinCode } from "@/auth/joinPrefs";
 import { persistSession } from "@/auth/session";
 import { apiErrorMessage } from "@/i18n/errorMessage";
@@ -123,6 +123,24 @@ export function LoginPage() {
               </Button>
             </Form.Item>
           </Form>
+
+          {/* 信创环境：导入 CA 根证书后浏览器才信任站点 */}
+          <div style={{ marginTop: 16, textAlign: "center" }}>
+            <a
+              href={`${API_BASE}/certs/ca.crt`}
+              style={{ fontSize: 13 }}
+              download
+            >
+              <DownloadOutlined style={{ marginRight: 4 }} />
+              {t("login.downloadCaCert")}
+            </a>
+            <Typography.Paragraph
+              type="secondary"
+              style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}
+            >
+              {t("login.caCertTip")}
+            </Typography.Paragraph>
+          </div>
         </Card>
       </div>
     </Layout>

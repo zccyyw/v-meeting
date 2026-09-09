@@ -103,6 +103,8 @@ bash deploy/docker/gen-selfsigned.sh --ca <服务器IP或域名>
 
 以 CA 签发模式生成根证书与服务器证书（信创环境必须），并将 ca.crt 导入客户端浏览器/系统信任机构。
 
+证书生成后，客户端可直接在登录页点击「下载 CA 根证书」获取 ca.crt（接口：/api/certs/ca.crt），也可从服务器 deploy/docker/certs/ca.crt 拷贝。
+
 ### 步骤 6：启动与验证
 
 ```bash

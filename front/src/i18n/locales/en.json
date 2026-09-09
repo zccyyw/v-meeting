@@ -43,7 +43,9 @@
     "submit": "Sign in",
     "hint": "Sign in with your account to create or join meetings.",
     "showPassword": "Show password",
-    "hidePassword": "Hide password"
+    "hidePassword": "Hide password",
+    "downloadCaCert": "Download CA root certificate",
+    "caCertTip": "Import the root certificate to trust this site’s HTTPS certificate"
   },
   "home": {
     "join": "Join meeting",

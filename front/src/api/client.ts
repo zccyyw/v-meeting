@@ -15,7 +15,7 @@ function resolveApiBase(): string {
   return "http://127.0.0.1:8080";
 }
 
-const API_BASE = resolveApiBase();
+export const API_BASE = resolveApiBase();
 
 async function throwApiError(res: Response): Promise<never> {
   let errorCode: string | null = null;

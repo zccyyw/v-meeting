@@ -17,6 +17,7 @@ import { operLogRoutes } from "./routes/sys-operlog.js";
 import { userApprovalRoutes } from "./routes/sys-user-approval.js";
 import { meetingAppRoutes } from "./routes/meeting-applications.js";
 import { meetingGroupRoutes } from "./routes/meeting-groups.js";
+import { caCertRoutes } from "./routes/ca-cert.js";
 import { getConfigInt, getConfigBool } from "./config-cache.js";
 import { isForceChangePassword } from "./auth.js";
 import { registerOperLogHook } from "./middleware/oper-log.js";
@@ -86,6 +87,7 @@ await operLogRoutes(app, db, redis);
 await userApprovalRoutes(app, db, redis);
 await meetingAppRoutes(app, db, redis);
 await meetingGroupRoutes(app, db, redis);
+await caCertRoutes(app);
 
 // 注册操作日志自动记录钩子
 registerOperLogHook(app, db, redis);

@@ -43,7 +43,9 @@
     "submit": "登录",
     "hint": "请使用账号登录后创建或加入会议。",
     "showPassword": "显示密码",
-    "hidePassword": "隐藏密码"
+    "hidePassword": "隐藏密码",
+    "downloadCaCert": "下载 CA 根证书",
+    "caCertTip": "信创浏览器需导入根证书后才会信任本站 HTTPS 证书"
   },
   "home": {
     "join": "加入会议",

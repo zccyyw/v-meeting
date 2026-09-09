@@ -180,4 +180,4 @@ sudo rm -rf /opt/meeting
 - SELinux：如开启 enforcing 模式，需放行网关端口：semanage port -a -t http_port_t -p tcp 8088。
 - 客户端浏览器：推荐奇安信浏览器（涉密版）、UOS 浏览器或 Chrome 100+；前端构建目标为 ES2020，兼容较老 Chromium 内核。
 - 会议无声音/无画面：绝大多数为 UDP 40000-41000 未放行，见"三、开放端口"抓包排查。
-- 证书信任：信创涉密浏览器不信任自签名证书，必须使用 CA 签发模式并导入根证书。
+- 证书信任：信创涉密浏览器不信任自签名证书，必须使用 CA 签发模式并导入根证书。客户端可直接在登录页点击「下载 CA 根证书」获取 ca.crt（接口：/api/certs/ca.crt），也可从服务器 /opt/meeting/certs/ca.crt 拷贝。
