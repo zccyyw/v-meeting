@@ -84,13 +84,19 @@ function parseMd(md) {
   while (i < lines.length) {
     const line = lines[i];
     if (!line.trim()) { i++; continue; }
-    // 代码块
+    // 代码块：每行一个 TextRun、行间用 break 换行（TextRun 内 \n 不产生换行）
     if (line.startsWith("```")) {
       const cl = []; i++;
       while (i < lines.length && !lines[i].startsWith("```")) { cl.push(lines[i]); i++; }
       i++;
+      const runs = cl.map((l, idx) => new TextRun({
+        text: l,
+        font: "Consolas",
+        size: S.code,
+        break: idx === 0 ? 0 : 1,
+      }));
       paras.push(new Paragraph({
-        children: [new TextRun({ text: cl.join("\n"), font: "Consolas", size: S.code })],
+        children: runs,
         spacing: { before: 120, after: 160, line: 300 },
         shading: { fill: CODE_BG },
         indent: { left: 240, right: 240 },
