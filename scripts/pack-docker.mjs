@@ -72,9 +72,22 @@ for (const img of images) {
 }
 
 // 应用镜像打包
+// CI 构建时 IMAGE_TAG 为版本号（如 0.0.10），而 docker-compose.yml 默认引用
+// :latest——若产物只有版本 tag，load 后 compose 找不到镜像会转而 build，
+// 离线包无源码目录必然失败。因此 save 前统一补打 :latest tag。
+const saveRefs = [];
+if (tag !== "latest") {
+  for (const ref of built) {
+    const latestRef = `${ref.split(":")[0]}:latest`;
+    run("docker", ["tag", ref, latestRef]);
+    saveRefs.push(ref, latestRef);
+  }
+} else {
+  saveRefs.push(...built);
+}
 const appTar = `meeting-app-${platformSlug}-${tag}.tar`;
 console.log(`-> docker save ${appTar}`);
-run("docker", ["save", "-o", join(out, appTar), ...built]);
+run("docker", ["save", "-o", join(out, appTar), ...saveRefs]);
 
 // 基础镜像打包（离线环境无法 pull）
 const baseImages = [
