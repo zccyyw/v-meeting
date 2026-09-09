@@ -93,16 +93,22 @@ bash load-images.sh
 ### 步骤 5：配置环境
 
 ```bash
-cp env.example .env
+cp .env.example .env
 vi .env
 ```
 
-必改项：MEDIASOUP_ANNOUNCED_IP 设为客户端可达的服务器 IP（切勿填 127.0.0.1）；COMPOSE_PROFILES 选择数据库类型（默认 sqlite 零依赖）；使用 postgres / mysql profile 时必须修改默认数据库密码。
+必改项：
+
+**MEDIASOUP_ANNOUNCED_IP** 设为客户端可达的服务器 IP（切勿填 127.0.0.1）；
+
+**COMPOSE_PROFILES** 选择数据库类型（默认 sqlite 零依赖）；
+
+**PS: **使用 postgres / mysql profile 时必须修改默认数据库密码。
 
 ### 步骤 6：生成证书（可选）
 
 ```bash
-bash deploy/docker/gen-selfsigned.sh <服务器IP或域名>
+bash deploy/docker/gen-selfsigned.sh --ca <服务器IP或域名>
 ```
 
 信创环境请使用 --ca 参数以 CA 签发模式生成根证书与服务器证书，并将 ca.crt 导入客户端浏览器/系统信任机构。
@@ -110,6 +116,12 @@ bash deploy/docker/gen-selfsigned.sh <服务器IP或域名>
 ### 步骤 7：启动与验证
 
 ```bash
+docker images | grep meeting   # 确认实际 tag（应为 0.0.10）
+
+docker tag meeting-api:0.0.10 meeting-api:latest
+docker tag meeting-realtime:0.0.10 meeting-realtime:latest
+docker tag meeting-web:0.0.10 meeting-web:latest
+
 docker-compose up -d
 ```
 
@@ -123,6 +135,11 @@ docker-compose ps
 
 ```bash
 curl -k https://127.0.0.1/api/healthz
+```
+
+下载CA文件
+```bash
+安装目录deploy/docker/certs/ca.crt
 ```
 
 ## 五、升级说明
