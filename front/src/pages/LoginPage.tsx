@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { App as AntApp, Button, Card, Form, Input, Typography, Layout } from "antd";
+import {
+  App as AntApp,
+  Button,
+  Card,
+  Form,
+  Input,
+  Tooltip,
+  Typography,
+  Layout,
+} from "antd";
 import { UserOutlined, LockOutlined, DownloadOutlined } from "@ant-design/icons";
 import { AuthApi, API_BASE } from "@/api/client";
 import { setPendingJoinCode } from "@/auth/joinPrefs";
@@ -26,6 +35,16 @@ export function LoginPage() {
     const join = searchParams.get("join")?.replace(/\D/g, "") ?? "";
     if (join.length === 9) setPendingJoinCode(join);
   }, [searchParams]);
+
+  /** 下载 CA 根证书（信创浏览器导入后信任本站 HTTPS 证书）。 */
+  function downloadCaCert() {
+    const a = document.createElement("a");
+    a.href = `${API_BASE}/certs/ca.crt`;
+    a.download = "ca.crt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
 
   async function onLogin(values: FormValues) {
     setBusy(true);
@@ -62,8 +81,26 @@ export function LoginPage() {
 
   return (
     <Layout style={{ minHeight: "100vh", position: "relative" }}>
-      {/* 右上角主题切换 */}
-      <div style={{ position: "absolute", top: 16, right: 16, zIndex: 10 }}>
+      {/* 右上角：CA 根证书下载 + 主题切换 */}
+      <div
+        style={{
+          position: "absolute",
+          top: 16,
+          right: 16,
+          zIndex: 10,
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        <Tooltip title={t("login.downloadCaCert")}>
+          <Button
+            type="text"
+            icon={<DownloadOutlined />}
+            aria-label={t("login.downloadCaCert")}
+            onClick={downloadCaCert}
+          />
+        </Tooltip>
         <ThemeToggle />
       </div>
 
@@ -123,24 +160,6 @@ export function LoginPage() {
               </Button>
             </Form.Item>
           </Form>
-
-          {/* 信创环境：导入 CA 根证书后浏览器才信任站点 */}
-          <div style={{ marginTop: 16, textAlign: "center" }}>
-            <a
-              href={`${API_BASE}/certs/ca.crt`}
-              style={{ fontSize: 13 }}
-              download
-            >
-              <DownloadOutlined style={{ marginRight: 4 }} />
-              {t("login.downloadCaCert")}
-            </a>
-            <Typography.Paragraph
-              type="secondary"
-              style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}
-            >
-              {t("login.caCertTip")}
-            </Typography.Paragraph>
-          </div>
         </Card>
       </div>
     </Layout>
