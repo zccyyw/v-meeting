@@ -50,9 +50,21 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 
 ## 四、安装说明
 
-### 步骤 1：安装 DEB 包
+### 步骤 1：获取并传输安装包
 
-将 DEB 安装包（meeting-<版本>-<发行号>.deb）拷贝到目标机后执行：
+从 GitHub 仓库 Actions 页面下载对应架构的 DEB 构建产物（meeting-deb-x64-*.zip 或 meeting-deb-arm64-*.zip，内含 meeting-<版本>-<发行号>.deb），传输到目标机：
+
+```bash
+scp meeting-<版本>-<发行号>.deb user@<目标机IP>:/tmp/
+```
+
+安装前确认目标机 CPU 架构与安装包一致：
+
+```bash
+uname -m    # 输出 x86_64 或 aarch64，与安装包架构对应
+```
+
+### 步骤 2：安装 DEB 包
 
 ```bash
 sudo dpkg -i meeting-<版本>-<发行号>.deb
@@ -66,7 +78,7 @@ sudo apt-get install -f
 
 安装过程自动完成：创建系统用户 meeting、部署文件到 /opt/meeting、安装 systemd 单元、创建 data/logs/certs 目录并设置属主、刷新 systemd。
 
-### 步骤 2：配置
+### 步骤 3：配置
 
 方式一，交互式配置（推荐）：
 
@@ -83,7 +95,7 @@ sudo vi /opt/meeting/conf/.env
 
 必改项：MEDIASOUP_ANNOUNCED_IP 设为客户端可达的服务器 IP（切勿填 127.0.0.1）。默认 DB_DRIVER=sqlite、REDIS_HOST=memory 即可零依赖运行；如需切换 MySQL 或 PostgreSQL，按 env.example 内注释填写连接参数，并提前建库。
 
-### 步骤 3：生成证书（可选）
+### 步骤 4：生成证书（可选）
 
 ```bash
 sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/gen-cert.mjs <服务器IP>
@@ -91,7 +103,7 @@ sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/gen-cert.mjs <服务器IP>
 
 生成证书后网关自动启用 HTTPS（浏览器入口变为 https）。信创环境请使用 --ca 参数以 CA 签发模式生成根证书与服务器证书，并将 ca.crt 导入客户端浏览器/系统信任机构。
 
-### 步骤 4：启动服务
+### 步骤 5：启动服务
 
 ```bash
 sudo systemctl daemon-reload
@@ -100,7 +112,7 @@ sudo systemctl enable --now meeting-api meeting-realtime meeting-gateway
 
 API 服务启动前会自动执行数据库迁移并写入默认账号，无需手动操作。
 
-### 步骤 5：访问验证
+### 步骤 6：访问验证
 
 浏览器打开 https://<服务器IP>:8088/（未生成证书则为 http），使用默认账号登录；或执行健康检查：
 

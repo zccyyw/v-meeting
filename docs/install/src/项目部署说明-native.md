@@ -49,16 +49,37 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 
 ## 四、安装说明
 
-### 步骤 1：传输并解压
+### 步骤 1：获取并传输离线包
 
-将离线包（meeting-linux-<架构>-<日期>.tar.gz）拷贝到目标机后解压：
+从 GitHub 仓库 Actions 页面下载对应架构的 Native 构建产物（meeting-native-x64-*.zip 或 meeting-native-arm64-*.zip，内含 meeting-linux-<架构>-<日期>.tar.gz），传输到目标机：
 
 ```bash
-tar -xzf meeting-linux-<架构>-<日期>.tar.gz
-cd meeting-linux-<架构>-<日期>
+scp meeting-linux-<架构>-<日期>.tar.gz user@<目标机IP>:/tmp/
 ```
 
-### 步骤 2：执行安装
+安装前确认目标机 Node.js 版本（需 20+）与 CPU 架构：
+
+```bash
+node -v     # 需 v20 及以上
+uname -m    # 输出 x86_64 或 aarch64，与离线包架构对应
+```
+
+### 步骤 2：解压并授权脚本
+
+```bash
+cd /tmp
+tar -xzf meeting-linux-<架构>-<日期>.tar.gz
+cd meeting-linux-<架构>-<日期>
+chmod +x install.sh
+```
+
+如从 Windows 中转过文件，建议统一修复行尾与权限：
+
+```bash
+sudo yum install -y dos2unix 2>/dev/null; dos2unix install.sh 2>/dev/null || true
+```
+
+### 步骤 3：执行安装
 
 ```bash
 sudo ./install.sh
@@ -68,7 +89,7 @@ sudo ./install.sh
 
 常用安装环境变量：MEETING_PREFIX（安装目录，默认 /opt/meeting）、MEETING_USER（运行用户，默认 meeting）、MEETING_SKIP_SEED（设为 1 跳过写入默认账号）。
 
-### 步骤 3：配置
+### 步骤 4：配置
 
 ```bash
 sudo vi /opt/meeting/conf/.env
@@ -80,12 +101,18 @@ sudo vi /opt/meeting/conf/.env
 sudo systemctl restart meeting-api meeting-realtime meeting-gateway
 ```
 
-### 步骤 4：访问验证
+### 步骤 5：访问验证
 
 浏览器打开 http://<服务器IP>:8088/（配置证书后为 https），使用默认账号登录；或执行健康检查：
 
 ```bash
 curl http://127.0.0.1:8088/api/healthz
+```
+
+查看服务运行状态：
+
+```bash
+sudo systemctl status meeting-api meeting-realtime meeting-gateway
 ```
 
 ## 五、升级说明

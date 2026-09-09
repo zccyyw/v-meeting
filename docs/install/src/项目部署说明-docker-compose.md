@@ -51,7 +51,22 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 
 ## 四、安装说明
 
-### 步骤 1：准备环境文件
+### 步骤 1：获取源码到服务器
+
+将项目源码（含 docker-compose.yml、各服务 Dockerfile、deploy/docker/ 等）上传到目标机：
+
+```bash
+# 方式一：git 拉取（服务器可访问代码仓库时）
+git clone <仓库地址> meeting
+cd meeting
+
+# 方式二：本地打包上传（内网环境）
+tar -czf meeting-src.tar.gz --exclude node_modules --exclude dist .
+scp meeting-src.tar.gz user@<目标机IP>:/opt/
+# 目标机解压：mkdir -p /opt/meeting && tar -xzf /opt/meeting-src.tar.gz -C /opt/meeting && cd /opt/meeting
+```
+
+### 步骤 2：准备环境文件
 
 ```bash
 cp .env.production.example .env
@@ -67,7 +82,7 @@ vi .env
 | MEDIASOUP_LISTEN_IP | 监听地址，默认 0.0.0.0 |
 | 数据库密码类变量 | 使用 postgres / mysql profile 时必须修改默认密码 |
 
-### 步骤 2：生成证书（可选）
+### 步骤 3：生成证书（可选）
 
 ```bash
 bash deploy/docker/gen-selfsigned.sh <服务器IP或域名>
@@ -75,7 +90,7 @@ bash deploy/docker/gen-selfsigned.sh <服务器IP或域名>
 
 信创环境请使用 --ca 参数以 CA 签发模式生成根证书与服务器证书，并将 ca.crt 导入客户端浏览器/系统信任机构。生产环境建议替换为正式证书放入 deploy/docker/certs/。
 
-### 步骤 3：构建并启动
+### 步骤 4：构建并启动
 
 ```bash
 docker-compose up -d --build
@@ -83,7 +98,7 @@ docker-compose up -d --build
 
 首次启动时 api 容器自动执行数据库迁移并写入默认账号（迁移与账号写入均幂等，可重复执行）。
 
-### 步骤 4：访问验证
+### 步骤 5：访问验证
 
 | 项 | 地址 |
 | --- | --- |
