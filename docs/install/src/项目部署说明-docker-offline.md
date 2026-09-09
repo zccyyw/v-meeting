@@ -47,6 +47,11 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 
 将离线包目录（含应用镜像 tar、基础镜像 tar、docker-compose.yml、Caddyfile、.env.example、load-images.sh、证书脚本）整体拷贝到目标机。
 
+```bash
+cd <离线包目录>
+bash load-images.sh
+```
+
 ### 步骤 2：加载镜像
 
 ```bash
@@ -57,7 +62,7 @@ bash load-images.sh
 ### 步骤 3：配置环境
 
 ```bash
-cp .env.example .env
+cp env.example .env
 vi .env
 ```
 

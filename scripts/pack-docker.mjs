@@ -107,9 +107,12 @@ for (const f of composeFiles) {
 if (existsSync(join(root, "Caddyfile"))) {
   copyFileSync(join(root, "Caddyfile"), join(out, "Caddyfile"));
 }
+// 注意：命名为 env.example（不带前导点）——以点开头的隐藏文件在
+// scp 通配符拷贝 / 部分解压工具 / 文件管理器中容易被漏掉，导致
+// 用户在目标机找不到环境模板。
 copyFileSync(
   join(root, ".env.production.example"),
-  join(out, ".env.example"),
+  join(out, "env.example"),
 );
 
 // 证书目录占位
@@ -163,7 +166,7 @@ writeFileSync(
     "",
     "部署步骤：",
     "  1. bash load-images.sh              # 加载全部镜像",
-    "  2. cp .env.example .env && vi .env   # 改 MEDIASOUP_ANNOUNCED_IP 等",
+    "  2. cp env.example .env && vi .env    # 改 MEDIASOUP_ANNOUNCED_IP 等",
     "  3. bash deploy/docker/gen-selfsigned.sh <服务器IP>  # 生成自签证书（可选）",
     "  4. docker-compose up -d              # 启动（默认 SQLite + 自动初始化）",
     "",
