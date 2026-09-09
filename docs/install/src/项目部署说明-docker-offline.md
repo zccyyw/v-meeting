@@ -43,23 +43,54 @@ sudo tcpdump -i any -n 'udp and portrange 40000-41000'
 
 ## 四、安装说明
 
-### 步骤 1：传输离线包
+### 步骤 1：获取并传输离线包
 
-将离线包目录（含应用镜像 tar、基础镜像 tar、docker-compose.yml、Caddyfile、.env.example、load-images.sh、证书脚本）整体拷贝到目标机。
+离线包来源：GitHub 仓库 Actions 页面下载对应架构的构建产物（meeting-docker-x64-*.zip 或 meeting-docker-arm64-*.zip，产物架构必须与目标机 CPU 一致），或在同架构构建机上执行 npm run pack:docker 自行打包。
+
+传输整个目录到目标机（内网环境可用 U 盘/光盘摆渡）：
 
 ```bash
-cd <离线包目录>
+scp -r dist/docker user@<目标机IP>:/opt/meeting-offline/
+```
+
+注意：请整体拷贝目录（scp -r 或先 tar 打包再传输），不要用通配符逐个拷贝文件，避免遗漏。
+
+### 步骤 2：解压
+
+在目标机上解压构建产物 zip：
+
+```bash
+cd /opt/meeting-offline
+unzip meeting-docker-*.zip -d meeting-docker
+cd meeting-docker
+```
+
+### 步骤 3：脚本授权并确认文件完整
+
+为脚本添加执行权限：
+
+```bash
+chmod +x load-images.sh
+chmod +x deploy/docker/gen-selfsigned.sh
+```
+
+确认目录内容完整：
+
+```bash
+ls -la
+```
+
+应包含：meeting-app-*.tar（应用镜像）、meeting-base-*.tar（基础镜像）、docker-compose.yml、Caddyfile、env.example（环境配置模板）、load-images.sh（镜像加载脚本）、deploy/docker/gen-selfsigned.sh（证书生成脚本）。
+
+### 步骤 4：加载镜像
+
+```bash
 bash load-images.sh
 ```
 
-### 步骤 2：加载镜像
+脚本自动加载目录内全部镜像 tar（应用镜像与 PostgreSQL/MySQL/Redis/Caddy 基础镜像）。加载完成可执行 docker images 确认。
 
-```bash
-cd <离线包目录>
-bash load-images.sh
-```
-
-### 步骤 3：配置环境
+### 步骤 5：配置环境
 
 ```bash
 cp env.example .env
@@ -68,7 +99,7 @@ vi .env
 
 必改项：MEDIASOUP_ANNOUNCED_IP 设为客户端可达的服务器 IP（切勿填 127.0.0.1）；COMPOSE_PROFILES 选择数据库类型（默认 sqlite 零依赖）；使用 postgres / mysql profile 时必须修改默认数据库密码。
 
-### 步骤 4：生成证书（可选）
+### 步骤 6：生成证书（可选）
 
 ```bash
 bash deploy/docker/gen-selfsigned.sh <服务器IP或域名>
@@ -76,13 +107,19 @@ bash deploy/docker/gen-selfsigned.sh <服务器IP或域名>
 
 信创环境请使用 --ca 参数以 CA 签发模式生成根证书与服务器证书，并将 ca.crt 导入客户端浏览器/系统信任机构。
 
-### 步骤 5：启动与验证
+### 步骤 7：启动与验证
 
 ```bash
 docker-compose up -d
 ```
 
-首次启动时 api 容器自动执行数据库迁移并写入默认账号。浏览器打开 https://<服务器IP>/，或执行健康检查：
+首次启动时 api 容器自动执行数据库迁移并写入默认账号。查看容器运行状态：
+
+```bash
+docker-compose ps
+```
+
+浏览器打开 https://<服务器IP>/，或执行健康检查：
 
 ```bash
 curl -k https://127.0.0.1/api/healthz
