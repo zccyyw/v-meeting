@@ -7,6 +7,13 @@
 -- ============================================================
 
 -- ---------- 表 ----------
+-- 业务用户自 v0.0.7 起使用 sys_user（users 仅为旧版迁移兼容保留的空表）。
+-- 因此 meetings / meeting_join_tokens / recordings 的用户外键指向 sys_user(user_id)，
+-- 与 serve/sql/meeting-sqlite.sql 保持一致；否则 sys_user 用户创建会议 / 令牌 / 录制
+-- 会因 FK 指向空表 users 而报 ER_NO_REFERENCED_ROW_2 (500)。
+-- sys_user 定义在文件后部，故建表阶段临时关闭外键检查（标准 dump 做法）。
+SET FOREIGN_KEY_CHECKS = 0;
+
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(64) NOT NULL,
@@ -34,7 +41,7 @@ CREATE TABLE IF NOT EXISTS meetings (
   record_allowed TINYINT(1) NOT NULL DEFAULT 0,
   UNIQUE KEY uk_meetings_code (code),
   KEY idx_meetings_host (host_user_id),
-  CONSTRAINT fk_meetings_host FOREIGN KEY (host_user_id) REFERENCES users (id)
+  CONSTRAINT fk_meetings_host FOREIGN KEY (host_user_id) REFERENCES sys_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS meeting_join_tokens (
@@ -49,7 +56,7 @@ CREATE TABLE IF NOT EXISTS meeting_join_tokens (
   UNIQUE KEY uk_tokens_token (token),
   KEY idx_tokens_meeting (meeting_id),
   CONSTRAINT fk_tokens_meeting FOREIGN KEY (meeting_id) REFERENCES meetings (id),
-  CONSTRAINT fk_tokens_user FOREIGN KEY (user_id) REFERENCES users (id)
+  CONSTRAINT fk_tokens_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS recordings (
@@ -63,7 +70,7 @@ CREATE TABLE IF NOT EXISTS recordings (
   source VARCHAR(16) NOT NULL DEFAULT 'client',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_recordings_meeting FOREIGN KEY (meeting_id) REFERENCES meetings (id) ON DELETE SET NULL,
-  CONSTRAINT fk_recordings_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE CASCADE
+  CONSTRAINT fk_recordings_owner FOREIGN KEY (owner_user_id) REFERENCES sys_user (user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS sys_dept (
@@ -287,3 +294,5 @@ CREATE INDEX idx_meeting_applications_status ON meeting_applications (status);
 CREATE INDEX idx_meeting_applications_applicant ON meeting_applications (applicant_id);
 
 CREATE INDEX idx_meeting_applications_priority ON meeting_applications (priority);
+
+SET FOREIGN_KEY_CHECKS = 1;

@@ -308,7 +308,8 @@
     "recordAllowedToggle": "Allow recording",
     "me": "me",
     "peer": "Participant",
-    "onlineLimitReached": "The system online user limit has been reached. Please contact the system administrator."
+    "onlineLimitReached": "The system online user limit has been reached. Please contact the system administrator.",
+    "mediaConnectionFailed": "Media connection failed: check that MEDIASOUP_ANNOUNCED_IP is a client-reachable IP and UDP ports 40000-41000 are open."
   },
   "recordings": {
     "title": "Recordings",

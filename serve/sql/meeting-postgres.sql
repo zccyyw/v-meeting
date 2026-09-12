@@ -24,22 +24,24 @@ CREATE TABLE IF NOT EXISTS meetings (
   id BIGSERIAL PRIMARY KEY,
   code VARCHAR(16) NOT NULL,
   title VARCHAR(120) NOT NULL,
-  host_user_id BIGINT NULL REFERENCES users (id),
+  -- 用户外键统一在文件尾部添加（指向 sys_user.user_id）：业务用户自 v0.0.7 起
+  -- 使用 sys_user（users 仅为旧版迁移兼容保留的空表），且 sys_user 建表在后。
+  host_user_id BIGINT NULL,
   status VARCHAR(16) NOT NULL,
   waiting_room_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   join_password_hash VARCHAR(100) NULL,
   scheduled_at TIMESTAMPTZ NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ended_at TIMESTAMPTZ NULL,
-  CONSTRAINT uk_meetings_code UNIQUE (code)
-  record_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+  CONSTRAINT uk_meetings_code UNIQUE (code),
+  record_allowed BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS meeting_join_tokens (
   id BIGSERIAL PRIMARY KEY,
   token CHAR(64) NOT NULL,
   meeting_id BIGINT NOT NULL REFERENCES meetings (id),
-  user_id BIGINT NULL REFERENCES users (id),
+  user_id BIGINT NULL,
   role VARCHAR(16) NOT NULL,
   display_name VARCHAR(64) NULL,
   expires_at TIMESTAMPTZ NOT NULL,
@@ -50,7 +52,7 @@ CREATE TABLE IF NOT EXISTS meeting_join_tokens (
 CREATE TABLE IF NOT EXISTS recordings (
   id BIGSERIAL PRIMARY KEY,
   meeting_id BIGINT NULL REFERENCES meetings (id) ON DELETE SET NULL,
-  owner_user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  owner_user_id BIGINT NOT NULL,
   title VARCHAR(200) NOT NULL,
   duration_ms INTEGER NOT NULL DEFAULT 0,
   size_bytes BIGINT NOT NULL DEFAULT 0,
@@ -291,3 +293,31 @@ CREATE INDEX IF NOT EXISTS idx_meeting_applications_applicant ON meeting_applica
 CREATE INDEX IF NOT EXISTS idx_meeting_applications_priority ON meeting_applications (priority);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_meeting_invitations_meeting_user ON meeting_invitations(meeting_id, user_id);
+
+-- ---------- 用户外键（sys_user 建表完成后统一添加） ----------
+-- 指向 sys_user(user_id)，与 meeting-sqlite.sql 一致；DO 块保证幂等。
+DO $fn$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'fk_meetings_host' AND conrelid = 'meetings'::regclass
+  ) THEN
+    ALTER TABLE meetings ADD CONSTRAINT fk_meetings_host
+      FOREIGN KEY (host_user_id) REFERENCES sys_user (user_id);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'fk_tokens_user' AND conrelid = 'meeting_join_tokens'::regclass
+  ) THEN
+    ALTER TABLE meeting_join_tokens ADD CONSTRAINT fk_tokens_user
+      FOREIGN KEY (user_id) REFERENCES sys_user (user_id);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'fk_recordings_owner' AND conrelid = 'recordings'::regclass
+  ) THEN
+    ALTER TABLE recordings ADD CONSTRAINT fk_recordings_owner
+      FOREIGN KEY (owner_user_id) REFERENCES sys_user (user_id) ON DELETE CASCADE;
+  END IF;
+END
+$fn$;

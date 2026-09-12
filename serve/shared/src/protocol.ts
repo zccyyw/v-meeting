@@ -152,6 +152,12 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("transportConnected"),
     transportId: z.string(),
   }),
+  z.object({
+    /** 服务端观测到 WebRTC transport ICE/DTLS 异常时通知客户端给出可见提示 */
+    type: z.literal("mediaState"),
+    state: z.enum(["failed", "disconnected"]),
+    transportId: z.string().optional(),
+  }),
   z.object({ type: z.literal("produced"), id: z.string(), kind: z.enum(["audio", "video"]) }),
   z.object({
     type: z.literal("newProducer"),

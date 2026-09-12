@@ -711,7 +711,9 @@ function MeetingPageInner() {
           <p className="error">
             {snap.error === "online_limit_reached"
               ? t("meeting.onlineLimitReached")
-              : snap.error}
+              : snap.error === "media_connection_failed"
+                ? t("meeting.mediaConnectionFailed")
+                : snap.error}
           </p>
         )}
 

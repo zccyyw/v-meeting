@@ -600,6 +600,80 @@ async function migrateOperLogExtensions(db: Db): Promise<number> {
   return count;
 }
 
+/**
+ * 修复指向旧用户表 users 的外键。
+ *
+ * 业务用户自 v0.0.7 起使用 sys_user（users 仅为迁移兼容保留的空表）。
+ * 用 serve/sql/meeting-mysql.sql（旧版）或 meeting-postgres.sql（旧版）初始化的库，
+ * meetings / meeting_join_tokens / recordings 的用户外键指向空表 users，
+ * 导致 sys_user 用户创建会议、签发入会令牌、上传录制时
+ * 报 ER_NO_REFERENCED_ROW_2 / foreign key violation (500)。
+ *
+ * 处理：检测这三处外键，凡引用 users 的即重建为引用 sys_user(user_id)。
+ * - 走本迁移体系（users→sys_user 重命名）演化的库，MySQL/PG 会自动跟随重命名，
+ *   此处检测不到问题，幂等跳过；
+ * - SQLite 无法直接修改外键，且交付 SQL 与重命名路径均已正确，跳过。
+ */
+async function migrateUserForeignKeys(db: Db): Promise<number> {
+  if (db.driver !== "mysql" && db.driver !== "postgres") return 0;
+
+  // 表尚不存在时（极旧库）直接跳过
+  for (const t of ["meetings", "meeting_join_tokens", "recordings"]) {
+    if (!(await tableExists(db, t))) return 0;
+  }
+
+  const schemaFilter =
+    db.driver === "postgres"
+      ? `AND kcu.CONSTRAINT_SCHEMA = current_schema()`
+      : `AND kcu.TABLE_SCHEMA = DATABASE()`;
+  const [rows] = await db.query(
+    `SELECT kcu.TABLE_NAME AS table_name,
+            kcu.CONSTRAINT_NAME AS constraint_name,
+            kcu.COLUMN_NAME AS column_name
+     FROM information_schema.KEY_COLUMN_USAGE kcu
+     WHERE kcu.REFERENCED_TABLE_NAME = 'users'
+       AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+       AND (
+         (kcu.TABLE_NAME = 'meetings' AND kcu.COLUMN_NAME = 'host_user_id') OR
+         (kcu.TABLE_NAME = 'meeting_join_tokens' AND kcu.COLUMN_NAME = 'user_id') OR
+         (kcu.TABLE_NAME = 'recordings' AND kcu.COLUMN_NAME = 'owner_user_id')
+       )
+       ${schemaFilter}`,
+  );
+  const fks = rows as Array<{
+    table_name: string;
+    constraint_name: string;
+    column_name: string;
+  }>;
+  if (fks.length === 0) return 0;
+
+  let count = 0;
+  for (const fk of fks) {
+    if (db.driver === "postgres") {
+      await db.query(
+        `ALTER TABLE ${fk.table_name} DROP CONSTRAINT IF EXISTS ${fk.constraint_name}`,
+      );
+      await db.query(
+        `ALTER TABLE ${fk.table_name} ADD CONSTRAINT ${fk.constraint_name}
+         FOREIGN KEY (${fk.column_name}) REFERENCES sys_user (user_id)`,
+      );
+    } else {
+      await db.query(
+        `ALTER TABLE ${fk.table_name} DROP FOREIGN KEY ${fk.constraint_name}`,
+      );
+      await db.query(
+        `ALTER TABLE ${fk.table_name} ADD CONSTRAINT ${fk.constraint_name}
+         FOREIGN KEY (${fk.column_name}) REFERENCES sys_user (user_id)`,
+      );
+    }
+    console.log(
+      `migrate: repointed ${fk.table_name}.${fk.constraint_name} users -> sys_user`,
+    );
+    count += 1;
+  }
+  return count;
+}
+
 export async function migrate(db?: Db) {
   if (!db) db = await createPool();
   const sqlDir = path.join(__dirname, "sql", db.driver);
@@ -673,6 +747,8 @@ export async function migrate(db?: Db) {
       count += await migrateSysUser(db);
     }
   }
+  // 修复指向旧表 users 的用户外键（仅 MySQL/PG；见函数注释）
+  count += await migrateUserForeignKeys(db);
   // 仅在 users 表仍存在时维护其触发器。
   // migrateSysUser 已把 users 重命名为 sys_user（并创建 trg_sys_user_update_time），
   // 此时 users 已不存在，继续创建 trg_users_updated_at 会导致

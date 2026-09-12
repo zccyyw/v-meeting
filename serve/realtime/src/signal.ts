@@ -737,6 +737,28 @@ export function createSignalHandler(db: Db) {
           } else {
             ctx.media.recvTransport = transport;
           }
+          // 监控 ICE/DTLS 连接状态：媒体面不通（MEDIASOUP_ANNOUNCED_IP 配错、
+          // UDP 40000-41000 未放行等）时信令依然正常，若不上报客户端只会
+          // 静默黑屏。failed 时记录日志并主动通知前端提示。
+          // 注意：服务端 WebRtcTransport 只有 icestatechange/dtlsstatechange
+          // 事件（connectionstatechange 是客户端 mediasoup-client 的 API）。
+          const notifyMediaState = (what: string, state: string) => {
+            if (state !== "failed") return;
+            console.warn(
+              `[rtc] transport ${transport.id} (${message.direction}) ${what} ${state}`
+            );
+            send(ws, {
+              type: "mediaState",
+              state: "failed",
+              transportId: transport.id,
+            });
+          };
+          transport.on("icestatechange", (state) =>
+            notifyMediaState("ice", state)
+          );
+          transport.on("dtlsstatechange", (state) =>
+            notifyMediaState("dtls", state)
+          );
           send(ws, {
             type: "transportCreated",
             direction: message.direction,

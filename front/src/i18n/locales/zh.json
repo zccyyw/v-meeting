@@ -308,7 +308,8 @@
     "recordAllowedToggle": "开启录制",
     "me": "我",
     "peer": "参会者",
-    "onlineLimitReached": "当前系统在线人数已达到限制，请联系系统管理员！"
+    "onlineLimitReached": "当前系统在线人数已达到限制，请联系系统管理员！",
+    "mediaConnectionFailed": "媒体连接失败：请检查服务器 MEDIASOUP_ANNOUNCED_IP 配置是否为客户端可达 IP，以及 UDP 40000-41000 端口是否已放行。"
   },
   "recordings": {
     "title": "录制历史",

@@ -859,6 +859,13 @@ export class MediaRoom {
         this.emit();
         break;
 
+      case "mediaState":
+        if (msg.state === "failed" || msg.state === "disconnected") {
+          this.error = "media_connection_failed";
+          this.emit();
+        }
+        break;
+
       case "error":
         if (this.status === "connecting" || this.status === "waiting") {
           this.status = "error";
@@ -1015,6 +1022,16 @@ export class MediaRoom {
           errback(err instanceof Error ? err : new Error(String(err)));
         }
       })();
+    });
+
+    // 媒体面连通性监控：ICE/DTLS 失败时信令仍正常，若不上报用户只会看到
+    // "看不到对方画面/听不到声音"而没有任何提示。典型原因：服务器
+    // MEDIASOUP_ANNOUNCED_IP 配置错误或 UDP 40000-41000 未放行。
+    transport.on("connectionstatechange", (state) => {
+      if (state === "failed") {
+        this.error = "media_connection_failed";
+        this.emit();
+      }
     });
 
     if (direction === "send") {
