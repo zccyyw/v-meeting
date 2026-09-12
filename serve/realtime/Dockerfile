@@ -27,8 +27,13 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
 # 系统 python3 禁止裸 pip install，mediasoup postinstall 内的
 # `pip install --target ... invoke` 会因此失败。建独立 venv（自带 pip、
 # 不受该限制）并让 mediasoup 通过 $PYTHON 使用它。
+# 注意：必须显式 -i ${PIP_INDEX_URL}，否则 pip 升级固定走 pypi 官方源，
+# 国内服务器从 files.pythonhosted.org 下载 wheel 会读超时；
+# 升级失败不中断构建（venv 自带 pip 仍可用于后续安装 invoke）。
 RUN python3 -m venv /opt/mediasoup-venv \
-  && /opt/mediasoup-venv/bin/python -m pip install --no-input --upgrade pip
+  && /opt/mediasoup-venv/bin/python -m pip install --no-input \
+       --retries 10 --timeout 120 -i ${PIP_INDEX_URL} --upgrade pip \
+  || echo "[warn] pip upgrade failed, keep venv bundled pip"
 
 COPY package.json package-lock.json ./
 COPY serve/shared/package.json ./serve/shared/

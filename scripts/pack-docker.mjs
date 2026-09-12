@@ -70,6 +70,17 @@ for (const img of images) {
       `VITE_APP_LOGO=${process.env.VITE_APP_LOGO || "/favicon.svg"}`,
     );
   }
+  if (img.name === "meeting-realtime") {
+    // mediasoup worker 构建网络参数透传：国内构建机用
+    // PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+    // GHPROXY=https://gh-proxy.com（默认已是）
+    args.push(
+      "--build-arg",
+      `PIP_INDEX_URL=${process.env.PIP_INDEX_URL || "https://pypi.org/simple"}`,
+      "--build-arg",
+      `GHPROXY=${process.env.GHPROXY || "https://gh-proxy.com"}`,
+    );
+  }
   args.push(".");
   run("docker", args);
   built.push(ref);
