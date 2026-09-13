@@ -9,12 +9,12 @@ import {
   UserAddOutlined,
   TeamOutlined,
   MessageOutlined,
-  AlertOutlined,
   LogoutOutlined,
   PoweroffOutlined,
   PlayCircleOutlined,
   StopOutlined,
 } from "@ant-design/icons";
+import { HandIcon } from "@/components/HandIcon";
 
 const ICON_STYLE = { fontSize: 22 } as const;
 
@@ -132,7 +132,9 @@ export function Controls({
             camEnabled ? (
               <VideoCameraOutlined style={ICON_STYLE} aria-hidden />
             ) : (
-              <VideoCameraOutlined style={ICON_STYLE} aria-hidden />
+              <span className="icon-slashed" aria-hidden>
+                <VideoCameraOutlined style={ICON_STYLE} />
+              </span>
             )
           }
           className={camEnabled ? "" : "is-off"}
@@ -186,7 +188,7 @@ export function Controls({
         />
         <ControlButton
           label={t("meeting.handShort")}
-          icon={<AlertOutlined style={ICON_STYLE} aria-hidden />}
+          icon={<HandIcon style={ICON_STYLE} />}
           className={handRaised ? "is-active" : ""}
           onClick={onToggleHand}
           ariaLabel={handRaised ? t("meeting.handDown") : t("meeting.hand")}

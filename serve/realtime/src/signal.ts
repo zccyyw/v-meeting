@@ -698,6 +698,9 @@ export function createSignalHandler(db: Db) {
             return;
           }
           ctx.state.room.layout = message.layout;
+          // 切换布局即清除焦点：避免培训模式里点过的焦点残留，
+          // 导致切回演讲者布局仍显示旧焦点画面（表现如"卡在培训模式"）。
+          ctx.state.room.focusPeerId = null;
           broadcastAdmitted(ctx.state, {
             type: "layout",
             layout: message.layout,

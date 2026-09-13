@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CopyOutlined, CheckOutlined, SettingOutlined } from "@ant-design/icons";
+import { CopyOutlined, CheckOutlined, SettingOutlined, DownOutlined } from "@ant-design/icons";
 import { MeetingApi, RecordingsApi, InvitationApi, type InvitationItem } from "@/api/client";
 import { copyText, formatMeetingCode } from "@/auth/joinPrefs";
 import { getSessionId } from "@/auth/session";
@@ -14,11 +14,11 @@ import { VideoGrid, type LayoutCols, type Tile } from "@/components/VideoGrid";
 import { ImmersiveStrip } from "@/components/ImmersiveStrip";
 import { WaitingRoom } from "@/components/WaitingRoom";
 import { InvitationPanel } from "@/components/InvitationPanel";
-import { MediaRoom, type MediaRoomSnapshot } from "@/media/room";
+import { MediaRoom, type MediaRoomSnapshot, type MeetingLayout } from "@/media/room";
 import { SignalClient } from "@/signal/client";
 import { showMessage } from "@/ui/toast";
 import { startRecording, type RecorderHandle, type RecorderSource } from "@/media/recorder";
-import { App as AntApp } from "antd";
+import { App as AntApp, Dropdown } from "antd";
 
 function formatDuration(ms: number): string {
   const total = Math.floor(ms / 1000);
@@ -570,26 +570,41 @@ function MeetingPageInner() {
         </div>
 
         <div className="meeting-header-actions">
-          {inMeeting && isHost && (
-            <button
-              type="button"
-              className="meeting-header-btn"
-              onClick={() => {
-                const next =
-                  snap.layout === "grid"
-                    ? "speaker"
-                    : snap.layout === "speaker"
-                      ? "training"
-                      : "grid";
-                roomRef.current?.setLayout(next);
+          {inMeeting && (
+            <Dropdown
+              trigger={["click"]}
+              disabled={!isHost}
+              menu={{
+                selectable: true,
+                selectedKeys: [snap.layout],
+                onClick: ({ key }) => {
+                  if (!isHost || key === snap.layout) return;
+                  roomRef.current?.setLayout(key as MeetingLayout);
+                },
+                items: [
+                  { key: "grid", label: t("meeting.layoutGrid") },
+                  { key: "speaker", label: t("meeting.layoutSpeaker") },
+                  { key: "training", label: t("meeting.layoutTraining") },
+                ],
               }}
             >
-              {snap.layout === "grid"
-                ? t("meeting.layoutSpeaker")
-                : snap.layout === "speaker"
-                  ? t("meeting.layoutTraining")
-                  : t("meeting.layoutGrid")}
-            </button>
+              <button
+                type="button"
+                className="meeting-header-btn"
+                disabled={!isHost}
+                aria-label={t("meeting.layoutLabel")}
+                title={isHost ? undefined : t("meeting.hostOnlyHint")}
+              >
+                {t(
+                  snap.layout === "grid"
+                    ? "meeting.layoutGrid"
+                    : snap.layout === "speaker"
+                      ? "meeting.layoutSpeaker"
+                      : "meeting.layoutTraining"
+                )}
+                <DownOutlined style={{ fontSize: 10, marginLeft: 6 }} aria-hidden />
+              </button>
+            </Dropdown>
           )}
 
           {inMeeting && snap.sharingScreen && (
@@ -728,6 +743,19 @@ function MeetingPageInner() {
           </p>
         )}
 
+        {/* 本地媒体降级提示（非阻断）：无摄像头/无麦克风/权限拒绝时仍可观看他人 */}
+        {inMeeting && snap.localMediaError && (
+          <p className="muted meeting-media-hint">
+            {snap.localMediaError === "no_camera"
+              ? t("meeting.noCameraHint")
+              : snap.localMediaError === "no_media_devices"
+                ? t("meeting.noMediaHint")
+                : snap.localMediaError === "media_permission_denied"
+                  ? t("meeting.mediaPermissionHint")
+                  : t("meeting.mediaCaptureHint")}
+          </p>
+        )}
+
         {snap.status === "kicked" && (
           <section className="panel meeting-ended">
             <h2>{t("meeting.kicked")}</h2>
@@ -818,6 +846,7 @@ function MeetingPageInner() {
                 localPeerId={snap.peerId}
                 localCamEnabled={snap.camEnabled}
                 localMicEnabled={snap.micEnabled}
+                selfHandRaised={snap.handRaised}
                 remoteStreams={snap.remoteStreams}
                 screenStreams={snap.screenStreams}
                 peers={snap.peers}
@@ -830,7 +859,7 @@ function MeetingPageInner() {
                     : snap.peers.find((p) => p.role === "host")?.peerId ?? null
                 }
                 onFocusPeer={
-                  // 需求 5：仅发起者/主持人可切换发言者画面
+                  // 需求 5：仅发起者/主持人可切换发言者画面（null = 退出焦点）
                   isHost
                     ? (peerId) => {
                         roomRef.current?.setFocus(peerId);
@@ -855,7 +884,24 @@ function MeetingPageInner() {
                     isHost={isHost}
                     allowShare={snap.allowShare}
                     allMuted={allMuted}
-                    peers={snap.peers}
+                    peers={[
+                      // 服务端 peers 刻意不含自己；成员列表需展示全部入会人员
+                      //（含主持人/自己），此处把本端条目补到最前
+                      ...(snap.peerId
+                        ? [
+                            {
+                              peerId: snap.peerId,
+                              displayName,
+                              role: snap.role ?? "participant",
+                              handRaised: snap.handRaised,
+                              micEnabled: snap.micEnabled,
+                              camEnabled: snap.camEnabled,
+                              recording: false,
+                            },
+                          ]
+                        : []),
+                      ...snap.peers,
+                    ]}
                     selfPeerId={snap.peerId}
                     invitations={invitations}
                     onClose={() => setMembersOpen(false)}

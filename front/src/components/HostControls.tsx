@@ -2,11 +2,11 @@ import { useTranslation } from "react-i18next";
 import { App } from "antd";
 import {
   CloseOutlined,
-  AlertOutlined,
   AudioOutlined,
   AudioMutedOutlined,
   VideoCameraOutlined,
 } from "@ant-design/icons";
+import { HandIcon } from "@/components/HandIcon";
 import type { PeerInfo } from "@/media/room";
 import type { InvitationItem } from "@/api/client";
 
@@ -157,7 +157,7 @@ export function HostControls({
                       <span className="member-self-tag">({t("meeting.me")})</span>
                     )}
                     {m.handRaised && (
-                      <AlertOutlined style={{ marginLeft: 4, color: "#faad14", fontSize: 13 }} aria-hidden />
+                      <HandIcon style={{ marginLeft: 4, color: "#faad14", fontSize: 13 }} />
                     )}
                   </div>
                   {/* 麦克风/摄像头状态图标 */}

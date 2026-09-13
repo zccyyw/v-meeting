@@ -589,6 +589,10 @@ input:not(.ant-input):focus {
 
 /* 可拖动的侧边列表 */
 .video-sidelist--floating { width: 14rem; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.12); padding: 0.25rem; }
+/* 培训布局悬浮面板：固定右侧、不可拖动，展开时占满可用高度（内部滚动） */
+.video-sidelist--panel { flex: 0 0 auto; width: 16rem; max-width: none; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 0.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+/* 培训面板切换页签：垂直居中；展开态由内联 left 定位（面板左缘外侧），收起态由内联 right 定位（屏幕右缘） */
+button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: translateY(-50%); width: 1.45rem; height: 3rem; border-radius: 8px 0 0 8px; }
 .video-sidelist-drag-handle { height: 6px; cursor: grab; display: flex; align-items: center; justify-content: center; margin-bottom: 0.25rem; }
 .video-sidelist-drag-handle:active { cursor: grabbing; }
 .video-sidelist-drag-icon { width: 28px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); }
@@ -603,7 +607,7 @@ input:not(.ant-input):focus {
 
 /* 主讲人小窗（PIP）：默认右下角悬浮，可拖动 */
 .video-grid--side, .video-grid--training { position: relative; }
-.video-pip { position: absolute; right: 1rem; bottom: 1rem; width: clamp(10rem, 22%, 16rem); aspect-ratio: 16 / 10; z-index: 60; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; cursor: grab; background: #111; }
+.video-pip { position: absolute; left: 1rem; bottom: 1rem; width: clamp(10rem, 22%, 16rem); aspect-ratio: 16 / 10; z-index: 60; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; cursor: grab; background: #111; }
 .video-pip:active { cursor: grabbing; }
 .video-pip .video-tile { width: 100%; height: 100%; min-height: 0; border-radius: 0; }
 .video-pip .video-label { font-size: 0.7rem; }
@@ -650,6 +654,19 @@ input:not(.ant-input):focus {
 .control-btn.is-active { background: transparent !important; border-color: transparent !important; }
 .control-btn.is-active .control-btn-icon { color: rgba(255, 255, 255, 0.92); }
 .control-btn.is-off .control-btn-icon { color: #f28b82; }
+/* AntD 无"摄像头关闭"图标：斜线覆盖，模拟 AudioMutedOutlined 的禁用观感 */
+.icon-slashed { position: relative; display: inline-grid; place-items: center; }
+.icon-slashed::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 135%;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
 .control-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .control-btn--danger-text, .control-btn--danger-text .control-btn-icon, .control-btn--danger-text .control-btn-label { color: #f28b82; }
 .control-btn--danger-text:hover:not(:disabled) { background: rgba(242, 139, 130, 0.12); }

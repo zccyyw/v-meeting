@@ -33,7 +33,7 @@ export function ImmersiveStrip({
           {t("meeting.exitImmersive")}
         </button>
       </div>
-      <DraggableSideList tiles={tiles} isTraining={false} handTitle={t("meeting.hand")} />
+      <DraggableSideList tiles={tiles} focusEnabled={false} handTitle={t("meeting.hand")} />
     </div>
   );
 }

@@ -62,6 +62,8 @@ export type MediaRoomSnapshot = {
   recordAllowed: boolean;
   chatMessages: ChatMessage[];
   error: string | null;
+  /** 本地媒体采集降级提示码（非阻断）：no_camera / no_media_devices / media_permission_denied / media_capture_failed */
+  localMediaError: string | null;
   endedReason: string | null;
 };
 
@@ -127,6 +129,7 @@ export class MediaRoom {
   private recordAllowed = false;
   private chatMessages: ChatMessage[] = [];
   private error: string | null = null;
+  private localMediaError: string | null = null;
   private endedReason: string | null = null;
 
   constructor(opts: {
@@ -178,6 +181,7 @@ export class MediaRoom {
       recordAllowed: this.recordAllowed,
       chatMessages: [...this.chatMessages],
       error: this.error,
+      localMediaError: this.localMediaError,
       endedReason: this.endedReason,
     };
   }
@@ -592,6 +596,7 @@ export class MediaRoom {
     this.videoProducer = null;
     this.screenProducer = null;
     this.sharingScreen = false;
+    this.localMediaError = null;
 
     for (const t of [this.sendTransport, this.recvTransport]) {
       if (t && !t.closed) {
@@ -936,10 +941,26 @@ export class MediaRoom {
       return;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-    });
+    // —— 先开放消费通道，再采集本地媒体 ——
+    // recv 传输已就绪：本地采集结果（有无摄像头/麦克风、是否授权）不应
+    // 阻塞"看/听别人"。mediaReady 提前置位并冲刷排队的 newProducer；
+    // 否则采集一旦失败，消费队列成为死信，表现为"进了会但看不到任何人"。
+    this.mediaReady = true;
+    const queued = this.pendingProducers;
+    this.pendingProducers = [];
+    for (const m of queued) {
+      void this.consumeProducer(m).catch((err) => {
+        console.error("consume failed", err);
+      });
+    }
+
+    const { stream, localMediaError } = await this.captureLocalStream();
+    this.localMediaError = localMediaError;
+    if (!stream) {
+      // 纯观看模式：不创建任何本地 producer，本端以头像占位
+      this.emit();
+      return;
+    }
     this.localStream = stream;
 
     const audioTrack = stream.getAudioTracks()[0];
@@ -975,15 +996,55 @@ export class MediaRoom {
       }
     }
 
-    this.mediaReady = true;
-    const queued = this.pendingProducers;
-    this.pendingProducers = [];
-    for (const m of queued) {
-      void this.consumeProducer(m).catch((err) => {
-        console.error("consume failed", err);
-      });
-    }
     this.emit();
+  }
+
+  /**
+   * 分层降级采集本地媒体：
+   * 1. 音视频一起采（设备齐全的正常路径）；
+   * 2. 失败且非权限问题（无摄像头/设备占用/约束不满足）→ 仅采麦克风；
+   * 3. 仅麦克风也失败 → 纯观看模式。
+   * 返回 stream 为 null 时由调用方进入纯观看模式，错误码供 UI 非阻断提示。
+   */
+  private async captureLocalStream(): Promise<{
+    stream: MediaStream | null;
+    localMediaError: string | null;
+  }> {
+    const gUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    const errName = (e: unknown): string => (e instanceof Error ? e.name : String(e));
+    const isDenied = (name: string) =>
+      name === "NotAllowedError" || name === "SecurityError";
+
+    try {
+      return {
+        stream: await gUM({
+          audio: true,
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        }),
+        localMediaError: null,
+      };
+    } catch (err) {
+      if (isDenied(errName(err))) {
+        return { stream: null, localMediaError: "media_permission_denied" };
+      }
+      // 无摄像头 / 设备被占用 / 约束不满足 → 退到仅麦克风
+      try {
+        return {
+          stream: await gUM({ audio: true, video: false }),
+          localMediaError: "no_camera",
+        };
+      } catch (err2) {
+        if (isDenied(errName(err2))) {
+          return { stream: null, localMediaError: "media_permission_denied" };
+        }
+        const noDevice =
+          errName(err) === "NotFoundError" || errName(err2) === "NotFoundError";
+        return {
+          stream: null,
+          localMediaError: noDevice ? "no_media_devices" : "media_capture_failed",
+        };
+      }
+    }
   }
 
   private async createTransport(direction: "send" | "recv"): Promise<Transport> {
@@ -1273,6 +1334,7 @@ export class MediaRoom {
     this.videoProducer = null;
     this.screenProducer = null;
     this.sharingScreen = false;
+    this.localMediaError = null;
 
     for (const t of [this.sendTransport, this.recvTransport]) {
       if (t && !t.closed) {
