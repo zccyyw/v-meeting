@@ -478,6 +478,16 @@ export function createSignalHandler(db: Db) {
         if (m) send(m.ws, { type: "forceMute", audio: true, video: false });
         break;
       }
+      case "unmutePeer": {
+        if (!targetPeerId) {
+          send(ws, { type: "error", message: "target_required" });
+          return;
+        }
+        const m = state.peers.get(targetPeerId);
+        // audio:false → 客户端强制开启麦克风（与 unmuteAll 语义一致）
+        if (m) send(m.ws, { type: "forceMute", audio: false, video: false });
+        break;
+      }
       case "kick": {
         if (!targetPeerId) {
           send(ws, { type: "error", message: "target_required" });

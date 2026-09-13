@@ -331,6 +331,10 @@ export class MediaRoom {
     this.signal.send({ type: "host", action: "mutePeer", targetPeerId });
   }
 
+  unmutePeer(targetPeerId: string): void {
+    this.signal.send({ type: "host", action: "unmutePeer", targetPeerId });
+  }
+
   endMeeting(): void {
     this.signal.send({ type: "host", action: "endMeeting" });
   }
@@ -923,6 +927,15 @@ export class MediaRoom {
     this.sendTransport = await this.createTransport("send");
     this.recvTransport = await this.createTransport("recv");
 
+    // 浏览器仅在安全上下文（HTTPS 或 localhost）暴露 navigator.mediaDevices。
+    // 以 http://<IP>:port 访问时该对象不存在，getUserMedia 会抛错并被上层吞掉，
+    // 表现为"能进会议但看不到/听不到任何人"。这里提前判定并给出明确提示。
+    if (typeof navigator.mediaDevices?.getUserMedia !== "function") {
+      this.error = "insecure_context";
+      this.emit();
+      return;
+    }
+
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: { width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -1070,18 +1083,43 @@ export class MediaRoom {
   private async consumeProducer(
     msg: Extract<ServerMessage, { type: "newProducer" }>
   ): Promise<void> {
-    if (!this.device || !this.recvTransport || this.closed) return;
+    if (!this.device || !this.recvTransport || this.closed) {
+      // 此前静默 return：媒体消费失败在界面上毫无痕迹，只能看到
+      // "看不到对方画面/听不到声音"。改为显式报错，便于定位。
+      console.error("[media] consume skipped: transport not ready", msg);
+      this.setConsumeError("consume_not_ready");
+      return;
+    }
 
-    const consumed = await this.request<
-      Extract<ServerMessage, { type: "consumed" }>
-    >(
-      {
-        type: "consume",
-        producerId: msg.producerId,
-        rtpCapabilities: this.device.rtpCapabilities,
-      },
-      (m) => m.type === "consumed" && m.producerId === msg.producerId
-    );
+    let consumed:
+      | Extract<ServerMessage, { type: "consumed" }>
+      | Extract<ServerMessage, { type: "error" }>;
+    try {
+      consumed = await this.request<
+        | Extract<ServerMessage, { type: "consumed" }>
+        | Extract<ServerMessage, { type: "error" }>
+      >(
+        {
+          type: "consume",
+          producerId: msg.producerId,
+          rtpCapabilities: this.device.rtpCapabilities,
+        },
+        // 同时匹配服务端 error，避免失败时静默等待 10s 超时
+        (m) =>
+          (m.type === "consumed" && m.producerId === msg.producerId) ||
+          m.type === "error"
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[media] consume request failed", message, msg);
+      this.setConsumeError(message || "consume_failed");
+      return;
+    }
+    if (consumed.type === "error") {
+      console.error("[media] consume rejected by server", consumed.message);
+      this.setConsumeError(consumed.message || "consume_failed");
+      return;
+    }
 
     const consumer = await this.recvTransport.consume({
       id: consumed.id,
@@ -1117,6 +1155,12 @@ export class MediaRoom {
 
     this.signal.send({ type: "resumeConsumer", consumerId: consumer.id });
     await consumer.resume();
+    this.emit();
+  }
+
+  /** 记录媒体消费失败原因，界面可见（不打断会议，仅提示） */
+  private setConsumeError(reason: string): void {
+    this.error = `consume_failed:${reason}`;
     this.emit();
   }
 

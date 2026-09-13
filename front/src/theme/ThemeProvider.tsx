@@ -3,6 +3,7 @@ import { App as AntApp, ConfigProvider, theme } from "antd";
 import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
 import { useTranslation } from "react-i18next";
+import { bindMessageApi } from "@/ui/toast";
 
 export type ThemeMode = "light" | "dark";
 
@@ -20,6 +21,20 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 export function useThemeMode(): ThemeContextValue {
   return useContext(ThemeContext);
+}
+
+/**
+ * 将 <AntApp> 提供的 message 实例注入全局 toast，
+ * 使 showMessage/showError 等具备上下文（动态主题）能力，
+ * 消除 "Static function can not consume context" 警告。
+ */
+function MessageApiBridge(): null {
+  const { message } = AntApp.useApp();
+  useEffect(() => {
+    bindMessageApi(message);
+    return () => bindMessageApi(null);
+  }, [message]);
+  return null;
 }
 
 const STORAGE_KEY = "app-theme-mode";
@@ -81,7 +96,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           },
         }}
       >
-        <AntApp>{children}</AntApp>
+        <AntApp>
+          <MessageApiBridge />
+          {children}
+        </AntApp>
       </ConfigProvider>
     </ThemeContext.Provider>
   );

@@ -89,7 +89,29 @@ function fromBase64(str: string): ArrayBuffer {
  * 加密密码明文，返回 `enc:<base64 iv>:<base64 ciphertext>` 格式字符串。
  * 前端在发送密码前调用。
  */
+/**
+ * WebCrypto（crypto.subtle）是否可用。
+ * 浏览器仅在安全上下文（HTTPS 或 localhost）暴露 crypto.subtle；
+ * 以 http://<IP>:port 访问时不可用，直接调用会抛
+ * "Cannot read properties of undefined (reading 'importKey')"。
+ */
+function webCryptoAvailable(): boolean {
+  return (
+    typeof globalThis.crypto !== "undefined" &&
+    typeof globalThis.crypto.subtle !== "undefined"
+  );
+}
+
 export async function encryptPassword(plain: string): Promise<string> {
+  // 非安全上下文：无法加密。此时传输本身也未受 TLS 保护，
+  // 退回明文并告警（后端 decryptPassword 兼容非 enc: 前缀），
+  // 避免登录直接崩溃导致整个系统不可用。
+  if (!webCryptoAvailable()) {
+    console.warn(
+      "[crypto] WebCrypto unavailable (insecure context: use HTTPS or localhost). Password will be sent in plaintext.",
+    );
+    return plain;
+  }
   const key = await getKey();
   const ivBytes = crypto.getRandomValues(new Uint8Array(12));
   const iv = ivBytes.buffer.slice(ivBytes.byteOffset, ivBytes.byteOffset + ivBytes.byteLength) as ArrayBuffer;

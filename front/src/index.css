@@ -499,8 +499,8 @@ input:not(.ant-input):focus {
 .meeting-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0.75rem 1rem 0; overflow: hidden; }
 .meeting-code-row { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; max-width: 100%; }
 .meeting-code { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; color: var(--meeting-text); font-weight: 600; white-space: nowrap; }
-.meeting-code-copy { font: inherit; display: inline-flex; align-items: center; justify-content: center; padding: 0.2rem; border: none; background: transparent; color: var(--meeting-text); cursor: pointer; line-height: 0; border-radius: 8px; opacity: 0.7; transition: opacity 0.15s ease; }
-.meeting-code-copy:hover { background: transparent; opacity: 1; }
+.meeting-code-copy { font: inherit; display: inline-flex; align-items: center; justify-content: center; padding: 0.2rem; border: none !important; background: transparent !important; color: var(--meeting-text) !important; cursor: pointer; line-height: 0; border-radius: 8px; opacity: 0.7; transition: opacity 0.15s ease; }
+.meeting-code-copy:hover { background: transparent !important; opacity: 1; }
 .meeting-connecting, .meeting-ended { margin-bottom: 0.75rem; }
 .meeting-main { position: relative; flex: 1; min-height: 0; display: flex; gap: 0.75rem; overflow: hidden; }
 .meeting-videos { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -701,8 +701,12 @@ input:not(.ant-input):focus {
 .member-media-icon.off { color: #ff4d4f; }
 
 .member-actions { flex-shrink: 0; }
+/* 成员操作按钮：去除全局按钮默认的蓝底蓝框 */
+.member-actions button { border: none !important; background: transparent !important; }
 .member-mute-btn { padding: 0.25rem 0.4rem !important; font-size: 1rem !important; line-height: 1; }
 .member-mute-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+/* 移除（踢出）按钮：红色字体 */
+.member-kick-btn { color: var(--color-danger) !important; }
 
 /* —— 聊天面板 —— */
 .chat-messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 0.75rem; padding-right: 0.25rem; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 0.25s ease; }

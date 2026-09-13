@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { CopyOutlined, CheckOutlined, SettingOutlined } from "@ant-design/icons";
 import { MeetingApi, RecordingsApi, InvitationApi, type InvitationItem } from "@/api/client";
 import { copyText, formatMeetingCode } from "@/auth/joinPrefs";
+import { getSessionId } from "@/auth/session";
 import { Controls } from "@/components/Controls";
 import { ChatPanel } from "@/components/ChatPanel";
 import { DanmuOverlay } from "@/components/DanmuOverlay";
@@ -277,6 +278,9 @@ function MeetingPageInner() {
       return;
     }
     if (!meetingId) return;
+    // 该接口需要登录会话；访客（无会话）请求必然 401 且会议号仅用于展示
+    // （可由 URL ?code= 提供），无会话时直接跳过，避免控制台 401 噪音。
+    if (!getSessionId()) return;
 
     void MeetingApi.get(meetingId)
       .then((m) => {
@@ -320,8 +324,11 @@ function MeetingPageInner() {
   }, []);
 
   // 获取邀请名单（成员面板打开时加载，peers 变化时刷新，定时刷新以更新在线状态）
+  // 仅主持人请求：邀请名单接口仅主持人/管理角色可访问，成员请求必然 403，
+  // 且成员视图本就不展示被邀请未入会人员。
   useEffect(() => {
     if ((!membersOpen && !inviteListOpen) || !meetingId) return;
+    if (snap.role !== "host") return;
     // 立即加载一次
     void InvitationApi.list(Number(meetingId))
       .then((res) => setInvitations(res.items))
@@ -333,7 +340,7 @@ function MeetingPageInner() {
         .catch(() => { /* ignore */ });
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [membersOpen, inviteListOpen, meetingId, snap.peers.length]);
+  }, [membersOpen, inviteListOpen, meetingId, snap.peers.length, snap.role]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -713,7 +720,11 @@ function MeetingPageInner() {
               ? t("meeting.onlineLimitReached")
               : snap.error === "media_connection_failed"
                 ? t("meeting.mediaConnectionFailed")
-                : snap.error}
+                : snap.error === "insecure_context"
+                  ? t("meeting.insecureContext")
+                  : snap.error?.startsWith("consume_failed:")
+                  ? `${t("meeting.consumeFailed")}（${snap.error.slice("consume_failed:".length)}）`
+                  : snap.error}
           </p>
         )}
 
@@ -862,6 +873,9 @@ function MeetingPageInner() {
                     }}
                     onMutePeer={(peerId) => {
                       roomRef.current?.mutePeer(peerId);
+                    }}
+                    onUnmutePeer={(peerId) => {
+                      roomRef.current?.unmutePeer(peerId);
                     }}
                     onKick={(peerId) => {
                       roomRef.current?.kickPeer(peerId);

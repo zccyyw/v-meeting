@@ -33,6 +33,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
       "setRecordAllowed",
       "endMeeting",
       "mutePeer",
+      "unmutePeer",
     ]),
     targetPeerId: z.string().optional(),
     allowShare: z.boolean().optional(),

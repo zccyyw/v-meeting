@@ -309,7 +309,9 @@
     "me": "me",
     "peer": "Participant",
     "onlineLimitReached": "The system online user limit has been reached. Please contact the system administrator.",
-    "mediaConnectionFailed": "Media connection failed: check that MEDIASOUP_ANNOUNCED_IP is a client-reachable IP and UDP ports 40000-41000 are open."
+    "mediaConnectionFailed": "Media connection failed: check that MEDIASOUP_ANNOUNCED_IP is a client-reachable IP and UDP ports 40000-41000 are open.",
+    "consumeFailed": "Failed to receive peer media",
+    "insecureContext": "Insecure context: access via HTTPS or localhost, otherwise the browser blocks camera/microphone access."
   },
   "recordings": {
     "title": "Recordings",

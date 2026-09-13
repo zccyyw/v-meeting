@@ -20,6 +20,7 @@
     "dev:api": "npm run dev -w @meeting/api",
     "dev:realtime": "npm run dev -w @meeting/realtime",
     "dev:front": "npm run dev -w @meeting/front",
+    "cert:dev": "node deploy/native/bin/gen-cert.mjs",
     "dev": "concurrently -k -n api,realtime,front -c blue,magenta,green \"npm run dev:api\" \"npm run dev:realtime\" \"npm run dev:front\""
   },
   "devDependencies": {

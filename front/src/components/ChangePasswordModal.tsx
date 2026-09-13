@@ -53,14 +53,13 @@ export function ChangePasswordModal({ open, onClose }: Props) {
       title={t("account.changePassword")}
       onCancel={handleClose}
       closable
-      maskClosable
+      mask={{ closable: true }}
       onOk={() => void onSubmit()}
       confirmLoading={busy}
       okText={done ? t("common.confirm") : t("common.save")}
       cancelText={t("common.cancel")}
       okButtonProps={{ disabled: done }}
       cancelButtonProps={{ style: { display: done ? "none" : undefined } }}
-      destroyOnHidden
       centered
       width={420}
     >

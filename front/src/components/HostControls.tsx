@@ -21,6 +21,7 @@ type Props = {
   onToggleAllowShare: () => void;
   onToggleMuteAll: () => void;
   onMutePeer: (peerId: string) => void;
+  onUnmutePeer: (peerId: string) => void;
   onKick: (peerId: string) => void;
 };
 
@@ -56,6 +57,7 @@ export function HostControls({
   onToggleAllowShare,
   onToggleMuteAll,
   onMutePeer,
+  onUnmutePeer,
   onKick,
 }: Props) {
   const { t } = useTranslation();
@@ -177,16 +179,23 @@ export function HostControls({
                     <button
                       type="button"
                       className="ghost member-mute-btn"
-                      onClick={() => onMutePeer(m.peerId!)}
-                      disabled={!m.micEnabled}
-                      aria-label={t("meeting.mute")}
-                      title={t("meeting.mute")}
+                      onClick={() =>
+                        m.micEnabled
+                          ? onMutePeer(m.peerId!)
+                          : onUnmutePeer(m.peerId!)
+                      }
+                      aria-label={
+                        m.micEnabled ? t("meeting.mute") : t("meeting.unmute")
+                      }
+                      title={
+                        m.micEnabled ? t("meeting.mute") : t("meeting.unmute")
+                      }
                     >
                       {m.micEnabled ? <AudioOutlined /> : <AudioMutedOutlined />}
                     </button>
                     <button
                       type="button"
-                      className="ghost"
+                      className="ghost member-kick-btn"
                       onClick={() => {
                         modal.confirm({
                           title: t("meeting.confirmKick", { name: m.displayName }),

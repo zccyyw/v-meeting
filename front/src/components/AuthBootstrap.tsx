@@ -12,6 +12,17 @@ export function AuthBootstrap() {
     let cancelled = false;
 
     void (async () => {
+      // 无本地会话（如访客通过邀请链接进入）时无需请求 /auth/me，
+      // 直接走未登录流程 —— 避免必然失败的请求在控制台产生 401 噪音。
+      if (!getSessionId()) {
+        const join =
+          new URLSearchParams(window.location.search)
+            .get("join")
+            ?.replace(/\D/g, "") ?? "";
+        if (join.length === 9) setPendingJoinCode(join);
+        navigate("/login", { replace: true });
+        return;
+      }
       try {
         const me = await AuthApi.me();
         if (cancelled) return;

@@ -3,6 +3,9 @@ dist
 .env
 certs/*.pem
 certs/*.key
+# 本地开发自签证书（含私钥，禁止入库）
+.certs/
+front/public/ca.crt
 *.log
 coverage
 .superpowers/

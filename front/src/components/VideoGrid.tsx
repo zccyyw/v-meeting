@@ -269,10 +269,24 @@ function RemoteAudio({ stream }: { stream: MediaStream }) {
     const el = ref.current;
     if (!el) return;
     el.srcObject = stream;
-    void el.play().catch(() => {
-      /* autoplay may need a prior user gesture; joining counts */
-    });
+    const tryPlay = () => {
+      void el.play().catch(() => {
+        /* 需要用户激活，由下方手势/收流事件兜底重试 */
+      });
+    };
+    tryPlay();
+    // 自动播放策略：无用户激活时 play() 会被拒绝且此后不再自动成功。
+    // 说话图标能工作说明音频数据已到达，此处必须在首次用户手势
+    // 或音轨开始收流（unmute 事件）时重试播放，否则永远无声。
+    const onGesture = () => tryPlay();
+    document.addEventListener("pointerdown", onGesture);
+    document.addEventListener("keydown", onGesture);
+    const track = stream.getAudioTracks()[0];
+    track?.addEventListener("unmute", tryPlay);
     return () => {
+      document.removeEventListener("pointerdown", onGesture);
+      document.removeEventListener("keydown", onGesture);
+      track?.removeEventListener("unmute", tryPlay);
       el.srcObject = null;
     };
   }, [stream]);
@@ -609,12 +623,24 @@ export function VideoGrid({
   void trackEpoch;
   const hasScreen = Boolean(localScreenStream) || screenStreams.size > 0;
   const localVideoOn = localCamEnabled && hasActiveCamera(localStream);
+  // 是否有人开视频：以状态标记为准，同时用"实际视频轨"兜底。
+  // 远端 camEnabled 依赖 newProducer/producerPaused 同步，一旦该状态未到位，
+  // 仅靠标记会把"已有实际画面"的会议错误地退化为全局头像模式（表现为
+  // 只要有一人开着视频却全员显示头像）。
   let remoteVideoOn = false;
   for (const p of peers) {
     if (p.peerId === localPeerId) continue;
     if (p.camEnabled) {
       remoteVideoOn = true;
       break;
+    }
+  }
+  if (!remoteVideoOn) {
+    for (const s of remoteStreams.values()) {
+      if (hasActiveCamera(s)) {
+        remoteVideoOn = true;
+        break;
+      }
     }
   }
 
