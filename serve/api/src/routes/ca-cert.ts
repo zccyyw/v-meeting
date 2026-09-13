@@ -10,11 +10,15 @@ import type { FastifyInstance } from "fastify";
  *
  * 证书目录：环境变量 CERT_DIR，默认 /opt/meeting/certs
  * （Docker 部署由 compose 挂载 ./deploy/docker/certs:/certs 并设 CERT_DIR=/certs）。
+ *
+ * 路由路径不含 /api 前缀：前端以 /api/certs/ca.crt 请求，所有反代层
+ * （gateway.mjs / Caddyfile 的 strip_prefix / nginx proxy_pass 尾斜杠）
+ * 均会剥离 /api，后端实际收到 /certs/ca.crt。
  */
 const CERT_DIR = process.env.CERT_DIR || "/opt/meeting/certs";
 
 export async function caCertRoutes(app: FastifyInstance) {
-  app.get("/api/certs/ca.crt", async (req, reply) => {
+  app.get("/certs/ca.crt", async (req, reply) => {
     const filePath = join(CERT_DIR, "ca.crt");
     if (!existsSync(filePath)) {
       return reply
