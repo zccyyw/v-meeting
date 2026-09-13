@@ -208,7 +208,10 @@ git tag v0.0.9 && git push origin v0.0.9
 
 ### 下载与安装
 
-构建完成后在 **Actions → 运行详情 → Artifacts** 下载：
+构建完成后产物可从两处下载：
+
+1. **GitHub Releases**（推荐，tag 触发的构建自动发布）：仓库 **Releases** 页，rpm/deb 为可直接安装的原始包，Docker/Native/源码为完整 zip 交付包
+2. **Actions → 运行详情 → Artifacts**（手动触发仅有此方式）：
 
 | 构建方式 | Artifact 名称 |
 |---------|--------------|

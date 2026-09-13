@@ -13,7 +13,9 @@
 #   2. 推送 tag v* 时自动触发：同时构建 x64+arm64 的全部包
 #
 # 产物下载：
-#   构建完成后在 Actions → Run details → Artifacts 区下载 ZIP 压缩包。
+#   1. Actions → Run details → Artifacts 区下载 ZIP 压缩包（手动触发仅有此方式）。
+#   2. tag 推送构建：全部产物同时上传到对应版本的 GitHub Release
+#      （Releases 页直接下载，rpm/deb 为原始包可直接安装，多文件交付包为 zip）。
 #
 # 安装到目标服务器：
 #   sudo rpm -ivh meeting-*.rpm        # RPM 系（CentOS/麒麟/UOS）
@@ -399,10 +401,79 @@ jobs:
           if-no-files-found: error
 
   # ═══════════════════════════════════════════════════════════════════
+  # 发布 Release（仅 tag 推送触发）：下载全部构建产物并上传到 GitHub Release
+  #  - rpm/deb：单文件安装包，直接作为资产（rpm -ivh / dpkg -i 可直接用）
+  #  - 源码/Docker/Native：多文件交付包，整体 zip 保持目录结构完整
+  #  - 任一构建 job 失败则跳过发布（避免半成品 Release）
+  # ═══════════════════════════════════════════════════════════════════
+  release:
+    needs: [prepare, pack, docker, native, rpm, deb]
+    runs-on: ubuntu-latest
+    if: >-
+      always()
+      && github.event_name == 'push'
+      && startsWith(github.ref, 'refs/tags/v')
+      && !contains(needs.*.result, 'failure')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Collect release assets
+        run: |
+          set -eu
+          mkdir -p release-files
+          cd release-assets
+          ls -la
+          for d in */; do
+            name="${d%/}"
+            case "$name" in
+              meeting-rpm-*|meeting-deb-*)
+                # 单文件安装包：直接作为 Release 资产
+                find "$d" -type f \( -name '*.rpm' -o -name '*.deb' \) \
+                  -exec mv {} ../release-files/ \;
+                ;;
+              *)
+                # 多文件交付包（源码/Docker/Native）：整体 zip
+                zip -r -q "../release-files/${name}.zip" "$name"
+                ;;
+            esac
+          done
+          cd ..
+          echo "→ Release 资产："
+          ls -lh release-files/
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "→ Release 已存在，补充上传资产（覆盖同名）"
+            gh release upload "$tag" -R "$GITHUB_REPOSITORY" release-files/* --clobber
+          else
+            echo "→ 创建 Release $tag 并上传资产"
+            gh release create "$tag" -R "$GITHUB_REPOSITORY" \
+              --title "Meeting $tag" \
+              --generate-notes \
+              release-files/*
+          fi
+
+      - name: Summary
+        run: |
+          echo "### Release" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "全部产物已上传到 [GitHub Release ${{ github.ref_name }}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }})" >> $GITHUB_STEP_SUMMARY
+
+  # ═══════════════════════════════════════════════════════════════════
   # 构建完成汇总
   # ═══════════════════════════════════════════════════════════════════
   summary:
-    needs: [prepare, pack, docker, native, rpm, deb]
+    needs: [prepare, pack, docker, native, rpm, deb, release]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -417,7 +488,8 @@ jobs:
           echo "| Native 离线包 | ${{ needs.native.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| RPM 包 | ${{ needs.rpm.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| DEB 包 | ${{ needs.deb.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release 上传 | ${{ needs.release.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Download artifacts from the Actions run page." >> $GITHUB_STEP_SUMMARY
+          echo "Artifacts 可在 Actions 运行页下载；tag 构建产物同时发布在 Releases 页。" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version**: ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}" >> $GITHUB_STEP_SUMMARY
