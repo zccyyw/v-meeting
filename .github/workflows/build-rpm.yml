@@ -376,6 +376,15 @@ jobs:
 
           mkdir -p dist/deb
 
+          # DEB 架构后缀：x64 → amd64、arm64 → arm64（Debian 命名）。
+          # 若不带架构，x64/arm64 产物都叫 meeting-<ver>-<rel>.deb，
+          # release 收集步骤的 mv 会相互覆盖，Releases 只剩一个包。
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            deb_arch="arm64"
+          else
+            deb_arch="amd64"
+          fi
+
           docker run --rm \
             -v "$PWD/dist/rpm:/input:ro" \
             -v "$PWD/dist/deb:/output" \
@@ -388,7 +397,7 @@ jobs:
                   -n meeting \
                   -v ${{ needs.prepare.outputs.version }} \
                   --iteration ${{ needs.prepare.outputs.release }} \
-                  -p /output/meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.deb \
+                  -p /output/meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.${deb_arch}.deb \
                   \$rpm_file && \
                 echo 'DEB conversion complete'"
 
