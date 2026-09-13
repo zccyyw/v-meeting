@@ -12,6 +12,8 @@ coverage
 截图/
 *.tsbuildinfo
 
+docx/
+
 .cursor
 .vscode
 .idea

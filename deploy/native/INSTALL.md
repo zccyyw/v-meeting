@@ -229,7 +229,33 @@ Nginx 直连 `api:8080` / `realtime:8082` 与静态目录；前端使用相对 `
 
 ---
 
-## 8. 卸载
+## 8. 升级（保留配置与数据）
+
+`install.sh` 可重复运行完成升级：覆盖 `/opt/meeting/app`、保留 `conf/.env`、重跑幂等迁移、自动重启。
+
+```bash
+# 1)（推荐）先备份运行时数据（SQLite / 录制）
+sudo tar czf /tmp/meeting-data-$(date +%F).tar.gz -C /opt/meeting data logs
+
+# 2) 解压新包并升级
+tar -xzf meeting-linux-<arch>-<version>.tar.gz
+cd meeting-linux-<arch>-<version>
+sudo ./install.sh        # 检测到版本变化会自动备份旧 app 到 /opt/meeting-backups/app-<旧版本>
+```
+
+升级前若检测到 `/opt/meeting/VERSION` 与包内 `VERSION` 不同，`install.sh` 会把旧 `app` 备份到
+`${MEETING_BACKUP_DIR:-/opt/meeting-backups}/app-<旧版本>`，便于回滚。
+
+## 9. 回滚
+
+```bash
+sudo systemctl stop meeting-api meeting-realtime meeting-gateway
+sudo rm -rf /opt/meeting/app
+sudo cp -a /opt/meeting-backups/app-<旧版本> /opt/meeting/app
+sudo systemctl start meeting-api meeting-realtime meeting-gateway
+```
+
+## 10. 卸载
 
 ```bash
 sudo systemctl disable --now meeting-api meeting-realtime meeting-gateway
@@ -237,11 +263,12 @@ sudo rm -f /etc/systemd/system/meeting-*.service
 sudo systemctl daemon-reload
 sudo rm -rf /opt/meeting
 # 数据库与 Redis 数据需自行决定是否删除
+# 升级备份目录（如有）可一并清理：sudo rm -rf /opt/meeting-backups
 ```
 
 ---
 
-## 9. 目录结构（安装后）
+## 11. 目录结构（安装后）
 
 ```
 /opt/meeting/
@@ -257,7 +284,7 @@ sudo rm -rf /opt/meeting
 
 ---
 
-## 10. 故障排查
+## 12. 故障排查
 
 | 现象 | 处理 |
 |------|------|

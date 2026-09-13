@@ -207,11 +207,9 @@ cp "$WORKSPACE_DIR/deploy/native/systemd-rpm/meeting-api.service"      "$STAGE/u
 cp "$WORKSPACE_DIR/deploy/native/systemd-rpm/meeting-realtime.service" "$STAGE/usr/lib/systemd/system/"
 cp "$WORKSPACE_DIR/deploy/native/systemd-rpm/meeting-gateway.service"  "$STAGE/usr/lib/systemd/system/"
 
-# Create placeholder directories
-mkdir -p "$STAGE/opt/meeting/data"
-touch "$STAGE/opt/meeting/data/.gitkeep"
-mkdir -p "$STAGE/opt/meeting/logs"
-touch "$STAGE/opt/meeting/logs/.gitkeep"
+# 运行时目录（data/ 录制与 SQLite、logs/、certs/）不纳入包体，
+# 由 post.sh 在 %post 阶段创建并赋权，确保 rpm -e / dpkg -r 卸载时
+# 不会误删用户数据。
 
 # ─── Build RPM ───
 cd "$STAGE"

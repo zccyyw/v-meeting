@@ -20,8 +20,15 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const platform = process.platform;
 const arch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : process.arch;
 const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+// 版本号：优先 MEETING_VERSION 环境变量，其次 package.json 的 version，
+// 最后回退到日期戳。统一 semver，便于升级时比对与回滚。
+let pkgVersion = stamp;
+try {
+  pkgVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version || stamp;
+} catch {}
+const version = process.env.MEETING_VERSION || pkgVersion;
 const outRoot = join(root, "dist", "native");
-const bundleName = `meeting-linux-${arch}-${stamp}`;
+const bundleName = `meeting-linux-${arch}-${version}`;
 const bundleDir = join(outRoot, bundleName);
 
 function run(cmd, args, opts = {}) {
@@ -93,11 +100,13 @@ copy(join(root, "deploy", "native", "install.sh"), join(bundleDir, "install.sh")
 copy(join(root, "deploy", "native", "INSTALL.md"), join(bundleDir, "INSTALL.md"));
 
 writeFileSync(join(bundleDir, "ARCH.txt"), arch + "\n");
+writeFileSync(join(bundleDir, "VERSION"), version + "\n");
 writeFileSync(
   join(bundleDir, "BUILD.txt"),
   [
     `platform=${platform}`,
     `arch=${arch}`,
+    `version=${version}`,
     `node=${process.version}`,
     `date=${new Date().toISOString()}`,
     `vite_api_base=${process.env.VITE_API_BASE || "/api"}`,

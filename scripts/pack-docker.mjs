@@ -7,7 +7,7 @@
  *   DOCKER_PLATFORM    e.g. linux/amd64 | linux/arm64 (optional)
  *   VITE_API_BASE / VITE_WS_URL / VITE_APP_NAME / VITE_APP_LOGO  front build args
  */
-import { mkdirSync, rmSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -131,6 +131,18 @@ for (const f of composeFiles) {
   }
 }
 
+// 生成离线版 compose：剥离所有 build: 段，避免离线环境执行
+// `docker-compose up` 时因找不到镜像而误触发在线构建（离线包无源码目录必失败）。
+// 离线部署统一使用 docker-compose.offline.yml。
+if (existsSync(join(root, "docker-compose.yml"))) {
+  const composeSrc = readFileSync(join(root, "docker-compose.yml"), "utf8");
+  const offlineCompose = composeSrc.replace(
+    /^[ \t]*build:[^\n]*\n(?:^[ \t]{6,}[^\n]*\n)*/gm,
+    "",
+  );
+  writeFileSync(join(out, "docker-compose.offline.yml"), offlineCompose);
+}
+
 // Caddyfile 与 .env 模板
 if (existsSync(join(root, "Caddyfile"))) {
   copyFileSync(join(root, "Caddyfile"), join(out, "Caddyfile"));
@@ -194,15 +206,17 @@ writeFileSync(
     "",
     "部署步骤：",
     "  1. bash load-images.sh              # 加载全部镜像",
-    "  2. cp env.example .env && vi .env    # 改 MEDIASOUP_ANNOUNCED_IP 等",
+    "  2. [ -f .env ] || cp env.example .env   # 仅首次生成；已存在则保留你的配置",
+    "     vi .env                           # 改 MEDIASOUP_ANNOUNCED_IP 等",
     "  3. bash deploy/docker/gen-selfsigned.sh <服务器IP>  # 生成自签证书（可选）",
-    "  4. docker-compose up -d              # 启动（默认 SQLite + 自动初始化）",
+    "  4. docker-compose -f docker-compose.offline.yml up -d   # 离线：无 build 段，绝不误 build",
     "",
     "切 PostgreSQL/MySQL：在 .env 设 COMPOSE_PROFILES=postgres 或 mysql（DB_DRIVER 自动跟随）",
     "默认 SQLite 无需独立数据库容器，数据存于 meeting-data volume",
     "",
-    "停止：docker-compose down",
-    "重建：docker-compose up -d --build",
+    "停止：docker-compose -f docker-compose.offline.yml down",
+    "升级：备份 meeting-data 卷后，重新 load-images.sh 并 up -d（API 启动自动迁移）",
+    "在线构建（仅调试）：docker-compose up -d --build",
     "",
     `Docs: docs/项目打包与部署说明.md`,
     "",

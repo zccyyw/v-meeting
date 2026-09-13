@@ -41,6 +41,21 @@ if ! id -u "$APP_USER" >/dev/null 2>&1; then
     useradd --system --home-dir "$PREFIX" --shell /sbin/nologin "$APP_USER"
 fi
 
+# 新版本号（来自包内 VERSION 文件，可覆盖）
+NEW_VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION" 2>/dev/null || echo unknown)"
+
+# 升级前备份旧版本 app（仅当已安装且版本不同）
+if [[ -d "$PREFIX/app" && -f "$PREFIX/VERSION" ]]; then
+  OLD_VERSION="$(tr -d '[:space:]' < "$PREFIX/VERSION" 2>/dev/null || echo unknown)"
+  if [[ "$OLD_VERSION" != "$NEW_VERSION" ]]; then
+    BACKUP_DIR="${MEETING_BACKUP_DIR:-/opt/meeting-backups}"
+    mkdir -p "$BACKUP_DIR"
+    log "检测到升级：旧版本 $OLD_VERSION -> 新版本 $NEW_VERSION，备份旧 app 到 $BACKUP_DIR/app-$OLD_VERSION"
+    rm -rf "$BACKUP_DIR/app-$OLD_VERSION"
+    cp -a "$PREFIX/app" "$BACKUP_DIR/app-$OLD_VERSION"
+  fi
+fi
+
 log "安装到 $PREFIX"
 mkdir -p "$PREFIX"/{conf,logs,bin,app}
 rm -rf "$PREFIX/app"
@@ -67,6 +82,9 @@ cp "$ROOT/conf/nginx-meeting.conf" "$PREFIX/conf/nginx-meeting.conf"
 ln -sfn "$NODE_BIN" "$PREFIX/bin/node"
 
 chown -R "$APP_USER:$APP_GROUP" "$PREFIX"
+
+# 记录当前版本，供下次升级比对
+echo "$NEW_VERSION" > "$PREFIX/VERSION"
 
 # systemd units
 if [[ -d /etc/systemd/system ]]; then
