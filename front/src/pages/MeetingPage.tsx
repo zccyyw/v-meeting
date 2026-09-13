@@ -52,6 +52,7 @@ const emptySnapshot: MediaRoomSnapshot = {
   recordAllowed: false,
   chatMessages: [],
   error: null,
+  localMediaError: null,
   endedReason: null,
 };
 
