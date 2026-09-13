@@ -12,7 +12,7 @@ coverage
 截图/
 *.tsbuildinfo
 
-docx/
+docs/
 
 .cursor
 .vscode
