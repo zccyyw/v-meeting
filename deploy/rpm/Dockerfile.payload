@@ -23,7 +23,7 @@
 #
 # 构建参数：
 #   BASE_IMAGE    基线镜像
-#   NODE_TAR_URL  Node 下载地址前缀
+#   NODE_TAR_URL  Node 下载「根地址」，可带版本目录也可不带（不带时由 NODE_TAR 推导补全）
 #   NODE_TAR      Node 包文件名（含变体后缀，glibc-217 是 .tar.gz）
 #   PIP_INDEX_URL pip 源（默认官方；国内可传镜像）
 # =============================================================================
@@ -56,13 +56,43 @@ RUN set -eux; \
 
 # Node 运行时：构建期与运行期共用同一个二进制
 # （build-rpm.sh 以 USE_SYSTEM_NODE=1 直接把它内嵌进安装包，避免两处不一致）
+#
+# 地址构成 = <根地址>/v<版本>/<包名>：unofficial-builds 与 nodejs.org 都是**目录式**
+# 布局（<根>/vX.Y.Z/<包名>），扁平地址 <根>/<包名> 一律 404 —— 而该错误只在拉完基线
+# 镜像、编译数分钟后才暴露，代价极高。故此处由包名推导版本目录、缺则补全；若根地址
+# 自带的版本目录与包名不一致，直接报错退出。下载失败会自动换另一种压缩格式重试。
 RUN set -eux; \
-    url="${NODE_TAR_URL}/${NODE_TAR}"; \
+    ver="$(printf '%s' "$NODE_TAR" | sed -n 's/^node-\(v[0-9][^-]*\)-.*$/\1/p')"; \
+    if [ -z "$ver" ]; then echo "ERROR: cannot derive Node version from NODE_TAR=$NODE_TAR" >&2; exit 1; fi; \
+    base="${NODE_TAR_URL%/}"; \
+    case "$base" in \
+      */v[0-9]*) \
+        case "$base" in \
+          *"/$ver") ;; \
+          *) echo "ERROR: NODE_TAR_URL 的版本目录与 NODE_TAR 不一致：base=$base tar=$NODE_TAR" >&2; exit 1 ;; \
+        esac ;; \
+      *) base="$base/$ver" ;; \
+    esac; \
+    url="$base/$NODE_TAR"; \
     echo "→ downloading Node: $url"; \
-    if ! curl -fsSL "$url" -o /tmp/node.tar; then \
-      alt="${url%.xz}"; \
-      echo "→ retry: $alt"; \
-      curl -fsSL "$alt" -o /tmp/node.tar; \
+    code="$(curl -sSL -o /tmp/node.tar -w '%{http_code}' "$url" || true)"; \
+    if [ "$code" != "200" ]; then \
+      case "$code" in \
+        404|410) \
+          case "$url" in \
+            *.tar.xz) alt="${url%.tar.xz}.tar.gz" ;; \
+            *.tar.gz) alt="${url%.tar.gz}.tar.xz" ;; \
+            *) alt="$url" ;; \
+          esac; \
+          echo "→ HTTP $code：该格式不存在，换另一种压缩格式重试 $alt" ;; \
+        *) \
+          alt="$url"; \
+          echo "→ HTTP $code：疑似网络抖动/被拦截，用原地址重试" ;; \
+      esac; \
+      code="$(curl -sSL -o /tmp/node.tar -w '%{http_code}' "$alt" || true)"; \
+      if [ "$code" != "200" ]; then \
+        echo "ERROR: Node 下载失败（HTTP $code）：$alt" >&2; exit 1; \
+      fi; \
     fi; \
     tar -xf /tmp/node.tar -C /usr/local --strip-components=1 \
       --exclude=CHANGELOG.md --exclude=README.md --exclude=LICENSE; \

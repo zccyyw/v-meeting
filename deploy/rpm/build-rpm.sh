@@ -19,6 +19,8 @@ set -x
 
 # ─── Read configuration from env ───
 NODE_VERSION="${NODE_VERSION:-v22.23.1}"
+# 统一带 v 前缀：Node 下载为目录式布局（<镜像>/<vX.Y.Z>/<包名>），缺前缀会 404
+case "$NODE_VERSION" in v*) ;; *) NODE_VERSION="v$NODE_VERSION" ;; esac
 TARGET_ARCH="${TARGET_ARCH:-x64}"
 RPM_VERSION="${RPM_VERSION:-0.1}"
 RPM_RELEASE="${RPM_RELEASE:-1}"
