@@ -39,10 +39,19 @@ echo "→ sqlite    ：${BS3:-<未找到>}"
 echo "→ worker    ：${WORKER:-<未找到>}"
 
 # 取某个 ELF 里最高的 GLIBC_/GLIBCXX_ 版本号（去掉前缀）
+# 注意：grep 无匹配时退出码为 1，在 set -euo pipefail 下会**直接中断整个脚本**，
+# 而"没有 GLIBCXX 符号"恰恰是基线模式期望的结果（-static-libstdc++ 之后不再有
+# 动态 GLIBCXX 符号）→ 曾把 better-sqlite3 误判成校验失败（node 打印完就退出）。
+# 故此处显式兜底为空字符串。
 highest() {
   objdump -T "$1" 2>/dev/null \
     | grep -o "$2_[0-9.]*" \
-    | sort -Vu | tail -1 | sed "s/^$2_//"
+    | sort -Vu | tail -1 | sed "s/^$2_//" || true
+}
+
+# 某 ELF 依赖的动态库列表（用于说明 libstdc++ 是否已被静态链接）
+needed() {
+  objdump -p "$1" 2>/dev/null | awk '$1 == "NEEDED" { print $2 }' | tr '\n' ' '
 }
 
 # $1 <= $2 ?
@@ -58,7 +67,8 @@ if [ "$MODE" = "symbols" ]; then
     [ -n "$f" ] && [ -f "$f" ] || continue
     need="$(highest "$f" GLIBC)"
     cxx="$(highest "$f" GLIBCXX)"
-    echo "  $(basename "$f"): GLIBC=${need:-无} GLIBCXX=${cxx:-无（已静态链接）}"
+    deps="$(needed "$f")"
+    echo "  $(basename "$f"): GLIBC=${need:-无} GLIBCXX=${cxx:-无（已静态链接）}${deps:+ | NEEDED: $deps}"
     if [ -n "$need" ] && ! le "$need" "$MAX_GLIBC"; then
       echo "ERROR: $(basename "$f") 需要 GLIBC_$need > 基线 $MAX_GLIBC" >&2
       failed=1
