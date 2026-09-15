@@ -81,6 +81,19 @@ cp "$ROOT/conf/nginx-meeting.conf" "$PREFIX/conf/nginx-meeting.conf"
 # Symlink node helper
 ln -sfn "$NODE_BIN" "$PREFIX/bin/node"
 
+# 网关默认监听 443（特权端口）：为 node 授予绑定低位端口能力。
+# systemd 单元已配 AmbientCapabilities（systemd ≥ 229）；此处 setcap 兜底旧版 systemd。
+# 注意（有意为之）：Native 包的 $PREFIX/bin/node 是指向系统 node 的符号链接，
+# 因此 setcap 作用于系统 node —— 即本机所有 node 进程都可绑定低位端口。
+# 这是为兼容 systemd 219（麒麟 V10 SP1）而选择的方案（兼容性最优）；
+# 如安全要求更高，可改用 Nginx 前置（见 conf/nginx-meeting-ssl.conf），
+# 届时删除本段 setcap 并依赖单元 AmbientCapabilities 即可。
+if command -v setcap >/dev/null 2>&1; then
+  setcap 'cap_net_bind_service=+ep' "$NODE_BIN" 2>/dev/null \
+    && log "已授予 node cap_net_bind_service（可绑定 443）" \
+    || log "提示：setcap 未生效；若 443 绑定失败请手动授权或改用 Nginx 前置"
+fi
+
 chown -R "$APP_USER:$APP_GROUP" "$PREFIX"
 
 # 记录当前版本，供下次升级比对
@@ -123,6 +136,11 @@ if [[ "${MEETING_SKIP_SEED:-0}" != "1" ]]; then
   run_node "$PREFIX/app/serve/api" dist/seed-admin.js || log "seed 已存在或失败（可稍后手动执行）"
 fi
 
+if [[ ! -f "$PREFIX/certs/fullchain.pem" ]]; then
+  log "警告：未检测到证书，网关将以明文 HTTP 监听 443。请先生成证书再重启："
+  log "  sudo $PREFIX/bin/genssl.sh <服务器IP> && sudo systemctl restart meeting-gateway"
+fi
+
 if command -v systemctl >/dev/null 2>&1 && [[ -f /etc/systemd/system/meeting-api.service ]]; then
   log "启动服务"
   systemctl enable meeting-api meeting-realtime meeting-gateway
@@ -133,7 +151,7 @@ fi
 
 log "完成"
 log "  配置: $PREFIX/conf/.env"
-log "  网关默认: http://0.0.0.0:\${GATEWAY_PORT:-8088}  （/ → 前端, /api → API, /ws → 信令）"
-log "  健康检查: curl http://127.0.0.1:8088/api/healthz"
+log "  网关默认: https://0.0.0.0:\${GATEWAY_PORT:-443}  （/ → 前端, /api → API, /ws → 信令）"
+log "  健康检查: curl -k https://127.0.0.1/api/healthz"
 log "  默认账号: admin / admin123 （生产请立即修改密码）"
 log "说明文档: $ROOT/INSTALL.md"

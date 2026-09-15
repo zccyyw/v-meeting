@@ -27,8 +27,17 @@ try {
   pkgVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version || stamp;
 } catch {}
 const version = process.env.MEETING_VERSION || pkgVersion;
+/**
+ * 基线模式：PACK_NATIVE_PAYLOAD=<payload.tar.gz>
+ * 直接复用 CI 基线容器（glibc 2.17 / 2.28）产出的 payload，跳过本机编译。
+ * 原因：本 runner 是 Ubuntu 24.04（glibc 2.39），在这里编译出的 better-sqlite3 /
+ * mediasoup-worker 无法在麒麟 V10 SP1（2.17）等目标机上加载。
+ */
+const payloadTar = process.env.PACK_NATIVE_PAYLOAD || "";
+/** 基线标识（如 glibc217 / glibc228），仅用于命名与元信息 */
+const baseline = process.env.PACK_NATIVE_BASELINE || "";
 const outRoot = join(root, "dist", "native");
-const bundleName = `meeting-linux-${arch}-${version}`;
+const bundleName = `meeting-linux-${arch}${baseline ? "-" + baseline : ""}-${version}`;
 const bundleDir = join(outRoot, bundleName);
 
 function run(cmd, args, opts = {}) {
@@ -63,35 +72,47 @@ console.log(`→ pack-native for linux-${arch}`);
 
 rmSync(bundleDir, { recursive: true, force: true });
 
-console.log("→ build packages");
-run("npm", ["run", "build:shared"]);
-run("npm", ["run", "build", "-w", "@meeting/api"]);
-run("npm", ["run", "build", "-w", "@meeting/realtime"]);
-run("npm", ["run", "build", "-w", "@meeting/front"], {
-  env: {
-    VITE_API_BASE: process.env.VITE_API_BASE || "/api",
-    VITE_WS_URL: process.env.VITE_WS_URL || "auto",
-  },
-});
+if (payloadTar) {
+  console.log(`→ reuse baseline payload: ${payloadTar} (baseline=${baseline || "n/a"})`);
+  const tmp = join(outRoot, ".payload-extract");
+  rmSync(tmp, { recursive: true, force: true });
+  mkdirSync(tmp, { recursive: true });
+  run("tar", ["-xzf", payloadTar, "-C", tmp]);
+  mkdirSync(bundleDir, { recursive: true });
+  // payload 布局 opt/meeting/app/{node_modules,serve,front} → bundle/app/*
+  copy(join(tmp, "opt", "meeting", "app"), join(bundleDir, "app"));
+  rmSync(tmp, { recursive: true, force: true });
+} else {
+  console.log("→ build packages");
+  run("npm", ["run", "build:shared"]);
+  run("npm", ["run", "build", "-w", "@meeting/api"]);
+  run("npm", ["run", "build", "-w", "@meeting/realtime"]);
+  run("npm", ["run", "build", "-w", "@meeting/front"], {
+    env: {
+      VITE_API_BASE: process.env.VITE_API_BASE || "/api",
+      VITE_WS_URL: process.env.VITE_WS_URL || "auto",
+    },
+  });
 
-// 生产依赖：复用构建宿主已安装的 node_modules（原生模块架构与宿主一致——
-// CI 的 arm64 构建运行在 arm64 容器中）。不在 staging 重复 npm install：
-// 1) 避免 mediasoup postinstall 二次获取/编译 worker（qemu 下曾耗时数小时）
-// 2) 避免 qemu 下全量解压数万个文件
-// 先用 npm prune --omit=dev 裁掉 devDependencies，再复制进 bundle。
-console.log("→ npm prune --omit=dev (reuse build-host node_modules)");
-run("npm", ["prune", "--omit=dev", "--no-audit", "--no-fund"]);
+  // 生产依赖：复用构建宿主已安装的 node_modules（原生模块架构与宿主一致——
+  // CI 的 arm64 构建运行在 arm64 容器中）。不在 staging 重复 npm install：
+  // 1) 避免 mediasoup postinstall 二次获取/编译 worker（qemu 下曾耗时数小时）
+  // 2) 避免 qemu 下全量解压数万个文件
+  // 先用 npm prune --omit=dev 裁掉 devDependencies，再复制进 bundle。
+  console.log("→ npm prune --omit=dev (reuse build-host node_modules)");
+  run("npm", ["prune", "--omit=dev", "--no-audit", "--no-fund"]);
 
-mkdirSync(bundleDir, { recursive: true });
-copy(join(root, "node_modules"), join(bundleDir, "app", "node_modules"));
-for (const name of ["shared", "db", "api", "realtime"]) {
-  const nmDir = join(root, "serve", name, "node_modules");
-  if (existsSync(nmDir)) {
-    copy(nmDir, join(bundleDir, "app", "serve", name, "node_modules"));
+  mkdirSync(bundleDir, { recursive: true });
+  copy(join(root, "node_modules"), join(bundleDir, "app", "node_modules"));
+  for (const name of ["shared", "db", "api", "realtime"]) {
+    const nmDir = join(root, "serve", name, "node_modules");
+    if (existsSync(nmDir)) {
+      copy(nmDir, join(bundleDir, "app", "serve", name, "node_modules"));
+    }
   }
+  copy(join(root, "serve"), join(bundleDir, "app", "serve"));
+  copy(join(root, "front", "dist"), join(bundleDir, "app", "front"));
 }
-copy(join(root, "serve"), join(bundleDir, "app", "serve"));
-copy(join(root, "front", "dist"), join(bundleDir, "app", "front"));
 
 copy(join(root, "deploy", "native", "bin"), join(bundleDir, "bin"));
 copy(join(root, "deploy", "native", "conf"), join(bundleDir, "conf"));
@@ -109,6 +130,8 @@ writeFileSync(
     `version=${version}`,
     `node=${process.version}`,
     `date=${new Date().toISOString()}`,
+    `glibc_baseline=${baseline || "host"}`,
+    `native_source=${payloadTar ? "baseline-payload" : "local-build"}`,
     `vite_api_base=${process.env.VITE_API_BASE || "/api"}`,
     `vite_ws_url=${process.env.VITE_WS_URL || "auto"}`,
   ].join("\n") + "\n",
@@ -134,6 +157,7 @@ writeFileSync(
   [
     `Offline native bundle: ${bundleName}.tar.gz`,
     `Arch: ${arch}  (install on matching Linux CPU)`,
+    `glibc baseline: ${baseline || "host build"}`,
     "",
     "On target:",
     `  tar -xzf ${bundleName}.tar.gz`,

@@ -266,7 +266,7 @@ writeFileSync(
     "  sudo systemctl enable --now meeting-api meeting-realtime meeting-gateway",
     "",
     "Verify:",
-    "  curl -k https://127.0.0.1:8088/api/healthz",
+    "  curl -k https://127.0.0.1/api/healthz",
     "",
     "Default login: admin / admin123",
     "",

@@ -37,6 +37,30 @@ else
   RPM_ARCH="x86_64"
 fi
 
+# ─── 基线 / 两阶段模式（不设置时行为与以前完全一致）───
+#   BASELINE_GLIBC=217|228  目标机 glibc 基线：本地编译 worker + 静态链接 libstdc++
+#   PAYLOAD_ONLY=1          只产出 payload tar（在基线构建镜像里执行）
+#   PACKAGE_FROM=<tar>      跳过编译，直接用 payload 打包（在打包镜像里执行）
+#   PAYLOAD_OUT             payload 输出路径（默认 /output/meeting-payload.tar.gz）
+#   SKIP_WRAP_PATCH=1       不改写 meson subproject 镜像（境外 CI 直连官方源）
+BASELINE_GLIBC="${BASELINE_GLIBC:-}"
+PAYLOAD_ONLY="${PAYLOAD_ONLY:-}"
+PACKAGE_FROM="${PACKAGE_FROM:-}"
+PAYLOAD_OUT="${PAYLOAD_OUT:-/output/meeting-payload.tar.gz}"
+SKIP_WRAP_PATCH="${SKIP_WRAP_PATCH:-}"
+# 打包阶段不经过 assemble 段落，这里先兜底赋值（否则 cd "$STAGE" 会落到空路径）
+STAGE="$STAGE_DIR"
+
+if [ -n "$BASELINE_GLIBC" ]; then
+  # 目标机内核多为 4.19：mediasoup 3.22 只发布了 kernel6 的预编译 worker → 必须本地编译
+  export BUILD_WORKER_LOCALLY=1
+  # 目标机 libstdc++ 可能很旧（CentOS 7 = 4.8.5）→ 静态链接，避免 GLIBCXX_x.y.z 缺失
+  export LDFLAGS="-static-libstdc++ -static-libgcc ${LDFLAGS:-}"
+  export CXXFLAGS="-static-libstdc++ -static-libgcc ${CXXFLAGS:-}"
+  export CFLAGS="-static-libgcc ${CFLAGS:-}"
+  echo "→ baseline mode: glibc 2.${BASELINE_GLIBC}（本地编译 worker + 静态链接 libstdc++）"
+fi
+
 cd "$WORKSPACE_DIR"
 
 # ─── Configure node-gyp to use mirror (for native module compilation) ───
@@ -73,6 +97,15 @@ if [ "$NODE_MIRROR" != "https://nodejs.org/dist" ]; then
     echo "WARNING: Failed to download headers from mirror, will try node-gyp default" >&2
   fi
 fi
+
+if [ -n "$PACKAGE_FROM" ]; then
+  # ─────────────── 打包阶段（不编译，只解 payload）───────────────
+  echo "→ packaging from payload: $PACKAGE_FROM"
+  rm -rf "$STAGE_DIR"
+  mkdir -p "$STAGE_DIR"
+  tar -xzf "$PACKAGE_FROM" -C "$STAGE_DIR"
+else
+# ─────────────── 构建阶段（在对应 glibc 基线的镜像里执行）───────────────
 
 # ─── Obtain Node.js binary (to embed in RPM) ───
 if [ "$USE_SYSTEM_NODE" = "1" ]; then
@@ -114,9 +147,14 @@ npm install --no-audit --no-fund --ignore-scripts
 
 # Patch mediasoup wrap files and build worker
 if [ -d "$WORKSPACE_DIR/node_modules/mediasoup/worker/subprojects" ]; then
-  echo "→ Patching mediasoup wrap files (ghproxy=$GHPROXY)..."
   cd "$WORKSPACE_DIR"
-  node ./serve/realtime/patch-mediasoup-wrap.cjs "$GHPROXY"
+  if [ "$SKIP_WRAP_PATCH" = "1" ]; then
+    # 境外 CI：直连官方源，避免依赖 gh-proxy.com 的可用性
+    echo "→ skip mediasoup wrap patch (use upstream sources)"
+  else
+    echo "→ Patching mediasoup wrap files (ghproxy=$GHPROXY)..."
+    node ./serve/realtime/patch-mediasoup-wrap.cjs "$GHPROXY"
+  fi
   echo "→ Building mediasoup worker..."
   cd "$WORKSPACE_DIR/node_modules/mediasoup"
   # 使用 venv Python：Debian 12 (PEP 668) 下系统 python3 禁止裸 pip install，
@@ -132,7 +170,12 @@ fi
 # Rebuild better-sqlite3 (its install script was skipped by --ignore-scripts)
 echo "→ Rebuilding better-sqlite3..."
 cd "$WORKSPACE_DIR"
-npm rebuild better-sqlite3
+if [ -n "$BASELINE_GLIBC" ]; then
+  # 基线模式：强制源码编译，避免 prebuild 产物带来不可控的 glibc 基线
+  npm rebuild better-sqlite3 --build-from-source
+else
+  npm rebuild better-sqlite3
+fi
 
 npm run build:shared
 npm run build -w @meeting/api
@@ -148,8 +191,8 @@ mkdir -p "$STAGE/opt/meeting/app" "$STAGE/opt/meeting/bin" "$STAGE/opt/meeting/c
 mkdir -p "$STAGE/opt/meeting/app/serve"
 mkdir -p "$STAGE/usr/lib/systemd/system"
 
-# Embed Node.js runtime
-cp "$NODE_BIN" "$STAGE/opt/meeting/runtime/bin/node"
+# Embed Node.js runtime（-L：build-rpm.sh 可能在 manylinux 镜像里拿到软链）
+cp -L "$NODE_BIN" "$STAGE/opt/meeting/runtime/bin/node"
 
 # Copy compiled serve packages
 for name in shared db api realtime; do
@@ -210,6 +253,17 @@ cp "$WORKSPACE_DIR/deploy/native/systemd-rpm/meeting-gateway.service"  "$STAGE/u
 # 运行时目录（data/ 录制与 SQLite、logs/、certs/）不纳入包体，
 # 由 post.sh 在 %post 阶段创建并赋权，确保 rpm -e / dpkg -r 卸载时
 # 不会误删用户数据。
+
+  # 基线容器只负责编译：把 staging 打成一个 tar 交给打包阶段（打包与 glibc 无关）
+  if [ "$PAYLOAD_ONLY" = "1" ]; then
+    mkdir -p "$(dirname "$PAYLOAD_OUT")"
+    echo "→ emitting payload: $PAYLOAD_OUT"
+    tar -czf "$PAYLOAD_OUT" -C "$STAGE_DIR" .
+    ls -lh "$PAYLOAD_OUT"
+    echo "=== payload built (packaging skipped) ==="
+    exit 0
+  fi
+fi # ← 构建阶段结束（PACKAGE_FROM 模式下跳过）
 
 # ─── Build RPM ───
 cd "$STAGE"
@@ -302,6 +356,11 @@ systemctl daemon-reload 2>/dev/null || true
 mkdir -p /opt/meeting/logs /opt/meeting/data /opt/meeting/certs
 chown -R meeting:meeting /opt/meeting 2>/dev/null || true
 
+# 网关默认监听 443（特权端口）：授予运行时 node 绑定低位端口能力
+if command -v setcap >/dev/null 2>&1; then
+    setcap 'cap_net_bind_service=+ep' /opt/meeting/runtime/bin/node 2>/dev/null || true
+fi
+
 echo ""
 echo "Meet has been installed to /opt/meeting"
 echo ""
@@ -315,7 +374,7 @@ echo "  2. Cert (opt): sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/gen-c
 echo ""
 echo "  3. Start:      sudo systemctl enable --now meeting-api meeting-realtime meeting-gateway"
 echo ""
-echo "  4. Verify:     curl -k https://127.0.0.1:8088/api/healthz"
+echo "  4. Verify:     curl -k https://127.0.0.1/api/healthz"
 echo ""
 echo "  Default login: admin / admin123"
 echo ""

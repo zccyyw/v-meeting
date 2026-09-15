@@ -16,7 +16,7 @@
 | Node.js | **20+**（`node -v`），需已装在 PATH |
 | 数据库 | MySQL 8 或 PostgreSQL 12+（本机或可达地址） |
 | Redis | 7.x（本机或可达地址） |
-| 防火墙 | 放行 `GATEWAY_PORT`（默认 8088）、UDP `40000-41000`（WebRTC） |
+| 防火墙 | 放行 `443/TCP`（HTTPS 入口，`GATEWAY_PORT` 默认 443）、UDP `40000-41000`（WebRTC） |
 
 建库示例（MySQL）：
 
@@ -116,6 +116,13 @@ sudo vi /opt/meeting/conf/.env
 - 数据库 / Redis 账号密码  
 - `DB_DRIVER=mysql` 或 `postgres`
 
+**默认 443 为 HTTPS，需生成证书**（否则 443 上是明文 HTTP）：
+
+```bash
+sudo /opt/meeting/bin/genssl.sh <服务器IP>        # 私有 CA（信创推荐，产出 ca.crt 供客户端导入）
+# 或：sudo /opt/meeting/bin/node /opt/meeting/bin/gen-cert.mjs --ca <服务器IP>
+```
+
 改完后：
 
 ```bash
@@ -136,12 +143,12 @@ sudo -u meeting /opt/meeting/bin/node --env-file=/opt/meeting/conf/.env dist/see
 
 | 项 | 地址 |
 |----|------|
-| 浏览器入口 | `http://<服务器IP>:8088/`（`GATEWAY_PORT`） |
-| API 健康检查 | `curl http://127.0.0.1:8088/api/healthz` |
+| 浏览器入口 | `https://<服务器IP>/`（`GATEWAY_PORT` 默认 443，需已放证书） |
+| API 健康检查 | `curl -k https://127.0.0.1/api/healthz` |
 | 默认账号 | `admin` / `admin123` |
 
 ```bash
-curl -s http://127.0.0.1:8088/api/healthz
+curl -sk https://127.0.0.1/api/healthz
 # {"ok":true}
 
 sudo systemctl status meeting-api meeting-realtime meeting-gateway
@@ -174,7 +181,7 @@ sudo /opt/meeting/bin/stop-all.sh
 
 ## 7. 可选：Nginx 入口与 HTTPS
 
-完整 HTTPS 方案见仓库文档：[项目打包与部署说明.md](../../docs/项目打包与部署说明.md)（第八节 HTTPS 配置）。
+完整 HTTPS 方案见仓库文档：[本地部署说明-native.md](../../docs/install/本地部署说明-native.md)（第八节 HTTPS）。
 
 **仅 HTTP（Nginx 替代 gateway）：**
 
@@ -215,9 +222,9 @@ sudo cp /opt/meeting/conf/nginx-meeting-ssl.conf /etc/nginx/conf.d/meeting-ssl.c
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-**配置 gateway HTTPS**
+**配置 gateway HTTPS（默认 443）**
 
-编辑 `/opt/meeting/conf/.env`，设置 `GATEWAY_TLS_CERT=/opt/meeting/certs/fullchain.pem` 和 `GATEWAY_TLS_KEY=/opt/meeting/certs/privkey.pem`，然后：
+编辑 `/opt/meeting/conf/.env`，设置 `CERT_DIR=/opt/meeting/certs`（放入 `fullchain.pem` + `privkey.pem`，网关自动检测即启用 HTTPS），然后：
 
 ```bash
 sudo systemctl restart meeting-gateway
@@ -293,3 +300,5 @@ sudo rm -rf /opt/meeting
 | 能开页面不能音视频 | 查 `MEDIASOUP_ANNOUNCED_IP`、UDP 40000-41000 |
 | DB 连接失败 | 查 `.env` 与本机库监听、防火墙 |
 | 仅 API 502 | `systemctl status meeting-api`，看 `/opt/meeting/logs/api.err.log` |
+| 443 无法绑定 / 网关起不来 | 旧版 systemd 需权限：确认已 `setcap 'cap_net_bind_service=+ep' <node>`（install.sh 已自动尝试）或改用 Nginx 前置 |
+| 浏览器证书错误 | 用 `genssl.sh` 生成并把 `ca.crt` 导入客户端系统/浏览器信任库 |

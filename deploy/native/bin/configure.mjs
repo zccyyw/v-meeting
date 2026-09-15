@@ -73,7 +73,7 @@ SQLITE_PATH=${DATA_DIR}/meeting.sqlite
 REDIS_HOST=memory
 API_PORT=8080
 WS_PORT=8082
-GATEWAY_PORT=8088
+GATEWAY_PORT=443
 MEDIASOUP_ANNOUNCED_IP=127.0.0.1
 MEDIASOUP_LISTEN_IP=0.0.0.0
 RTC_MIN_PORT=40000
@@ -158,7 +158,7 @@ async function main() {
   log(`  Data:   ${DATA_DIR}`);
   log(`  Logs:   ${LOGS_DIR}`);
   const portMatch = envContent.match(/GATEWAY_PORT=(\d+)/);
-  const port = portMatch ? portMatch[1] : "8088";
+  const port = portMatch ? portMatch[1] : "443";
   const hasCertNow = fs.existsSync(path.join(CERT_DIR, "fullchain.pem"));
   const proto = hasCertNow ? "https" : "http";
   log(`  Access: ${proto}://<server-ip>:${port}/`);
@@ -213,7 +213,7 @@ async function generateConfig() {
   console.log("--- Ports ---");
   config.API_PORT = await ask("API port", "8080");
   config.WS_PORT = await ask("WebSocket port", "8082");
-  config.GATEWAY_PORT = await ask("Gateway port", "8088");
+  config.GATEWAY_PORT = await ask("Gateway port", "443");
 
   // Build env file by replacing/adding values in template
   let env = template;

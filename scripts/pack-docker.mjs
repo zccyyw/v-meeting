@@ -122,25 +122,18 @@ for (const base of baseImages) {
 const baseTar = `meeting-base-${platformSlug}-${tag}.tar`;
 run("docker", ["save", "-o", join(out, baseTar), ...baseImages]);
 
-// 复制 compose 编排文件与配套资源，使离线包可独立 docker-compose up
-// 已合并为单一 docker-compose.yml（profiles 控制数据库，不再有 prod/postgres 分文件）
-const composeFiles = ["docker-compose.yml"];
-for (const f of composeFiles) {
-  if (existsSync(join(root, f))) {
-    copyFileSync(join(root, f), join(out, f));
-  }
-}
-
-// 生成离线版 compose：剥离所有 build: 段，避免离线环境执行
-// `docker-compose up` 时因找不到镜像而误触发在线构建（离线包无源码目录必失败）。
-// 离线部署统一使用 docker-compose.offline.yml。
-if (existsSync(join(root, "docker-compose.yml"))) {
-  const composeSrc = readFileSync(join(root, "docker-compose.yml"), "utf8");
+// 复制 compose 编排文件并生成为离线版：剥离所有 build: 段后写回
+// docker-compose.yml，使离线包内仅保留单一 docker-compose.yml，
+// 离线执行 `docker-compose up` 不会误触发在线构建（离线包无源码目录必失败）。
+// 仅离线一种部署方式，不再提供含 build 段的在线 compose。
+const composeSrcPath = join(root, "docker-compose.yml");
+if (existsSync(composeSrcPath)) {
+  const composeSrc = readFileSync(composeSrcPath, "utf8");
   const offlineCompose = composeSrc.replace(
     /^[ \t]*build:[^\n]*\n(?:^[ \t]{6,}[^\n]*\n)*/gm,
     "",
   );
-  writeFileSync(join(out, "docker-compose.offline.yml"), offlineCompose);
+  writeFileSync(join(out, "docker-compose.yml"), offlineCompose);
 }
 
 // Caddyfile 与 .env 模板
@@ -208,17 +201,16 @@ writeFileSync(
     "  1. bash load-images.sh              # 加载全部镜像",
     "  2. [ -f .env ] || cp env.example .env   # 仅首次生成；已存在则保留你的配置",
     "     vi .env                           # 改 MEDIASOUP_ANNOUNCED_IP 等",
-    "  3. bash deploy/docker/gen-selfsigned.sh <服务器IP>  # 生成自签证书（可选）",
-    "  4. docker-compose -f docker-compose.offline.yml up -d   # 离线：无 build 段，绝不误 build",
+    "  3. bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>  # 生成证书（443 HTTPS 必需）",
+    "  4. docker-compose up -d   # 离线：docker-compose.yml 已去 build 段，绝不误 build",
     "",
     "切 PostgreSQL/MySQL：在 .env 设 COMPOSE_PROFILES=postgres 或 mysql（DB_DRIVER 自动跟随）",
     "默认 SQLite 无需独立数据库容器，数据存于 meeting-data volume",
     "",
-    "停止：docker-compose -f docker-compose.offline.yml down",
+    "停止：docker-compose down",
     "升级：备份 meeting-data 卷后，重新 load-images.sh 并 up -d（API 启动自动迁移）",
-    "在线构建（仅调试）：docker-compose up -d --build",
     "",
-    `Docs: docs/项目打包与部署说明.md`,
+    `Docs: docs/install/本地部署说明-docker.md`,
     "",
   ].join("\n"),
 );

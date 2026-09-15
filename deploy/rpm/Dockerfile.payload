@@ -1,0 +1,83 @@
+# =============================================================================
+# 原生模块「最低基线」构建镜像 —— 供 RPM/DEB/Native 主机部署使用
+#
+# 为什么需要单独一个镜像：
+#   主机部署的产物直接在目标机的 glibc 上运行，所以 mediasoup-worker、better-sqlite3
+#   这些原生二进制必须在**不高于目标基线**的 glibc 环境里编译。
+#   glibc 只向后兼容：2.17 上编出来的可跑在 2.17 及更高版本；2.36 上编的跑不了 2.17。
+#
+# 本镜像只做「编译 + 组装 payload」，打包（rpm/deb）交给 Dockerfile.build
+# （Debian bookworm + fpm/rpm）在第二阶段完成 —— 打包过程不涉及 glibc。
+#
+# 基线选择（已实测可用）：
+#   x86_64  glibc 2.17（银河麒麟 V10 SP1 / CentOS 7）→ quay.io/pypa/manylinux2014_x86_64
+#   aarch64 glibc 2.28（麒麟 V10 SP2/SP3、UOS 20）  → quay.io/pypa/manylinux_2_28_aarch64
+#   注意：Node 官方二进制要求 glibc >= 2.28，因此 x86_64 必须改用 unofficial 的
+#         glibc-217 变体（node-vX-linux-x64-glibc-217.tar.gz），否则 SP1 跑不起来。
+#
+# 选 manylinux 而不是 centos:7 的原因：
+#   1. mediasoup 3.22 与 better-sqlite3 都要求 C++20（-std=c++20）→ 需要 GCC >= 10，
+#      而 CentOS 7 / Debian 10 自带的是 4.8 / 8.3，编不了；
+#   2. manylinux 镜像自带 devtoolset（GCC 10+/14）与多个带 pip 的 CPython；
+#   3. 镜像仍在维护（不受发行版 EOL 的 yum/apt 源影响）。
+#
+# 构建参数：
+#   BASE_IMAGE    基线镜像
+#   NODE_TAR_URL  Node 下载地址前缀
+#   NODE_TAR      Node 包文件名（含变体后缀，glibc-217 是 .tar.gz）
+#   PIP_INDEX_URL pip 源（默认官方；国内可传镜像）
+# =============================================================================
+ARG BASE_IMAGE=quay.io/pypa/manylinux2014_x86_64
+FROM ${BASE_IMAGE}
+
+ARG NODE_TAR_URL=https://nodejs.org/dist
+ARG NODE_TAR=node-v22.23.1-linux-x64.tar.xz
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+
+# manylinux2014 自带 GCC 4.8，必须让 devtoolset 的 gcc/g++ 优先；
+# 目录不存在时该 PATH 项会被忽略，不影响其它镜像。
+ENV PATH="/opt/rh/devtoolset-11/root/usr/bin:/opt/rh/devtoolset-10/root/usr/bin:${PATH}"
+
+# 基础工具：不同基线镜像预装情况不一，缺什么补什么（失败不致命，随后会断言）
+RUN set -eux; \
+    if command -v yum >/dev/null 2>&1; then \
+      yum install -y curl tar gzip xz >/dev/null 2>&1 || true; \
+    elif command -v dnf >/dev/null 2>&1; then \
+      dnf install -y curl tar gzip xz >/dev/null 2>&1 || true; \
+    elif command -v apt-get >/dev/null 2>&1; then \
+      apt-get update -y >/dev/null 2>&1 || true; \
+      apt-get install -y --no-install-recommends curl tar gzip xz-utils make g++ >/dev/null 2>&1 || true; \
+    fi; \
+    for c in curl tar gcc g++ make; do \
+      command -v "$c" >/dev/null 2>&1 || { echo "missing required tool: $c" >&2; exit 1; }; \
+    done; \
+    gcc --version | head -1
+
+# Node 运行时：构建期与运行期共用同一个二进制
+# （build-rpm.sh 以 USE_SYSTEM_NODE=1 直接把它内嵌进安装包，避免两处不一致）
+RUN set -eux; \
+    url="${NODE_TAR_URL}/${NODE_TAR}"; \
+    echo "→ downloading Node: $url"; \
+    if ! curl -fsSL "$url" -o /tmp/node.tar; then \
+      alt="${url%.xz}"; \
+      echo "→ retry: $alt"; \
+      curl -fsSL "$alt" -o /tmp/node.tar; \
+    fi; \
+    tar -xf /tmp/node.tar -C /usr/local --strip-components=1 \
+      --exclude=CHANGELOG.md --exclude=README.md --exclude=LICENSE; \
+    rm -f /tmp/node.tar; \
+    node -v; npm -v
+
+# mediasoup 的 postinstall 需要 python3 + pip（装 meson/ninja/invoke）；
+# manylinux 自带多个 CPython，挑可用的一个建 venv（build-rpm.sh 会自动使用该 venv）。
+RUN set -eux; \
+    py="$(ls -d /opt/python/cp3[0-9]-cp3[0-9]/bin/python3 2>/dev/null | sort -V | tail -1 || true)"; \
+    if [ -z "$py" ]; then py="$(command -v python3)"; fi; \
+    echo "→ python: $py"; \
+    "$py" -m venv /opt/mediasoup-venv; \
+    /opt/mediasoup-venv/bin/python -m pip install --no-input --disable-pip-version-check \
+      -i "${PIP_INDEX_URL}" --upgrade pip
+ENV PYTHON=/opt/mediasoup-venv/bin/python
+
+WORKDIR /workspace

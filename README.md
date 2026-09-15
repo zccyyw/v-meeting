@@ -100,7 +100,7 @@ npm run dev
 | 前端 (Vite) | 8081 | `FRONT_PORT` |
 | API (Fastify) | 8080 | `API_PORT` |
 | 信令 (WebSocket) | 8082 | `WS_PORT` |
-| 离线网关（RPM/DEB/Native） | 8088 | `GATEWAY_PORT` |
+| 离线网关（RPM/DEB/Native） | 443 | `GATEWAY_PORT`（默认 HTTPS，需证书） |
 | mediasoup RTC | 40000-41000/udp | `RTC_MIN_PORT` / `RTC_MAX_PORT` |
 
 > ⚠️ 云平台安全组需**单独放行 UDP 40000-41000 入方向**，否则能进会议但看不到/听不到对方。
@@ -240,7 +240,7 @@ bash load-images.sh && cp .env.example .env && vi .env && docker-compose up -d
 sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/configure.mjs
 
 # 验证
-curl -k https://127.0.0.1:8088/api/healthz
+curl -k https://127.0.0.1/api/healthz
 ```
 
 > **注意**：安装包架构必须与目标服务器 CPU 架构一致（x64 → 海光/兆芯，arm64 → 鲲鹏/飞腾）。

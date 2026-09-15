@@ -82,18 +82,37 @@ jobs:
       version: ${{ steps.set-params.outputs.version }}
       release: ${{ steps.set-params.outputs.release }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 早失败门禁：systemd 单元必须兼容目标最低版本（systemd 219 / 麒麟 V10 SP1）。
+      # 放在 prepare（所有 job 都依赖它）里，失败即整体停止，避免打出"装不上/起不来"的包。
+      - name: Lint systemd units (systemd 219 compatible)
+        run: bash deploy/native/lint-systemd-units.sh
+
       - id: set-matrix
         run: |
           # 仓库为 public：arm64 使用 GitHub 官方免费原生 ARM runner
           # (ubuntu-24.04-arm)，彻底摆脱 qemu 模拟（原 x64+qemu 下单个
           # arm64 job 需 3~6 小时，原生 ARM runner 可降至 20~40 分钟）。
+          #
+          # glibc 基线（主机部署的 RPM/DEB 必须在**目标机最低 glibc** 上编译，
+          # glibc 只向后兼容，故只需两份产物即可覆盖 2.17/2.27/2.28/2.29）：
+          #   x64   → glibc 2.17（银河麒麟 V10 SP1 / CentOS 7）
+          #           manylinux2014_x86_64（GCC 10 + glibc 2.17）
+          #           + unofficial Node glibc-217（官方 Node 要求 glibc >= 2.28）
+          #   arm64 → glibc 2.28（麒麟 V10 SP2/SP3、UOS 20）
+          #           manylinux_2_28_aarch64（GCC 14 + glibc 2.28）+ Node 官方 arm64
+          node_ver='${{ env.NODE_TAR_VERSION }}'
+          x64='{"arch":"x64","runner":"ubuntu-latest","baseline":"glibc217","glibc":"217","max_glibc":"2.17","base_image":"quay.io/pypa/manylinux2014_x86_64","node_url":"https://unofficial-builds.nodejs.org/download/release","node_tar":"node-'"$node_ver"'-linux-x64-glibc-217.tar.gz","target_image":"centos:7"}'
+          arm64='{"arch":"arm64","runner":"ubuntu-24.04-arm","baseline":"glibc228","glibc":"228","max_glibc":"2.28","base_image":"quay.io/pypa/manylinux_2_28_aarch64","node_url":"https://nodejs.org/dist","node_tar":"node-'"$node_ver"'-linux-arm64.tar.xz","target_image":"debian:10"}'
           if [ "${{ github.event_name }}" = "push" ]; then
-            echo 'matrix={"include":[{"arch":"x64","runner":"ubuntu-latest"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]}' >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[$x64,$arm64]}" >> "$GITHUB_OUTPUT"
           else
             if [ "${{ inputs.target_arch }}" = "arm64" ]; then
-              echo 'matrix={"include":[{"arch":"arm64","runner":"ubuntu-24.04-arm"}]}' >> "$GITHUB_OUTPUT"
+              echo "matrix={\"include\":[$arm64]}" >> "$GITHUB_OUTPUT"
             else
-              echo 'matrix={"include":[{"arch":"x64","runner":"ubuntu-latest"}]}' >> "$GITHUB_OUTPUT"
+              echo "matrix={\"include\":[$x64]}" >> "$GITHUB_OUTPUT"
             fi
           fi
       - id: set-params
@@ -205,10 +224,13 @@ jobs:
           if-no-files-found: error
 
   # ═══════════════════════════════════════════════════════════════════
-  # Job 3: Native 离线包（pack:native）— tar.gz 安装包，需 Linux 原生编译
+  # Job 3: Native 离线包（pack:native）— tar.gz 安装包
+  # 原生模块（better-sqlite3 / mediasoup-worker）直接复用 rpm job 在对应 glibc
+  # 基线容器里编译出的 payload，避免在 Ubuntu 24.04(glibc 2.39) 上编译导致
+  # 目标机（麒麟 V10 SP1 = 2.17）无法加载。
   # ═══════════════════════════════════════════════════════════════════
   native:
-    needs: prepare
+    needs: [prepare, rpm]
     if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'native'
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -224,46 +246,30 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      # mediasoup postinstall 需要能裸 `pip install` 的 python3。
-      # ubuntu-latest(24.04) 系统 python3 无 pip 且受 PEP 668 限制，
-      # 用 setup-python 提供的 python.org 解释器（自带 pip、不受限制）。
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Download baseline payload
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.11"
+          name: meeting-payload-${{ matrix.arch }}-${{ matrix.baseline }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          path: dist/payload
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Build mediasoup worker
-        run: |
-          # 默认优先下载官方预编译 worker（x64/arm64 均有 kernel6 产物，秒级）；
-          # 失败自动回退本地编译。runner 位于境外，清华 PyPI 不可达，
-          # 故 pip 源使用官方 PyPI（仅回退编译时才会用到）。
-          echo "→ prefer mediasoup-worker prebuilt download (fallback: local build)"
-          export PIP_INDEX_URL="https://pypi.org/simple"
-          GHPROXY="https://gh-proxy.com"
-          if [ -d node_modules/mediasoup/worker/subprojects ]; then
-            node ./serve/realtime/patch-mediasoup-wrap.cjs "$GHPROXY"
-            cd node_modules/mediasoup
-            node npm-scripts.mjs postinstall
-          fi
-          cd ${{ github.workspace }}
-          npm rebuild better-sqlite3
-
-      - name: Build native package
+      - name: Build native package (from baseline payload)
         env:
           PACK_NATIVE_FORCE: "1"
+          MEETING_VERSION: ${{ needs.prepare.outputs.version }}
+          PACK_NATIVE_PAYLOAD: ${{ github.workspace }}/dist/payload/meeting-payload.tar.gz
+          PACK_NATIVE_BASELINE: ${{ matrix.baseline }}
         run: |
-          # 原生架构 runner（x64 用 ubuntu-latest / arm64 用 ubuntu-24.04-arm）
-          # 直接在宿主机打包，产物架构即 runner 架构，无需 qemu 容器。
-          echo "→ ${{ matrix.arch }} native build on ${{ matrix.runner }}"
+          # 不在 runner（Ubuntu 24.04 / glibc 2.39）上编译原生模块：直接复用基线容器
+          # 产出的 payload，否则 better-sqlite3 / mediasoup-worker 在麒麟 V10 SP1(2.17)
+          # 等目标机上无法加载。产物架构即 runner 架构，无需 qemu。
+          test -f "$PACK_NATIVE_PAYLOAD" || { echo "missing payload: $PACK_NATIVE_PAYLOAD" >&2; exit 1; }
+          echo "→ ${{ matrix.arch }} native bundle from payload (baseline ${{ matrix.baseline }})"
           npm run pack:native
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: meeting-native-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          name: meeting-native-${{ matrix.arch }}-${{ matrix.baseline }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
           path: dist/native/
           retention-days: 30
           if-no-files-found: error
@@ -273,8 +279,9 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   rpm:
     needs: prepare
-    # deb job 依赖本 job 的 RPM 产物，因此"仅选 deb"时也必须先构建 rpm
-    if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'rpm' || needs.prepare.outputs.build_type == 'deb'
+    # deb 依赖本 job 的 RPM 产物、native 依赖本 job 的基线 payload，
+    # 因此"仅选 deb / 仅选 native"时也必须先构建 rpm。
+    if: needs.prepare.outputs.build_type == 'all' || needs.prepare.outputs.build_type == 'rpm' || needs.prepare.outputs.build_type == 'deb' || needs.prepare.outputs.build_type == 'native'
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
@@ -283,38 +290,80 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build RPM
-        env:
-          TARGET_ARCH: ${{ matrix.arch }}
-          RPM_VERSION: ${{ needs.prepare.outputs.version }}
-          RPM_RELEASE: ${{ needs.prepare.outputs.release }}
-          NODE_VERSION: ${{ env.NODE_TAR_VERSION }}
+      - name: Build payload (glibc ${{ matrix.max_glibc }} baseline)
         run: |
-          echo "→ Building RPM for ${{ matrix.arch }} on ${{ matrix.runner }} (version ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }})"
+          echo "→ payload: ${{ matrix.arch }} / ${{ matrix.baseline }} on ${{ matrix.runner }}"
+          echo "  base image : ${{ matrix.base_image }}"
+          echo "  node       : ${{ matrix.node_url }}/${{ matrix.node_tar }}"
 
-          # 构建 Docker builder 镜像（内含 fpm + rpmbuild + 编译工具链）。
-          # 原生架构 runner 上 docker build 自动使用对应架构的 node:22-bookworm
-          # 变体（x64→amd64、arm64→arm64），无需 --platform，也就无需 qemu。
+          # 基线镜像只负责编译：工具链与目标机 glibc 一致，不含打包工具
           docker build \
-            -t meeting-rpm-builder \
-            -f deploy/rpm/Dockerfile.build \
+            -t meeting-payload-builder \
+            --build-arg BASE_IMAGE=${{ matrix.base_image }} \
+            --build-arg NODE_TAR_URL=${{ matrix.node_url }} \
+            --build-arg NODE_TAR=${{ matrix.node_tar }} \
+            -f deploy/rpm/Dockerfile.payload \
             .
 
-          mkdir -p dist/rpm
+          mkdir -p dist/payload
 
-          # 在 Docker 容器内执行构建（平台与 runner 一致，原生执行）
+          # node_modules 缓存按「架构+基线」隔离，避免不同基线的原生模块互相污染。
+          # 原生架构 runner 上 docker 自动使用对应架构镜像，无需 --platform/qemu。
           docker run --rm \
             -v "$PWD:/workspace" \
-            -v "$PWD/dist/rpm:/output" \
-            -v "meeting-rpm-build-modules-${{ matrix.arch }}:/workspace/node_modules" \
+            -v "$PWD/dist/payload:/output" \
+            -v "meeting-build-modules-${{ matrix.arch }}-${{ matrix.baseline }}:/workspace/node_modules" \
             -e TARGET_ARCH=${{ matrix.arch }} \
             -e RPM_VERSION=${{ needs.prepare.outputs.version }} \
             -e RPM_RELEASE=${{ needs.prepare.outputs.release }} \
-            -e NODE_VERSION=${{ env.NODE_TAR_VERSION }} \
+            -e USE_SYSTEM_NODE=1 \
+            -e BASELINE_GLIBC=${{ matrix.glibc }} \
+            -e PAYLOAD_ONLY=1 \
+            -e SKIP_WRAP_PATCH=1 \
+            meeting-payload-builder \
+            bash /workspace/deploy/rpm/build-rpm.sh
+
+      - name: Build RPM (packaging only)
+        run: |
+          # 打包镜像（Debian bookworm + fpm/rpm/cpio）：打包与 glibc 无关，
+          # 因此与基线解耦，可直接复用现有镜像。
+          docker build -t meeting-rpm-builder -f deploy/rpm/Dockerfile.build .
+
+          mkdir -p dist/rpm
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -v "$PWD/dist/rpm:/output" \
+            -v "$PWD/dist/payload:/payload:ro" \
+            -e TARGET_ARCH=${{ matrix.arch }} \
+            -e RPM_VERSION=${{ needs.prepare.outputs.version }} \
+            -e RPM_RELEASE=${{ needs.prepare.outputs.release }} \
+            -e PACKAGE_FROM=/payload/meeting-payload.tar.gz \
             meeting-rpm-builder \
             bash /workspace/deploy/rpm/build-rpm.sh
 
-      - name: Rename RPM with architecture
+      - name: Verify glibc baseline (symbols ≤ ${{ matrix.max_glibc }})
+        run: |
+          # 断言 node / better-sqlite3 / mediasoup-worker 的最高 GLIBC 符号版本不超标，
+          # 防止「编译环境意外漂移」导致产物在目标机上 GLIBC_x.y not found
+          docker run --rm \
+            -v "$PWD/dist/payload:/payload:ro" \
+            -v "$PWD/deploy/rpm:/scripts:ro" \
+            -e MODE=symbols \
+            -e MAX_GLIBC=${{ matrix.max_glibc }} \
+            meeting-rpm-builder \
+            bash /scripts/verify-payload.sh /payload/meeting-payload.tar.gz
+
+      - name: Smoke test on target baseline (${{ matrix.target_image }})
+        run: |
+          # 在目标基线容器里真实加载三个原生件（缺库/符号不兼容会直接失败）
+          docker run --rm \
+            -v "$PWD/dist/payload:/payload:ro" \
+            -v "$PWD/deploy/rpm:/scripts:ro" \
+            -e MODE=runtime \
+            ${{ matrix.target_image }} \
+            bash /scripts/verify-payload.sh /payload/meeting-payload.tar.gz
+
+      - name: Rename RPM with architecture and baseline
         run: |
           cd dist/rpm
           arch_tag="${{ matrix.arch }}"
@@ -324,7 +373,7 @@ jobs:
             arch_tag="x86_64"
           fi
           for f in meeting-*.rpm; do
-            [ -f "$f" ] && mv "$f" "meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.${arch_tag}.rpm" || true
+            [ -f "$f" ] && mv "$f" "meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.${{ matrix.baseline }}.${arch_tag}.rpm" || true
           done
           ls -lh
 
@@ -334,6 +383,14 @@ jobs:
           name: meeting-rpm-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
           path: dist/rpm/meeting-*.rpm
           retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload baseline payload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meeting-payload-${{ matrix.arch }}-${{ matrix.baseline }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          path: dist/payload/meeting-payload.tar.gz
+          retention-days: 7
           if-no-files-found: error
 
   # ═══════════════════════════════════════════════════════════════════
@@ -388,6 +445,7 @@ jobs:
           docker run --rm \
             -v "$PWD/dist/rpm:/input:ro" \
             -v "$PWD/dist/deb:/output" \
+            -v "$PWD/deploy/rpm:/scripts:ro" \
             --entrypoint bash \
             meeting-rpm-builder \
             -c "cd /input && \
@@ -397,8 +455,19 @@ jobs:
                   -n meeting \
                   -v ${{ needs.prepare.outputs.version }} \
                   --iteration ${{ needs.prepare.outputs.release }} \
-                  -p /output/meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.${deb_arch}.deb \
+                  --after-install /scripts/post.sh \
+                  --before-remove /scripts/prerm.deb.sh \
+                  -p /output/meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.${{ matrix.baseline }}.${deb_arch}.deb \
                   \$rpm_file && \
+                deb_file=\$(ls /output/meeting-*.deb | head -1) && \
+                mkdir -p /tmp/deb-ctrl && \
+                dpkg-deb -e \"\$deb_file\" /tmp/deb-ctrl && \
+                grep -q setcap /tmp/deb-ctrl/postinst && \
+                echo 'DEB postinst 含 setcap 兜底（systemd 219 下 443 可绑定）' && \
+                grep -q 'remove)' /tmp/deb-ctrl/prerm && \
+                grep -q 'systemctl --no-block stop' /tmp/deb-ctrl/prerm && \
+                ! grep -q '\[ \$1 -eq' /tmp/deb-ctrl/prerm && \
+                echo 'DEB prerm 已按 Debian 动作名适配（remove 时停服务并 disable；无 RPM 式 $1 -eq 0 残留）' && \
                 echo 'DEB conversion complete'"
 
       - name: Upload DEB artifact

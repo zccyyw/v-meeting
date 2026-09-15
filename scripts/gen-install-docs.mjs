@@ -3,7 +3,7 @@
  * Usage: node scripts/gen-install-docs.mjs
  *
  * Requires global docx package: npm install -g docx
- * Source: docs/install/src/*.md  →  Output: docs/install/*.docx
+ * Source: docs/install/*.md  →  Output: docs/install/word/*.docx
  *
  * Style contract:
  *   - 首个 `# ` 行   → 文档主标题（Title 样式，居中，非 Heading 1）
@@ -25,8 +25,8 @@ const {
 } = docx;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const srcDir = join(root, "docs", "install", "src");
-const outDir = join(root, "docs", "install");
+const srcDir = join(root, "docs", "install");
+const outDir = join(root, "docs", "install", "word");
 
 // ─── 统一字号（half-points）与配色 ───
 const S = {

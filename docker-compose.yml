@@ -131,8 +131,13 @@ services:
       WS_PORT: 8082
       MEDIASOUP_LISTEN_IP: ${MEDIASOUP_LISTEN_IP:-0.0.0.0}
       MEDIASOUP_ANNOUNCED_IP: ${MEDIASOUP_ANNOUNCED_IP}
-      RTC_MIN_PORT: 40000
-      RTC_MAX_PORT: 41000
+      # 支持通过 .env 覆盖（与 docker-compose 的 ports 使用同一组变量）
+      RTC_MIN_PORT: ${RTC_MIN_PORT:-40000}
+      RTC_MAX_PORT: ${RTC_MAX_PORT:-41000}
+      # 会议自动结束相关开关（毫秒）；0 表示关闭。见 .env.production.example
+      MEETING_EMPTY_ROOM_GRACE_MS: ${MEETING_EMPTY_ROOM_GRACE_MS:-180000}
+      MEETING_HOST_RECONNECT_GRACE_MS: ${MEETING_HOST_RECONNECT_GRACE_MS:-300000}
+      MEETING_STALE_SWEEP_MS: ${MEETING_STALE_SWEEP_MS:-60000}
     depends_on:
       mysql:
         condition: service_healthy
@@ -147,7 +152,7 @@ services:
       retries: 5
       start_period: 15s
     ports:
-      - "40000-41000:40000-41000/udp"
+      - "${RTC_MIN_PORT:-40000}-${RTC_MAX_PORT:-41000}:${RTC_MIN_PORT:-40000}-${RTC_MAX_PORT:-41000}/udp"
     expose:
       - "8082"
     volumes:

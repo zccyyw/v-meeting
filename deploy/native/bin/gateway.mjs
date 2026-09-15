@@ -3,8 +3,8 @@
  * Lightweight edge: static front + /api proxy + /ws upgrade proxy.
  * Supports both HTTP and HTTPS (auto-detects certs).
  *
- * Env: FRONT_ROOT, API_UPSTREAM, WS_UPSTREAM, GATEWAY_PORT,
- *      CERT_DIR (optional, e.g. /opt/meeting/certs — enables HTTPS)
+ * Env: FRONT_ROOT, API_UPSTREAM, WS_UPSTREAM, GATEWAY_PORT (default 443),
+ *      CERT_DIR (default: ../certs — 提供 fullchain.pem + privkey.pem 时启用 HTTPS)
  */
 import http from "node:http";
 import https from "node:https";
@@ -18,7 +18,7 @@ const FRONT_ROOT = process.env.FRONT_ROOT
   : path.resolve(__dirname, "../app/front");
 const API_UPSTREAM = process.env.API_UPSTREAM || "http://127.0.0.1:8080";
 const WS_UPSTREAM = process.env.WS_UPSTREAM || "http://127.0.0.1:8082";
-const PORT = Number(process.env.GATEWAY_PORT || 8088);
+const PORT = Number(process.env.GATEWAY_PORT || 443);
 
 // --- HTTPS support: auto-detect certs in CERT_DIR or ../certs ---
 const certDir = process.env.CERT_DIR

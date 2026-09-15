@@ -42,6 +42,11 @@ fi
 # Refresh systemd after install
 systemctl daemon-reload 2>/dev/null || true
 
+# 网关默认监听 443（特权端口）：授予运行时 node 绑定低位端口能力
+if command -v setcap >/dev/null 2>&1; then
+    setcap 'cap_net_bind_service=+ep' /opt/meeting/runtime/bin/node 2>/dev/null || true
+fi
+
 echo ""
 echo "Meet has been installed to /opt/meeting"
 echo ""
@@ -55,7 +60,7 @@ echo "  2. Cert (opt): sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/gen-c
 echo ""
 echo "  3. Start:      sudo systemctl enable --now meeting-api meeting-realtime meeting-gateway"
 echo ""
-echo "  4. Verify:     curl -k https://127.0.0.1:8088/api/healthz"
+echo "  4. Verify:     curl -k https://127.0.0.1/api/healthz"
 echo "                 (or http:// if no cert)"
 echo ""
 echo "  Default login: admin / admin123"
