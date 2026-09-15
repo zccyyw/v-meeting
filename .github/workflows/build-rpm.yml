@@ -513,11 +513,16 @@ jobs:
   release:
     needs: [prepare, pack, docker, native, rpm, deb]
     runs-on: ubuntu-latest
+    # 只有全部构建 job 都成功才发布。注意不能只排除 failure：
+    # 曾出现"构建被并发组取消（cancelled）却仍然创建了 Release"——cancelled/skipped
+    # 都不等于 failure，旧条件因此放行，发布出只含 pack/docker 的半成品 Release。
     if: >-
       always()
       && github.event_name == 'push'
       && startsWith(github.ref, 'refs/tags/v')
       && !contains(needs.*.result, 'failure')
+      && !contains(needs.*.result, 'cancelled')
+      && !contains(needs.*.result, 'skipped')
     permissions:
       contents: write
     steps:
