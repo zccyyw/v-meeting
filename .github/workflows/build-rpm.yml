@@ -545,6 +545,11 @@ jobs:
                 find "$d" -type f \( -name '*.rpm' -o -name '*.deb' \) \
                   -exec mv {} ../release-files/ \;
                 ;;
+              meeting-payload-*)
+                # CI 内部中间产物（native/deb 构建的输入）：只在 Actions 产物里留存，
+                # 不对外发布，避免把中间件混进 Release 资产列表
+                echo "→ 跳过内部产物（不发布）：$name"
+                ;;
               *)
                 # 多文件交付包（源码/Docker/Native）：整体 zip
                 zip -r -q "../release-files/${name}.zip" "$name"
