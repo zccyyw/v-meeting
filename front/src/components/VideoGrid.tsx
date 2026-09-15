@@ -54,6 +54,12 @@ function hasActiveCamera(stream: MediaStream | null | undefined): boolean {
     .some((t) => t.readyState === "live" && t.enabled);
 }
 
+/** 是否存在“存活”的视频轨（用于判定屏幕共享是否仍在进行，忽略已结束的残留流）。 */
+function hasLiveVideo(stream: MediaStream | null | undefined): boolean {
+  if (!stream) return false;
+  return stream.getVideoTracks().some((t) => t.readyState === "live");
+}
+
 /** Draggable side list — can be dragged as a floating panel; collapsible. */
 export function DraggableSideList({
   tiles,
@@ -457,73 +463,6 @@ function VideoTile({
   );
 }
 
-function AvatarStage({
-  people,
-}: {
-  people: {
-    key: string;
-    name: string;
-    handRaised: boolean;
-    stream: MediaStream | null;
-    micMuted: boolean;
-  }[];
-}) {
-  const { t } = useTranslation();
-  return (
-    <div
-      className="avatar-stage"
-      role="group"
-      aria-label={t("meeting.avatarStage")}
-    >
-      <div className="avatar-stage-row">
-        {people.map((p) => (
-          <AvatarPerson
-            key={p.key}
-            name={p.name}
-            handRaised={p.handRaised}
-            stream={p.stream}
-            micMuted={p.micMuted}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AvatarPerson({
-  name,
-  handRaised,
-  stream,
-  micMuted,
-}: {
-  name: string;
-  handRaised: boolean;
-  stream: MediaStream | null;
-  micMuted: boolean;
-}) {
-  const speaking = useSpeaking(stream);
-  return (
-    <div className="avatar-person">
-      <div className="avatar-circle" aria-hidden>
-        {avatarLetter(name)}
-        {handRaised && <span className="avatar-hand"><HandIcon /></span>}
-        <div className="audio-indicator audio-indicator--avatar" aria-hidden>
-          {micMuted ? (
-            <AudioMutedOutlined className="audio-indicator-muted" />
-          ) : speaking ? (
-            <span className="audio-indicator-bars">
-              <span className="audio-indicator-bar" />
-              <span className="audio-indicator-bar" />
-              <span className="audio-indicator-bar" />
-            </span>
-          ) : null}
-        </div>
-      </div>
-      <span className="avatar-name">{name}</span>
-    </div>
-  );
-}
-
 export function VideoGrid({
   localStream,
   localScreenStream,
@@ -607,11 +546,11 @@ export function VideoGrid({
       muted: true,
       micMuted: !localMicEnabled,
       handRaised: Boolean(selfHandRaised) || Boolean(localPeerId && peerHand(localPeerId)),
-      forceAvatar: !localCamEnabled,
+      forceAvatar: !localCamEnabled || !hasActiveCamera(localStream),
     },
   ];
 
-  if (localScreenStream && !localScreenIsSelf) {
+  if (localScreenStream && hasLiveVideo(localScreenStream) && !localScreenIsSelf) {
     // 非自捕获（如共享其他应用窗口且浏览器能识别共享面）时显示本地共享预览；
     // 自捕获时跳过：共享流会被自身采集，渲染它会形成无限嵌套画面。
     tiles.push({
@@ -626,20 +565,53 @@ export function VideoGrid({
     });
   }
 
-  for (const [peerId, stream] of remoteStreams) {
+  // 参与者花名册：以 peers 为准。未开摄像头的成员同样生成瓦片（瓦片内用头像占位），
+  // 使“开摄像头”与“未开摄像头”共用同一套布局与渲染，不再单独维护头像模式。
+  const roster = new Map<
+    string,
+    {
+      label: string;
+      micEnabled: boolean;
+      handRaised: boolean;
+      camEnabled: boolean;
+    }
+  >();
+  for (const peer of peers) {
+    if (peer.peerId === localPeerId) continue;
+    roster.set(peer.peerId, {
+      label: peer.displayName,
+      micEnabled: peer.micEnabled,
+      handRaised: peer.handRaised,
+      camEnabled: peer.camEnabled,
+    });
+  }
+  // 兜底：有视频轨但不在 peers 里的 peer（状态未同步时）也要出瓦片
+  for (const peerId of remoteStreams.keys()) {
+    if (peerId === localPeerId || roster.has(peerId)) continue;
+    roster.set(peerId, {
+      label: peerName(peerId),
+      micEnabled: peerMicEnabled(peerId),
+      handRaised: peerHand(peerId),
+      camEnabled: peerCamEnabled(peerId),
+    });
+  }
+  for (const [peerId, info] of roster) {
+    const stream = remoteStreams.get(peerId) ?? null;
     tiles.push({
       key: peerId,
       peerId,
       stream,
-      label: peerName(peerId),
+      label: info.label,
       muted: true,
-      micMuted: !peerMicEnabled(peerId),
-      handRaised: peerHand(peerId),
-      forceAvatar: !peerCamEnabled(peerId),
+      micMuted: !info.micEnabled,
+      handRaised: info.handRaised,
+      forceAvatar: !info.camEnabled || !hasActiveCamera(stream),
     });
   }
 
   for (const [peerId, stream] of screenStreams) {
+    // 跳过已结束的共享流（残留条目），避免主画面停留在黑屏且强制侧栏布局
+    if (!hasLiveVideo(stream)) continue;
     tiles.push({
       key: `${peerId}-screen`,
       peerId,
@@ -652,79 +624,11 @@ export function VideoGrid({
   }
 
   void trackEpoch;
-  const hasScreen = Boolean(localScreenStream) || screenStreams.size > 0;
-  const localVideoOn = localCamEnabled && hasActiveCamera(localStream);
-  // 是否有人开视频：以状态标记为准，同时用"实际视频轨"兜底。
-  // 远端 camEnabled 依赖 newProducer/producerPaused 同步，一旦该状态未到位，
-  // 仅靠标记会把"已有实际画面"的会议错误地退化为全局头像模式（表现为
-  // 只要有一人开着视频却全员显示头像）。
-  let remoteVideoOn = false;
-  for (const p of peers) {
-    if (p.peerId === localPeerId) continue;
-    if (p.camEnabled) {
-      remoteVideoOn = true;
-      break;
-    }
-  }
-  if (!remoteVideoOn) {
-    for (const s of remoteStreams.values()) {
-      if (hasActiveCamera(s)) {
-        remoteVideoOn = true;
-        break;
-      }
-    }
-  }
-
-  const avatarMode = !hasScreen && !localVideoOn && !remoteVideoOn;
+  // 以“是否存在存活的共享视频轨”判定投屏态，避免残留流把布局永久锁在侧栏
+  const hasScreen =
+    hasLiveVideo(localScreenStream) ||
+    [...screenStreams.values()].some((s) => hasLiveVideo(s));
   const remoteAudio = <RemoteAudios streams={remoteStreams} />;
-
-  if (avatarMode) {
-    const people: {
-      key: string;
-      name: string;
-      handRaised: boolean;
-      stream: MediaStream | null;
-      micMuted: boolean;
-    }[] = [
-      {
-        key: "local",
-        name: t("meeting.youSuffix", { name: localLabel }),
-        handRaised: Boolean(selfHandRaised) || Boolean(localPeerId && peerHand(localPeerId)),
-        stream: localStream,
-        micMuted: !localMicEnabled,
-      },
-    ];
-    const seen = new Set<string>([localPeerId ?? ""]);
-    for (const peer of peers) {
-      if (peer.peerId === localPeerId) continue;
-      if (seen.has(peer.peerId)) continue;
-      seen.add(peer.peerId);
-      people.push({
-        key: peer.peerId,
-        name: peer.displayName,
-        handRaised: peer.handRaised,
-        stream: remoteStreams.get(peer.peerId) ?? null,
-        micMuted: !peer.micEnabled,
-      });
-    }
-    for (const peerId of remoteStreams.keys()) {
-      if (seen.has(peerId)) continue;
-      seen.add(peerId);
-      people.push({
-        key: peerId,
-        name: peerName(peerId),
-        handRaised: peerHand(peerId),
-        stream: remoteStreams.get(peerId) ?? null,
-        micMuted: !peerMicEnabled(peerId),
-      });
-    }
-    return (
-      <>
-        {remoteAudio}
-        <AvatarStage people={people} />
-      </>
-    );
-  }
 
   const screenTile =
     (focusPeerId &&
@@ -761,14 +665,23 @@ export function VideoGrid({
       tiles[0])
     : null;
 
-  // Show the presenter as a draggable PIP whenever the main stage shows
-  // something else (shared screen or a focused speaker).
-  // 主持人 PIP 仅培训布局保留（演讲者布局右侧列表已含主持人，不再重复显示）
+  // PIP 主体：投屏时优先展示“共享者”的摄像头（主讲人小窗语义），
+  // 共享者无摄像头轨时回退到主持人摄像头。
+  const screenOwnerId = screenTile?.peerId ?? null;
+  const pipTile =
+    hasScreen && screenOwnerId != null
+      ? tiles.find((t) => t.peerId === screenOwnerId && !t.isScreen) ?? hostTile
+      : hostTile;
+
+  // 主舞台展示共享画面或他人画面时悬浮小窗：
+  //  - 培训布局：始终显示（原有行为）
+  //  - 任意布局：只要有投屏就显示（grid/speaker 投屏时也会走侧栏分支），
+  //    修复“投屏时其他成员看不到画中画”的问题
   const showPip =
-    layout === "training" &&
-    Boolean(hostTile) &&
+    (layout === "training" || hasScreen) &&
+    Boolean(pipTile) &&
     focusTile != null &&
-    focusTile.key !== hostTile!.key;
+    focusTile.key !== pipTile!.key;
 
   // 右侧成员显示全部人员（含主持人/自己），仅排除共享画面 tile；
   // 点击不同成员（含主持人）即可切换主画面
@@ -804,8 +717,8 @@ export function VideoGrid({
               variant={isTraining ? "panel" : "embed"}
             />
           )}
-          {showPip && hostTile && (
-            <DraggablePip tile={hostTile} handTitle={handTitle} />
+          {showPip && pipTile && (
+            <DraggablePip tile={pipTile} handTitle={handTitle} />
           )}
         </div>
       </>

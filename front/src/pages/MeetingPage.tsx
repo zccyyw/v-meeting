@@ -14,6 +14,8 @@ import { VideoGrid, type LayoutCols, type Tile } from "@/components/VideoGrid";
 import { ImmersiveStrip } from "@/components/ImmersiveStrip";
 import { WaitingRoom } from "@/components/WaitingRoom";
 import { InvitationPanel } from "@/components/InvitationPanel";
+import { FloatingPanel } from "@/components/FloatingPanel";
+import { useIsNarrow } from "@/hooks/useIsNarrow";
 import { MediaRoom, type MediaRoomSnapshot, type MeetingLayout } from "@/media/room";
 import { SignalClient } from "@/signal/client";
 import { showMessage } from "@/ui/toast";
@@ -76,6 +78,11 @@ function MeetingPageInner() {
   const [snap, setSnap] = useState<MediaRoomSnapshot>(emptySnapshot);
   const [membersOpen, setMembersOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  // 浮窗打开顺序（早→晚）：决定成员/聊天左右排布，先开者在最右；关闭再打开会重新排队
+  const [openOrder, setOpenOrder] = useState<("members" | "chat")[]>([]);
+  const isNarrow = useIsNarrow();
+  // 已被拖走（脱离自动排布）的浮窗；关闭后重置，重新打开会再次自动停靠
+  const [detached, setDetached] = useState<Set<"members" | "chat">>(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteListOpen, setInviteListOpen] = useState(false);
@@ -96,6 +103,8 @@ function MeetingPageInner() {
   const recordStartRef = useRef<number>(0);
   const [recordElapsed, setRecordElapsed] = useState(0);
   const lastRecordingPeersRef = useRef<Set<string>>(new Set());
+  /** 已建立录制基线的入会会话（peerId）；重连会换 peerId，需要重新建立基线 */
+  const recordingBaselinePeerRef = useRef<string | null>(null);
   const [meetingCode, setMeetingCode] = useState(
     () => params.get("code")?.replace(/\D/g, "") ?? "",
   );
@@ -110,6 +119,14 @@ function MeetingPageInner() {
   const autoShareTried = useRef(false);
 
   const wantAutoShare = params.get("share") === "1";
+
+  // 窄屏互斥：进入窄屏后若两者都打开，仅保留最近打开的一个
+  useEffect(() => {
+    if (!isNarrow || !membersOpen || !chatOpen) return;
+    const last = openOrder[openOrder.length - 1];
+    if (last === "members") setChatOpen(false);
+    else setMembersOpen(false);
+  }, [isNarrow, membersOpen, chatOpen, openOrder]);
 
   // 录制时长计时
   useEffect(() => {
@@ -145,6 +162,13 @@ function MeetingPageInner() {
     const current = new Set(
       snap.peers.filter((p) => p.recording && p.peerId !== snap.peerId).map((p) => p.peerId),
     );
+    // 入会（或重连换 peerId）后的首个快照只建立基线：服务端快照会带上"入会前
+    // 就已开始的录制"，这属于既有状态而非新事件，不应补发提示。
+    if (recordingBaselinePeerRef.current !== snap.peerId) {
+      recordingBaselinePeerRef.current = snap.peerId;
+      lastRecordingPeersRef.current = current;
+      return;
+    }
     // 新开始录制的
     for (const peerId of current) {
       if (!prev.has(peerId)) {
@@ -515,6 +539,60 @@ function MeetingPageInner() {
       showMessage(t("meeting.recordingStartFailed"));
     }
   };
+  function openPanel(key: "members" | "chat") {
+    if (key === "members") {
+      setMembersOpen(true);
+      // 窄屏互斥：同一个显示位，开一个自动关另一个（用按钮切换）
+      if (isNarrow) setChatOpen(false);
+    } else {
+      setChatOpen(true);
+      if (isNarrow) setMembersOpen(false);
+    }
+    setOpenOrder((o) => [...o.filter((k) => k !== key), key]);
+    // 重新打开即回到自动停靠（清除上次的“拖走”状态）
+    setDetached((s) => {
+      if (!s.has(key)) return s;
+      const next = new Set(s);
+      next.delete(key);
+      return next;
+    });
+  }
+
+  function closePanel(key: "members" | "chat") {
+    if (key === "members") setMembersOpen(false);
+    else setChatOpen(false);
+    setOpenOrder((o) => o.filter((k) => k !== key));
+    setDetached((s) => {
+      if (!s.has(key)) return s;
+      const next = new Set(s);
+      next.delete(key);
+      return next;
+    });
+  }
+
+  function detachPanel(key: "members" | "chat") {
+    setDetached((s) => {
+      if (s.has(key)) return s;
+      const next = new Set(s);
+      next.add(key);
+      return next;
+    });
+  }
+
+  function toggleMembers() {
+    if (membersOpen) closePanel("members");
+    else openPanel("members");
+  }
+
+  function toggleChat() {
+    if (chatOpen) {
+      closePanel("chat");
+    } else {
+      setUnreadChat(0);
+      openPanel("chat");
+    }
+  }
+
   const roleLabel =
     snap.role === "host"
       ? t("meeting.roleHost")
@@ -524,6 +602,23 @@ function MeetingPageInner() {
   const inviteLink = meetingCode
     ? `${window.location.origin}/?join=${meetingCode}`
     : "";
+
+  // 浮窗排布：先开者在最右，后开者依次往左（右距 = 20 + 序号×(310+8)）；
+  // 窄屏只有单个显示位，仅渲染最右（唯一）那个。
+  const openKeys: ("members" | "chat")[] = [];
+  if (membersOpen) openKeys.push("members");
+  if (chatOpen) openKeys.push("chat");
+  const orderedKeys = [...openOrder.filter((k) => openKeys.includes(k))];
+  for (const k of openKeys) if (!orderedKeys.includes(k)) orderedKeys.push(k);
+  // 仅未拖走的浮窗参与自动排布：先开者在最右，其余依序往左补位
+  const dockedKeys = orderedKeys.filter((k) => !detached.has(k));
+  const slotFor = (key: "members" | "chat") => {
+    const i = dockedKeys.indexOf(key);
+    return i <= 0 ? 20 : 20 + i * (310 + 8);
+  };
+  const showMembersPanel =
+    membersOpen && (!isNarrow || orderedKeys[0] === "members");
+  const showChatPanel = chatOpen && (!isNarrow || orderedKeys[0] === "chat");
 
   return (
     <main className="meeting-page">
@@ -878,66 +973,74 @@ function MeetingPageInner() {
               )}
             </div>
 
-            {(membersOpen || chatOpen) && (
-              <aside className="meeting-side">
-                {membersOpen && (
-                  <HostControls
-                    isHost={isHost}
-                    allowShare={snap.allowShare}
-                    allMuted={allMuted}
-                    peers={[
-                      // 服务端 peers 刻意不含自己；成员列表需展示全部入会人员
-                      //（含主持人/自己），此处把本端条目补到最前
-                      ...(snap.peerId
-                        ? [
-                            {
-                              peerId: snap.peerId,
-                              displayName,
-                              role: snap.role ?? "participant",
-                              handRaised: snap.handRaised,
-                              micEnabled: snap.micEnabled,
-                              camEnabled: snap.camEnabled,
-                              recording: false,
-                            },
-                          ]
-                        : []),
-                      ...snap.peers,
-                    ]}
-                    selfPeerId={snap.peerId}
-                    invitations={invitations}
-                    onClose={() => setMembersOpen(false)}
-                    onToggleAllowShare={() => {
-                      roomRef.current?.setSharePermission(!snap.allowShare);
-                    }}
-                    onToggleMuteAll={() => {
-                      if (allMuted) {
-                        roomRef.current?.unmuteAll();
-                        setAllMuted(false);
-                      } else {
-                        roomRef.current?.muteAll();
-                        setAllMuted(true);
-                      }
-                    }}
-                    onMutePeer={(peerId) => {
-                      roomRef.current?.mutePeer(peerId);
-                    }}
-                    onUnmutePeer={(peerId) => {
-                      roomRef.current?.unmutePeer(peerId);
-                    }}
-                    onKick={(peerId) => {
-                      roomRef.current?.kickPeer(peerId);
-                    }}
-                  />
-                )}
-                {chatOpen && (
-                  <ChatPanel
-                    messages={snap.chatMessages}
-                    selfPeerId={snap.peerId}
-                    onSend={(text) => roomRef.current?.sendChat(text)}
-                    onClose={() => setChatOpen(false)}
-                  />
-                )}
-              </aside>
+            {showMembersPanel && (
+              <FloatingPanel
+                dockedRight={slotFor("members")}
+                onDetach={() => detachPanel("members")}
+                className="floating-panel--members"
+              >
+                <HostControls
+                  isHost={isHost}
+                  allowShare={snap.allowShare}
+                  allMuted={allMuted}
+                  peers={[
+                    // 服务端 peers 刻意不含自己；成员列表需展示全部入会人员
+                    //（含主持人/自己），此处把本端条目补到最前
+                    ...(snap.peerId
+                      ? [
+                          {
+                            peerId: snap.peerId,
+                            displayName,
+                            role: snap.role ?? "participant",
+                            handRaised: snap.handRaised,
+                            micEnabled: snap.micEnabled,
+                            camEnabled: snap.camEnabled,
+                            recording: false,
+                          },
+                        ]
+                      : []),
+                    ...snap.peers,
+                  ]}
+                  selfPeerId={snap.peerId}
+                  invitations={invitations}
+                  onClose={() => closePanel("members")}
+                  onToggleAllowShare={() => {
+                    roomRef.current?.setSharePermission(!snap.allowShare);
+                  }}
+                  onToggleMuteAll={() => {
+                    if (allMuted) {
+                      roomRef.current?.unmuteAll();
+                      setAllMuted(false);
+                    } else {
+                      roomRef.current?.muteAll();
+                      setAllMuted(true);
+                    }
+                  }}
+                  onMutePeer={(peerId) => {
+                    roomRef.current?.mutePeer(peerId);
+                  }}
+                  onUnmutePeer={(peerId) => {
+                    roomRef.current?.unmutePeer(peerId);
+                  }}
+                  onKick={(peerId) => {
+                    roomRef.current?.kickPeer(peerId);
+                  }}
+                />
+              </FloatingPanel>
+            )}
+            {showChatPanel && (
+              <FloatingPanel
+                dockedRight={slotFor("chat")}
+                onDetach={() => detachPanel("chat")}
+                className="floating-panel--chat"
+              >
+                <ChatPanel
+                  messages={snap.chatMessages}
+                  selfPeerId={snap.peerId}
+                  onSend={(text) => roomRef.current?.sendChat(text)}
+                  onClose={() => closePanel("chat")}
+                />
+              </FloatingPanel>
             )}
           </div>
         )}
@@ -971,14 +1074,10 @@ function MeetingPageInner() {
             }
           }}
           onToggleMembers={() => {
-            setMembersOpen((v) => !v);
+            toggleMembers();
           }}
           onToggleChat={() => {
-            setChatOpen((v) => {
-              const next = !v;
-              if (next) setUnreadChat(0);
-              return next;
-            });
+            toggleChat();
           }}
           onInvite={() => setInviteOpen(true)}
           onLeave={() => {

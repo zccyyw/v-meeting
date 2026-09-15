@@ -16,6 +16,8 @@ export const CreateMeetingSchema = z
     title: z.string().min(1).max(120),
     scheduledAt: z.string().datetime().optional(),
     waitingRoomEnabled: z.boolean().default(false),
+    /** 是否允许非主持人共享屏幕（默认允许；主持人可在会中随时开关并落库） */
+    allowShare: z.boolean().default(true),
     /** Only applied when scheduledAt is set. */
     joinPassword: z.string().min(4).max(32).optional(),
   })

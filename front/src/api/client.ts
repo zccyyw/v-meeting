@@ -157,6 +157,18 @@ export async function downloadImportTemplate() {
   URL.revokeObjectURL(a.href);
 }
 
+export type MyInvitationItem = {
+  invitationId: number;
+  invitationStatus: string;
+  meetingId: number;
+  code: string;
+  title: string;
+  meetingStatus: string;
+  scheduledAt: string | null;
+  hostName: string | null;
+  invitedAt: string | null;
+};
+
 export const MeetingApi = {
   create: (body: {
     title: string;
@@ -187,6 +199,8 @@ export const MeetingApi = {
         priority: string | null;
       }[];
     }>("/meetings"),
+  /** 待我加入的会议（被群组/邀请人点名，尚未入会） */
+  myInvitations: () => api<{ items: MyInvitationItem[] }>("/meetings/my-invitations"),
   get: (id: string | number) =>
     api<{
       id: number;

@@ -108,6 +108,13 @@ export class MediaRoom {
   private mediaReady = false;
   private closed = false;
   private pendingProducers: Extract<ServerMessage, { type: "newProducer" }>[] = [];
+  /**
+   * 已收到 producerClosed 的 producerId。用于消费竞态保护：`consumeProducer`
+   * 的 `recvTransport.consume()` 是异步的，若 producerClosed 在等待期间先到达，
+   * 事后登记 consumer 会把“已结束的流”残留进 screenStreams/remoteStreams，
+   * 导致本端 hasScreen 恒真、布局被锁在侧栏且主画面卡在黑屏。
+   */
+  private closedProducerIds = new Set<string>();
   /** 是否正在自动重连（防止并发触发多条重连流程） */
   private reconnecting = false;
 
@@ -281,6 +288,13 @@ export class MediaRoom {
 
   setLayout(layout: MeetingLayout): void {
     this.signal.send({ type: "setLayout", layout });
+    // 立即本地生效：避免因服务端回显延迟/丢失导致“主持人切了、自己的画面却没变”。
+    // 服务端随后广播的 layout 仍会以权威值覆盖（并同步清除焦点）。
+    if (this.layout !== layout) {
+      this.layout = layout;
+      this.focusPeerId = null;
+      this.emit();
+    }
   }
 
   setFocus(peerId: string | null): void {
@@ -627,6 +641,7 @@ export class MediaRoom {
     }
     this.screenStreams.clear();
     this.screenFocusPeerId = null;
+    this.closedProducerIds.clear();
   }
 
   private rejectPending(err: Error): void {
@@ -895,18 +910,32 @@ export class MediaRoom {
       displayName: p.displayName,
       role: p.role,
       handRaised: p.handRaised,
-      camEnabled: false,
-      micEnabled: false,
-      recording: false,
+      // 直接采用服务端快照：此前硬编码 false，只能等 newProducer / producerPaused /
+      // peerRecording 等增量消息到达，期间会把所有人误显示为"未开麦、未录制"。
+      camEnabled: p.camEnabled ?? false,
+      micEnabled: p.micEnabled ?? false,
+      recording: p.recording ?? false,
     }));
     const self = msg.peers.find((p) => p.peerId === msg.peerId);
     this.handRaised = self?.handRaised ?? false;
+    // 共享权限同样取快照：否则主持人已关闭共享时，新入会者仍会看到可用的共享入口，
+    // 点击后却被服务端以 share_not_allowed 拒绝。
+    if (msg.allowShare !== undefined) {
+      this.allowShare = msg.allowShare;
+    }
     this.canShare = msg.role === "host" || this.allowShare;
     if (msg.waitingRoomEnabled !== undefined) {
       this.waitingRoomEnabled = msg.waitingRoomEnabled;
     }
     if (msg.recordAllowed !== undefined) {
       this.recordAllowed = msg.recordAllowed;
+    }
+    // 同步房间当前布局/焦点：主持人已切演讲者/培训时，新入会者不应停留在宫格
+    if (msg.layout !== undefined) {
+      this.layout = msg.layout;
+    }
+    if (msg.focusPeerId !== undefined) {
+      this.focusPeerId = msg.focusPeerId;
     }
     this.status = "joined";
     this.emit();
@@ -1189,6 +1218,17 @@ export class MediaRoom {
       rtpParameters: consumed.rtpParameters as never,
     });
 
+    // 竞态保护：consume 期间该 producer 已被关闭 → 丢弃本次消费，
+    // 避免把已结束的流登记进 screenStreams/remoteStreams（后续无法移除）。
+    if (this.closedProducerIds.has(consumed.producerId)) {
+      try {
+        consumer.close();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
     this.consumers.set(consumer.id, consumer);
 
     const isScreen = msg.appData?.source === "screen" || consumed.appData?.source === "screen";
@@ -1226,6 +1266,7 @@ export class MediaRoom {
   }
 
   private removeClosedProducer(producerId: string, peerId: string): void {
+    this.closedProducerIds.add(producerId);
     this.pendingProducers = this.pendingProducers.filter(
       (p) => p.producerId !== producerId
     );
@@ -1365,6 +1406,7 @@ export class MediaRoom {
     }
     this.screenStreams.clear();
     this.screenFocusPeerId = null;
+    this.closedProducerIds.clear();
 
     if (this.unsub) {
       this.unsub();

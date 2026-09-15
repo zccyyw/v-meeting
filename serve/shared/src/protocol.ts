@@ -16,6 +16,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     displayName: z.string().min(1).max(64),
   }),
   z.object({ type: z.literal("leave") }),
+  /**
+   * 应用层心跳：浏览器无法观测 WS 级 ping/pong，只能靠这条消息自检。
+   * 服务端立即回 pong；客户端在超时未收到任何消息时主动断开重连。
+   */
+  z.object({ type: z.literal("ping") }),
   z.object({ type: z.literal("raiseHand"), raised: z.boolean() }),
   z.object({ type: z.literal("chat"), text: z.string().min(1).max(2000) }),
   z.object({ type: z.literal("setLayout"), layout: z.enum(["grid", "speaker", "training"]) }),
@@ -90,12 +95,24 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     inWaitingRoom: z.boolean(),
     waitingRoomEnabled: z.boolean().optional(),
     recordAllowed: z.boolean().optional(),
+    // 房间当前布局与焦点：后入会者据此直接落到主持人已切换的布局，
+    // 否则前端只会用默认值（宫格）。
+    layout: z.enum(["grid", "speaker", "training"]).optional(),
+    focusPeerId: z.string().nullable().optional(),
+    // 房间当前共享权限：主持人可能在有人入会前就已关闭共享，
+    // 不下发会导致后入会者看到可用的共享入口、点击却被服务端拒绝。
+    allowShare: z.boolean().optional(),
     peers: z.array(
       z.object({
         peerId: z.string(),
         displayName: z.string(),
         role: UserRoleSchema,
         handRaised: z.boolean(),
+        // 媒体/录制状态快照：此前只能靠 newProducer/producerPaused/peerRecording
+        // 等增量消息推导，后入会者在增量到达前会把所有人误判为"未开麦、未录制"。
+        camEnabled: z.boolean().optional(),
+        micEnabled: z.boolean().optional(),
+        recording: z.boolean().optional(),
       })
     ),
   }),
@@ -192,6 +209,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     peerId: z.string(),
     appData: z.record(z.unknown()).optional(),
   }),
+  z.object({ type: z.literal("pong") }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;

@@ -1,0 +1,3 @@
+-- Placeholder: applied via migrate.ts information_schema.
+-- Adds meetings.allow_share BOOLEAN NOT NULL DEFAULT TRUE
+-- Adds meetings.last_active_at TIMESTAMP NULL

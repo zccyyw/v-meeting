@@ -22,6 +22,7 @@ import {
   getDisplayName,
 } from "@/auth/session";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { api } from "@/api/client";
@@ -160,6 +161,7 @@ function AppShellInner() {
         />
 
         <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingBottom: 16, marginTop: "auto" }}>
+          <NotificationBell />
           <ThemeToggle />
           {!installed && (canInstall || /iPad|iPhone|iPod/.test(navigator.userAgent)) && (
             <Tooltip title={t("pwa.install")}>

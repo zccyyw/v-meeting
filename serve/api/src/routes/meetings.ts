@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { CreateMeetingSchema, JoinTokenBodySchema } from "@meeting/shared";
 import { randomBytes } from "node:crypto";
+import { Readable } from "node:stream";
 import { isUniqueViolation, type ResultHeader } from "../db.js";
 import type { Db } from "../db.js";
 import type { Redis } from "ioredis";
@@ -9,6 +10,7 @@ import { hashPassword, verifyPassword } from "../auth.js";
 import { generateMeetingCode } from "../meeting-code.js";
 import { loadSessionUser, type AppUser } from "../session-user.js";
 import { nowSql, insertIgnorePrefix, conflictSuffix } from "../sql-utils.js";
+import { subscribeUser, notifyUser } from "../notify.js";
 
 const zDisplayName = z.string().min(1).max(64);
 
@@ -130,14 +132,15 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
       try {
         const [result] = await db.query(
           `INSERT INTO meetings
-           (code, title, host_user_id, status, waiting_room_enabled, join_password_hash, scheduled_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           (code, title, host_user_id, status, waiting_room_enabled, allow_share, join_password_hash, scheduled_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             code,
             body.title,
             user.id,
             status,
             body.waitingRoomEnabled ? 1 : 0,
+            body.allowShare ? 1 : 0,
             joinPasswordHash,
             body.scheduledAt ? new Date(body.scheduledAt) : null,
           ],
@@ -212,6 +215,81 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
       return { ...mapped, passwordRequired: false, priority: m.priority ?? null };
     });
     return { items };
+  });
+
+  // ── 我的待加入会议（被邀请人视角，用于站内通知） ──
+  // 群组“一键开会”会为全体成员写入 pending 邀请；被邀请人登录后凭此接口
+  // 拉取“待我加入”的会议列表，无需知道会议号。仅返回未结束的会议。
+  app.get("/meetings/my-invitations", async (req, reply) => {
+    const sessionId = req.headers["x-session-id"] as string | undefined;
+    const user = await loadSessionUser(db, redis, sessionId);
+    if (!user) return reply.code(401).send({ error: "unauthorized" });
+
+    try {
+      const [rows] = await db.query(
+        `SELECT i.id AS invitation_id, i.status AS invitation_status, i.invited_at,
+                m.id AS meeting_id, m.code, m.title, m.status AS meeting_status,
+                m.scheduled_at, u.nick_name AS host_name
+         FROM meeting_invitations i
+         JOIN meetings m ON m.id = i.meeting_id
+         LEFT JOIN sys_user u ON u.user_id = m.host_user_id
+         WHERE i.user_id = ?
+           AND i.status IN ('pending', 'accepted')
+           AND m.status IN ('scheduled', 'live')
+         ORDER BY
+           CASE m.status WHEN 'live' THEN 0 ELSE 1 END,
+           i.invited_at DESC`,
+        [user.id],
+      );
+      const items = (rows as any[]).map((r) => ({
+        invitationId: Number(r.invitation_id),
+        invitationStatus: r.invitation_status,
+        meetingId: Number(r.meeting_id),
+        code: r.code,
+        title: r.title,
+        meetingStatus: r.meeting_status,
+        scheduledAt: r.scheduled_at
+          ? new Date(r.scheduled_at).toISOString()
+          : null,
+        hostName: r.host_name ?? null,
+        invitedAt: r.invited_at ? new Date(r.invited_at).toISOString() : null,
+      }));
+      return { items };
+    } catch {
+      // 表可能不存在（未迁移）
+      return { items: [] };
+    }
+  });
+
+  // ── 待加入会议的实时推送（SSE） ──
+  // EventSource 无法自定义请求头，故会话 id 经查询参数传入（与其它请求的
+  // x-session-id 为同一凭据）。群组开会/点名邀请写入后由 notifyUser 触发。
+  app.get("/meetings/my-invitations/stream", async (req, reply) => {
+    const sid = (req.query as { sid?: string } | undefined)?.sid;
+    const user = await loadSessionUser(db, redis, sid);
+    if (!user) return reply.code(401).send({ error: "unauthorized" });
+
+    const stream = new Readable({ read() {} });
+    const write = (chunk: string) => stream.push(chunk);
+    write(": connected\n\n");
+
+    const unsubscribe = subscribeUser(user.id, (notice) => {
+      write(`data: ${JSON.stringify(notice)}\n\n`);
+    });
+    // 心跳：避免代理/负载均衡按空闲断开长连接
+    const heartbeat = setInterval(() => write(": ping\n\n"), 25_000);
+    const cleanup = () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      stream.push(null);
+    };
+    req.raw.on("close", cleanup);
+    req.raw.on("error", cleanup);
+
+    reply.header("Content-Type", "text/event-stream");
+    reply.header("Cache-Control", "no-cache, no-transform");
+    reply.header("X-Accel-Buffering", "no");
+    return reply.send(stream);
   });
 
   app.get("/meetings/by-code/:code", async (req, reply) => {
@@ -408,6 +486,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const inviteSuffix = conflictSuffix(db, "meeting_id, user_id"); // PG: ON CONFLICT DO NOTHING
 
     let invited = 0;
+    const notified = new Set<number>();
     for (const uid of userIds) {
       try {
         const [uRows] = await db.query(
@@ -421,6 +500,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
           [meetingId, uid, uName],
         );
         invited++;
+        notified.add(Number(uid));
       } catch { /* ignore */ }
     }
 
@@ -437,8 +517,14 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
             [meetingId, u.user_id, did, u.nick_name],
           );
           invited++;
+          notified.add(Number(u.user_id));
         }
       } catch { /* ignore */ }
+    }
+
+    // 实时推送：通知被邀请人刷新“待加入会议”
+    for (const uid of notified) {
+      notifyUser(uid, { type: "invitations_changed", meetingId });
     }
 
     return { meetingId, invited };
@@ -502,7 +588,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     }
 
     await db.query(
-      `UPDATE meeting_invitations SET status = ?, responded_at = ${nowSql(db)} WHERE id = ?`,
+      `UPDATE meeting_invitations SET status = ? WHERE id = ?`,
       [status, invId],
     );
     return { id: invId, status };

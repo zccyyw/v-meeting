@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS meetings (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   ended_at TIMESTAMP NULL,
   record_allowed TINYINT(1) NOT NULL DEFAULT 0,
+  allow_share TINYINT(1) NOT NULL DEFAULT 1,
+  last_active_at TIMESTAMP NULL,
   UNIQUE KEY uk_meetings_code (code),
   KEY idx_meetings_host (host_user_id),
   CONSTRAINT fk_meetings_host FOREIGN KEY (host_user_id) REFERENCES sys_user (user_id)

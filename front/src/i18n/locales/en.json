@@ -51,6 +51,7 @@
     "instant": "Instant meeting",
     "schedule": "Schedule meeting",
     "recordings": "Recordings",
+    "pendingJoin": "To join",
     "emptySchedule": "No meetings scheduled",
     "scheduleLoading": "Loading…",
     "scheduleNoTime": "No time set",
@@ -541,6 +542,15 @@
   "theme": {
     "switchToLight": "Switch to Light Mode",
     "switchToDark": "Switch to Dark Mode"
+  },
+  "notify": {
+    "title": "Notifications",
+    "empty": "No meetings to join",
+    "join": "Join",
+    "markAllRead": "Mark all read",
+    "host": "Host",
+    "live": "Live",
+    "joinFailed": "Failed to join meeting"
   },
   "meetingMonitor": {
     "title2": "Meeting Monitor",

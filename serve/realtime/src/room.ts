@@ -7,6 +7,8 @@ export type Peer = {
   inWaitingRoom: boolean;
   handRaised: boolean;
   canShare: boolean;
+  /** 是否正在录制（内存态；随入会快照下发，供后入会者显示 REC 指示） */
+  recording: boolean;
 };
 
 export class MeetingRoom {
@@ -39,6 +41,7 @@ export class MeetingRoom {
       inWaitingRoom,
       handRaised: false,
       canShare: this.allowShareDefault || input.role === "host",
+      recording: false,
     };
     this.peers.set(peer.peerId, peer);
     return peer;

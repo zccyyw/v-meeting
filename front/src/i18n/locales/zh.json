@@ -51,6 +51,7 @@
     "instant": "快速会议",
     "schedule": "预定会议",
     "recordings": "录制历史",
+    "pendingJoin": "待加入",
     "emptySchedule": "暂无会议",
     "scheduleLoading": "加载中…",
     "scheduleNoTime": "未设置时间",
@@ -541,6 +542,15 @@
   "theme": {
     "switchToLight": "切换为明亮模式",
     "switchToDark": "切换为暗黑模式"
+  },
+  "notify": {
+    "title": "站内通知",
+    "empty": "暂无待加入会议",
+    "join": "加入",
+    "markAllRead": "全部已读",
+    "host": "主持人",
+    "live": "进行中",
+    "joinFailed": "加入会议失败"
   },
   "meetingMonitor": {
     "title2": "会议在线监控",

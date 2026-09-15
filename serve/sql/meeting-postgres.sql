@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS meetings (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ended_at TIMESTAMPTZ NULL,
   CONSTRAINT uk_meetings_code UNIQUE (code),
-  record_allowed BOOLEAN NOT NULL DEFAULT FALSE
+  record_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+  allow_share BOOLEAN NOT NULL DEFAULT TRUE,
+  last_active_at TIMESTAMPTZ NULL
 );
 
 CREATE TABLE IF NOT EXISTS meeting_join_tokens (

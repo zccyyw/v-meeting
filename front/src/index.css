@@ -513,7 +513,13 @@ input:not(.ant-input):focus {
 @keyframes danmu-fly { 0% { transform: translateX(0); opacity: 0; } 5% { opacity: 1; } 95% { opacity: 1; } 100% { transform: translateX(-160vw); opacity: 0; } }
 
 /* —— 会议侧边栏 —— */
-.meeting-side { flex: 0 0 min(320px, 36vw); display: flex; flex-direction: column; gap: 0.75rem; min-height: 0; overflow: hidden; }
+/* —— 悬浮面板（成员 / 聊天）：默认停靠右上角，可拖动 —— */
+.floating-panel { position: absolute; z-index: 80; display: flex; flex-direction: column; max-width: calc(100% - 40px); background: #26292e; border: 1px solid var(--meeting-bar-border); border-radius: 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); overflow: hidden; }
+.floating-panel--dragging { opacity: 0.96; }
+.floating-panel .side-panel { flex: 1; min-height: 0; border: none; border-radius: 0; background: transparent; }
+/* 标题栏作为拖动手柄（触屏可拖，避免误触发滚动） */
+.floating-panel .side-panel-header { cursor: grab; touch-action: none; user-select: none; }
+.floating-panel--dragging .side-panel-header { cursor: grabbing; }
 
 /* 邀请名单面板 */
 .invite-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; background: #26292e; border: 1px solid var(--meeting-bar-border); border-radius: 16px; overflow: hidden; }
@@ -566,12 +572,6 @@ input:not(.ant-input):focus {
 .video-grid--grid .video-tile { width: clamp(240px, 17vw, 320px); aspect-ratio: 16 / 9; min-height: 0; height: auto; flex-shrink: 0; }
 .video-grid--grid[data-cols="4"] .video-tile { width: clamp(220px, calc((100% - 3 * 0.75rem) / 4), 320px); }
 .video-grid--grid[data-cols="6"] .video-tile { width: clamp(180px, calc((100% - 5 * 0.75rem) / 6), 280px); }
-.avatar-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
-.avatar-stage-row { display: flex; flex-wrap: wrap; gap: 1.75rem 2.25rem; align-items: flex-start; justify-content: center; max-width: 56rem; }
-.avatar-person { display: flex; flex-direction: column; align-items: center; gap: 0.65rem; width: 7.5rem; }
-.avatar-circle { position: relative; width: 5.5rem; height: 5.5rem; border-radius: 50%; display: grid; place-items: center; font-size: 1.85rem; font-weight: 600; color: #fff; background: linear-gradient(145deg, #3d8bfd 0%, #1a5fd0 100%); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); user-select: none; }
-.avatar-hand { position: absolute; top: -0.15rem; right: -0.15rem; font-size: 1rem; line-height: 1; background: rgba(0, 0, 0, 0.45); border-radius: 999px; padding: 0.2rem 0.3rem; }
-.avatar-name { color: rgba(255, 255, 255, 0.92); font-size: 0.85rem; text-align: center; line-height: 1.3; word-break: break-word; }
 .video-grid--speaker { grid-template-columns: 1fr; }
 .video-grid--training { display: flex; flex-direction: row; gap: 0.75rem; flex: 1; min-height: 0; overflow: hidden; }
 .video-grid--training .video-side-main { flex: 4 1 0; }
@@ -607,7 +607,7 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
 
 /* 主讲人小窗（PIP）：默认右下角悬浮，可拖动 */
 .video-grid--side, .video-grid--training { position: relative; }
-.video-pip { position: absolute; left: 1rem; bottom: 1rem; width: clamp(10rem, 22%, 16rem); aspect-ratio: 16 / 10; z-index: 60; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; cursor: grab; background: #111; }
+.video-pip { position: absolute; right: 1rem; bottom: 1rem; width: clamp(10rem, 22%, 16rem); aspect-ratio: 16 / 10; z-index: 60; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; cursor: grab; background: #111; }
 .video-pip:active { cursor: grabbing; }
 .video-pip .video-tile { width: 100%; height: 100%; min-height: 0; border-radius: 0; }
 .video-pip .video-label { font-size: 0.7rem; }
@@ -620,6 +620,9 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
 .video-tile--focus { min-height: 0; }
 .video-tile { position: relative; background: #111; border-radius: 16px; overflow: hidden; min-height: 100px; aspect-ratio: 16 / 10; }
 .video-tile video { width: 100%; height: 100%; max-width: none; max-height: none; object-fit: cover; display: block; background: #1a1a1a; }
+/* 屏幕共享画面用 contain 完整显示：窗口/显示器比例与 tile 不同时避免四边被裁 */
+.video-tile--screen video { object-fit: contain; }
+.video-tile--screen { background: #000; }
 .video-label { position: absolute; left: 0.5rem; bottom: 0.5rem; padding: 0.2rem 0.5rem; border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 0.8rem; }
 .video-label--cam-off::before { content: "🔒"; font-size: 0.65rem; margin-right: 0.2rem; }
 
@@ -631,8 +634,6 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
 .audio-indicator-bar:nth-child(2) { animation-delay: 0.15s; }
 .audio-indicator-bar:nth-child(3) { animation-delay: 0.3s; }
 @keyframes audio-bar-bounce { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
-.audio-indicator--avatar { position: absolute; left: 50%; bottom: -0.4rem; transform: translateX(-50%); }
-.audio-indicator--avatar .audio-indicator-muted { color: rgba(255, 255, 255, 0.85); }
 
 /* —— 屏幕共享 —— */
 .screen-share-hint { position: absolute; top: 0.5rem; left: 50%; transform: translateX(-50%); max-width: calc(100% - 2rem); padding: 0.4rem 0.75rem; border-radius: 8px; background: rgba(18, 120, 255, 0.92); color: #fff; font-size: 0.78rem; line-height: 1.3; text-align: center; pointer-events: none; z-index: 2; }
@@ -828,7 +829,6 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
 
 @media (max-width: 720px) {
   .meeting-main { flex-direction: column; }
-  .meeting-side { flex: none; width: 100%; max-height: 40vh; }
   .controls { flex-wrap: wrap; padding-bottom: 0.55rem; min-height: auto; }
   .controls-leave { position: static; transform: none; }
   .controls-cluster { max-width: 100%; }
@@ -847,7 +847,6 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
   .meeting-settings-popover { width: min(260px, calc(100vw - 1.2rem)); }
   .meeting-stage { padding: 0.5rem 0.5rem 0; }
   .meeting-main { gap: 0.5rem; }
-  .meeting-side { flex: none; width: 100%; max-height: 35vh; }
   .video-grid { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 0.5rem; }
   .video-grid--grid .video-tile { width: min(150px, calc((100% - 0.5rem) / 2)) !important; }
   .video-tile { min-height: 120px; border-radius: 8px; }
@@ -873,7 +872,6 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
 
 @media (orientation: landscape) and (max-height: 500px) and (max-width: 900px) {
   .meeting-main { flex-direction: row; }
-  .meeting-side { flex: 0 0 200px; width: 200px; max-height: none; }
   .controls { flex-wrap: nowrap; padding-bottom: 0.35rem; }
   .controls-leave { position: absolute; right: 0.5rem; transform: translateY(-50%); width: auto; }
   .controls-cluster { max-width: calc(100% - 5rem); }

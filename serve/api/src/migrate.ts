@@ -182,29 +182,35 @@ async function migrateMeetingJoinPassword(db: Db): Promise<number> {
   return 1;
 }
 
-async function hasMeetingRecordAllowed(db: Db): Promise<boolean> {
+async function hasMeetingColumn(db: Db, column: string): Promise<boolean> {
   if (db.driver === "postgres") {
     const [rows] = await db.query(
       `SELECT 1 AS ok FROM information_schema.columns
        WHERE table_schema = current_schema()
          AND table_name = 'meetings'
-         AND column_name = 'record_allowed'
+         AND column_name = ?
        LIMIT 1`,
+      [column],
     );
     return (rows as unknown[]).length > 0;
   }
   if (db.driver === "sqlite") {
     const [rows] = await db.query(`PRAGMA table_info(meetings)`);
     return (rows as Array<{ name: string }>).some(
-      (r) => String(r.name).toLowerCase() === "record_allowed",
+      (r) => String(r.name).toLowerCase() === column.toLowerCase(),
     );
   }
   const [rows] = await db.query(
     `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'meetings'
-       AND COLUMN_NAME = 'record_allowed'`,
+       AND COLUMN_NAME = ?`,
+    [column],
   );
   return (rows as unknown[]).length > 0;
+}
+
+async function hasMeetingRecordAllowed(db: Db): Promise<boolean> {
+  return hasMeetingColumn(db, "record_allowed");
 }
 
 async function migrateMeetingRecordAllowed(db: Db): Promise<number> {
@@ -221,6 +227,43 @@ async function migrateMeetingRecordAllowed(db: Db): Promise<number> {
     await db.query(
       `ALTER TABLE meetings ADD COLUMN record_allowed TINYINT(1) NOT NULL DEFAULT 0`,
     );
+  }
+  return 1;
+}
+
+/**
+ * 012：会议运行时状态落库（此前只存在于 realtime 进程内存里）。
+ * - allow_share   共享权限：主持人关闭共享后，房间销毁重建不该回退为"允许"
+ * - last_active_at 最后活跃时间：服务重启后用于收尾遗留的 live 会议
+ */
+async function migrateMeetingRuntimeState(db: Db): Promise<number> {
+  if (!(await hasMeetingColumn(db, "allow_share"))) {
+    if (db.driver === "postgres") {
+      await db.query(
+        `ALTER TABLE meetings ADD COLUMN IF NOT EXISTS allow_share BOOLEAN NOT NULL DEFAULT TRUE`,
+      );
+    } else if (db.driver === "sqlite") {
+      await db.query(
+        `ALTER TABLE meetings ADD COLUMN allow_share INTEGER NOT NULL DEFAULT 1`,
+      );
+    } else {
+      await db.query(
+        `ALTER TABLE meetings ADD COLUMN allow_share TINYINT(1) NOT NULL DEFAULT 1`,
+      );
+    }
+  }
+  if (!(await hasMeetingColumn(db, "last_active_at"))) {
+    if (db.driver === "postgres") {
+      await db.query(
+        `ALTER TABLE meetings ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP NULL`,
+      );
+    } else if (db.driver === "sqlite") {
+      await db.query(`ALTER TABLE meetings ADD COLUMN last_active_at TEXT`);
+    } else {
+      await db.query(
+        `ALTER TABLE meetings ADD COLUMN last_active_at TIMESTAMP NULL`,
+      );
+    }
   }
   return 1;
 }
@@ -710,6 +753,10 @@ export async function migrate(db?: Db) {
     }
     if (file === "005_meeting_record_permission.sql") {
       count += await migrateMeetingRecordAllowed(db);
+      continue;
+    }
+    if (file === "012_meeting_runtime_state.sql") {
+      count += await migrateMeetingRuntimeState(db);
       continue;
     }
     if (file === "008_sys_security.sql") {

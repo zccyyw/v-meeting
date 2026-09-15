@@ -6,6 +6,7 @@ import { loadSessionUser } from "../session-user.js";
 import { nowSql, insertIgnorePrefix, conflictSuffix } from "../sql-utils.js";
 import { isUniqueViolation } from "../db.js";
 import { generateMeetingCode } from "../meeting-code.js";
+import { notifyUser } from "../notify.js";
 
 // ── 群组管理路由 ──
 
@@ -396,6 +397,11 @@ export async function meetingGroupRoutes(app: FastifyInstance, db: Db, redis: Re
          VALUES (?, ?, ?, 'pending', ${nowSql(db)}) ${inviteSuffix}`,
         [meetingId, m.userId, m.displayName],
       );
+    }
+
+    // 实时推送：通知全体被邀请成员刷新“待加入会议”
+    for (const m of members) {
+      notifyUser(m.userId, { type: "invitations_changed", meetingId });
     }
 
     return {

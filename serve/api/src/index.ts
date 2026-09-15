@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { createPool } from "./db.js";
 import { createRedis } from "./redis.js";
+import { initNotify, closeNotify } from "./notify.js";
 import { migrate } from "./migrate.js";
 import { authRoutes } from "./routes/auth.js";
 import { meetingRoutes } from "./routes/meetings.js";
@@ -27,6 +28,9 @@ import { ZodError } from "zod";
 const app = Fastify({ logger: true });
 const db = await createPool();
 const redis = createRedis();
+
+// 初始化站内通知：Redis 可用则启用跨实例 pub/sub，否则进程内模式
+initNotify(redis);
 
 // 启动时自动执行数据库迁移（幂等，可重复执行）
 try {
@@ -147,6 +151,11 @@ async function shutdown(signal: string): Promise<void> {
     await db.end();
   } catch (err) {
     app.log.error({ err }, "failed to close database pool");
+  }
+  try {
+    await closeNotify();
+  } catch {
+    /* 关闭失败不影响退出 */
   }
   try {
     // ioredis 与内存 Redis 均提供 disconnect()

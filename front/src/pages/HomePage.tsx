@@ -25,7 +25,12 @@ import {
   PlayCircleOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import { MeetingApi, MeetingAppApi, type MeetingAppItem } from "@/api/client";
+import {
+  MeetingApi,
+  MeetingAppApi,
+  type MeetingAppItem,
+  type MyInvitationItem,
+} from "@/api/client";
 import {
   getJoinHistory,
   rememberJoin,
@@ -38,6 +43,7 @@ import {
   takePendingJoinCode,
 } from "@/auth/joinPrefs";
 import { getDisplayName } from "@/auth/session";
+import { useInvitationsStream } from "@/hooks/useInvitationsStream";
 import { ActionTile } from "@/components/ActionTile";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 import { showMessage } from "@/ui/toast";
@@ -56,7 +62,8 @@ type ScheduleItem = {
 
 type ScheduleEntry =
   | ({ kind: "meeting" } & ScheduleItem)
-  | ({ kind: "application" } & MeetingAppItem);
+  | ({ kind: "application" } & MeetingAppItem)
+  | ({ kind: "invitation" } & MyInvitationItem);
 
 type ModalKind = "join" | "schedule" | null;
 
@@ -108,10 +115,16 @@ export function HomePage() {
   const loadSchedule = useCallback(async () => {
     setScheduleLoading(true);
     try {
-      const [meetingsRes, appsRes] = await Promise.all([
+      const [meetingsRes, appsRes, invRes] = await Promise.all([
         MeetingApi.listMine(),
         MeetingAppApi.list({ page: 1, pageSize: 50 }),
+        MeetingApi.myInvitations().catch(() => ({ items: [] })),
       ]);
+      // 待我加入：群组/被点名邀请、尚未入会的会议，置于最前（最可操作）
+      const inviteEntries: ScheduleEntry[] = invRes.items.map((i) => ({
+        kind: "invitation",
+        ...i,
+      }));
       // 会议条目：后端已按优先级排序（live > 高 > 中 > 低 > 预约时间升序）
       const meetingEntries: ScheduleEntry[] = meetingsRes.items.map((m) => ({
         kind: "meeting",
@@ -121,7 +134,7 @@ export function HomePage() {
       const appEntries: ScheduleEntry[] = appsRes.items
         .filter((a) => a.meetingId == null)
         .map((a) => ({ kind: "application", ...a }));
-      setScheduleItems([...meetingEntries, ...appEntries]);
+      setScheduleItems([...inviteEntries, ...meetingEntries, ...appEntries]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -131,6 +144,18 @@ export function HomePage() {
 
   useEffect(() => {
     void loadSchedule();
+  }, [loadSchedule]);
+
+  // 在线被邀请人需即时看到右栏“待加入”会议：SSE 实时推送 + 轮询/聚焦兜底
+  useInvitationsStream(loadSchedule);
+  useEffect(() => {
+    const timer = window.setInterval(() => void loadSchedule(), 60_000);
+    const onFocus = () => void loadSchedule();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [loadSchedule]);
 
   function closeModal() {
@@ -342,6 +367,20 @@ export function HomePage() {
     }
   }
 
+  async function onJoinInvitation(item: MyInvitationItem) {
+    setEnteringId(item.meetingId);
+    try {
+      const prefs = getJoinPrefs();
+      await completeJoin(
+        { id: item.meetingId, code: item.code, title: item.title },
+        { mic: prefs.mic, cam: prefs.cam },
+      );
+    } catch (err) {
+      message.error(apiErrorMessage(t, err));
+      setEnteringId(null);
+    }
+  }
+
   function formatScheduleTime(iso: string | null): string {
     if (!iso) return t("home.scheduleNoTime");
     try {
@@ -408,13 +447,85 @@ export function HomePage() {
               <Flex vertical gap="small">
                 {scheduleItems.map((item) => {
                   const priorityColor =
-                    item.priority === "高"
-                      ? token.colorError
-                      : item.priority === "中"
-                        ? token.colorWarning
-                        : item.priority === "低"
-                          ? token.colorSuccess
-                          : token.colorBorder;
+                    item.kind === "invitation"
+                      ? token.colorBorder
+                      : item.priority === "高"
+                        ? token.colorError
+                        : item.priority === "中"
+                          ? token.colorWarning
+                          : item.priority === "低"
+                            ? token.colorSuccess
+                            : token.colorBorder;
+                  if (item.kind === "invitation") {
+                    return (
+                      <div
+                        key={`inv-${item.invitationId}`}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "12px 0 12px 10px",
+                          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                          borderLeft: `3px solid ${
+                            item.meetingStatus === "live"
+                              ? token.colorError
+                              : token.colorPrimary
+                          }`,
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <Typography.Text strong>{item.title}</Typography.Text>
+                            <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+                              {t("home.pendingJoin")}
+                            </Tag>
+                            {item.meetingStatus === "live" && (
+                              <Tag color="red" style={{ marginInlineEnd: 0 }}>
+                                {t("notify.live")}
+                              </Tag>
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: token.colorTextSecondary,
+                            }}
+                          >
+                            {item.hostName
+                              ? `${t("notify.host")}: ${item.hostName} · `
+                              : ""}
+                            {formatMeetingCode(item.code)}
+                          </div>
+                          {item.scheduledAt && (
+                            <div
+                              style={{
+                                fontSize: 13,
+                                color: token.colorTextSecondary,
+                              }}
+                            >
+                              {formatScheduleTime(item.scheduledAt)}
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          type="primary"
+                          size="small"
+                          loading={enteringId === item.meetingId || busy}
+                          onClick={() => void onJoinInvitation(item)}
+                        >
+                          {enteringId === item.meetingId
+                            ? t("home.joining")
+                            : t("notify.join")}
+                        </Button>
+                      </div>
+                    );
+                  }
                   if (item.kind === "application") {
                     const statusTagColor =
                       item.status === "approved"

@@ -1,0 +1,3 @@
+-- Placeholder: applied via migrate.ts PRAGMA table_info.
+-- Adds meetings.allow_share INTEGER NOT NULL DEFAULT 1
+-- Adds meetings.last_active_at TEXT

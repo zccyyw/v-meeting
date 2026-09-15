@@ -1,0 +1,3 @@
+-- Placeholder: applied via migrate.ts INFORMATION_SCHEMA.
+-- Adds meetings.allow_share TINYINT(1) NOT NULL DEFAULT 1
+-- Adds meetings.last_active_at TIMESTAMP NULL

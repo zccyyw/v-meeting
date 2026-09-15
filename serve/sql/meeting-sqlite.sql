@@ -70,7 +70,7 @@ CREATE TABLE meetings (
   join_password_hash TEXT,
   scheduled_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  ended_at TEXT, record_allowed INTEGER NOT NULL DEFAULT 0,
+  ended_at TEXT, record_allowed INTEGER NOT NULL DEFAULT 0, allow_share INTEGER NOT NULL DEFAULT 1, last_active_at TEXT,
   UNIQUE (code)
 );
 
