@@ -167,8 +167,20 @@ services:
         VITE_WS_URL: ${VITE_WS_URL:-auto}
         VITE_APP_NAME: ${VITE_APP_NAME:-Meeting}
         VITE_APP_LOGO: ${VITE_APP_LOGO:-/favicon.svg}
+        # PWA 默认关闭（1 开启）；离线包内镜像已构建完成，改这里需自行重新构建镜像
+        VITE_PWA_ENABLED: ${VITE_PWA_ENABLED:-0}
     image: ${MEETING_WEB_IMAGE:-meeting-web:latest}
     restart: unless-stopped
+    environment:
+      # 运行时配置注入：这些键在「安装前」改 .env 即生效（web 容器启动时写入 /app-config.js，
+      # 随 up -d 重建 web 容器加载），无需重建镜像；未设置时用镜像内构建期默认
+      VITE_APP_NAME: ${VITE_APP_NAME:-}
+      MEETING_CRYPTO_KEY: ${MEETING_CRYPTO_KEY:-}
+      VITE_API_BASE: ${VITE_API_BASE:-}
+      VITE_WS_URL: ${VITE_WS_URL:-}
+    volumes:
+      # logo 定制：把客户的 favicon.svg / favicon.ico 放进 ./branding/ 后 `up -d` 重建 web 生效
+      - ./branding:/branding:ro
     # CentOS 7 (kernel 3.10) overlayfs pwrite() bug causes nginx PID write to
     # fail with EPERM. Mount /run as tmpfs to bypass the overlay filesystem.
     tmpfs:

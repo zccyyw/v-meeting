@@ -68,6 +68,8 @@ for (const img of images) {
       `VITE_APP_NAME=${process.env.VITE_APP_NAME || "Meeting"}`,
       "--build-arg",
       `VITE_APP_LOGO=${process.env.VITE_APP_LOGO || "/favicon.svg"}`,
+      "--build-arg",
+      `VITE_PWA_ENABLED=${process.env.VITE_PWA_ENABLED ?? "0"}`,
     );
   }
   if (img.name === "meeting-realtime") {
@@ -200,14 +202,14 @@ writeFileSync(
     "部署步骤：",
     "  1. bash load-images.sh              # 加载全部镜像",
     "  2. [ -f .env ] || cp env.example .env   # 仅首次生成；已存在则保留你的配置",
-    "     vi .env                           # 改 MEDIASOUP_ANNOUNCED_IP 等",
+    "     vi .env                           # 改 MEDIASOUP_ANNOUNCED_IP 与 MYSQL_* 口令等",
     "  3. bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>  # 生成证书（443 HTTPS 必需）",
-    "  4. docker-compose up -d   # 离线：docker-compose.yml 已去 build 段，绝不误 build",
+    "  4. docker-compose -p meeting up -d   # 离线：docker-compose.yml 已去 build 段，绝不误 build",
     "",
-    "切 PostgreSQL/MySQL：在 .env 设 COMPOSE_PROFILES=postgres 或 mysql（DB_DRIVER 自动跟随）",
-    "默认 SQLite 无需独立数据库容器，数据存于 meeting-data volume",
+    "默认数据库 MySQL：会启动 mysql:8.4 容器（口令取 .env 的 MYSQL_*，务必修改）",
+    "改用零依赖单机：.env 设 COMPOSE_PROFILES=sqlite（数据存于 meeting-data volume）；亦可设 postgres",
     "",
-    "停止：docker-compose down",
+    "停止：docker-compose -p meeting down",
     "升级：备份 meeting-data 卷后，重新 load-images.sh 并 up -d（API 启动自动迁移）",
     "",
     `Docs: docs/install/本地部署说明-docker.md`,

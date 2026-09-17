@@ -8,3 +8,5 @@ certs
 coverage
 .env
 docs
+# 内部 CA 证书不应作为静态资源发布（front/public 下若存在会被 Vite 复制进产物）
+**/ca.crt

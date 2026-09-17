@@ -90,6 +90,11 @@ jobs:
       - name: Lint systemd units (systemd 219 compatible)
         run: bash deploy/native/lint-systemd-units.sh
 
+      # 早失败门禁：三份环境模板必须与 config/env.schema.mjs 完全一致，
+      # 防止「模板漂移」——改模板请改 schema 后跑 node scripts/gen-env-templates.mjs
+      - name: Check env templates match schema
+        run: node scripts/gen-env-templates.mjs --check
+
       - id: set-matrix
         run: |
           # 仓库为 public：arm64 使用 GitHub 官方免费原生 ARM runner

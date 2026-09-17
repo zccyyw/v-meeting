@@ -72,6 +72,9 @@ console.log(`→ pack-native for linux-${arch}`);
 
 rmSync(bundleDir, { recursive: true, force: true });
 
+/** 是否把 Node 运行时打进包内（与 rpm/deb 一致：目标机无需预装 Node） */
+let nodeBundled = false;
+
 if (payloadTar) {
   console.log(`→ reuse baseline payload: ${payloadTar} (baseline=${baseline || "n/a"})`);
   const tmp = join(outRoot, ".payload-extract");
@@ -81,6 +84,18 @@ if (payloadTar) {
   mkdirSync(bundleDir, { recursive: true });
   // payload 布局 opt/meeting/app/{node_modules,serve,front} → bundle/app/*
   copy(join(tmp, "opt", "meeting", "app"), join(bundleDir, "app"));
+  // payload 里还有构建时嵌入的基线 Node（opt/meeting/runtime/bin/node，rpm/deb 正是用它）。
+  // 一并带走，native 包才与 rpm/deb 行为一致、目标机无需自备 Node。
+  const payloadRuntime = join(tmp, "opt", "meeting", "runtime");
+  if (existsSync(join(payloadRuntime, "bin", "node"))) {
+    copy(payloadRuntime, join(bundleDir, "runtime"));
+    nodeBundled = true;
+    console.log("→ bundled Node runtime from payload: runtime/bin/node");
+  } else {
+    console.warn(
+      "[pack-native] WARNING: payload 内未找到 opt/meeting/runtime/bin/node —— 该包将要求目标机自备 Node 20+",
+    );
+  }
   rmSync(tmp, { recursive: true, force: true });
 } else {
   console.log("→ build packages");
@@ -112,6 +127,24 @@ if (payloadTar) {
   }
   copy(join(root, "serve"), join(bundleDir, "app", "serve"));
   copy(join(root, "front", "dist"), join(bundleDir, "app", "front"));
+
+  // 本地构建同样内嵌当前 Node 运行时（与 CI payload 路径一致）。
+  // 注意只在 Linux 宿主上做：非 Linux（如 Windows 开发机的 PACK_NATIVE_FORCE=1）
+  // 内嵌的会是 Windows 可执行文件，反而误导。
+  if (platform === "linux") {
+    const hostNode = process.execPath;
+    if (existsSync(hostNode)) {
+      mkdirSync(join(bundleDir, "runtime", "bin"), { recursive: true });
+      cpSync(hostNode, join(bundleDir, "runtime", "bin", "node"));
+      chmodSync(join(bundleDir, "runtime", "bin", "node"), 0o755);
+      nodeBundled = true;
+      console.log(`→ bundled host Node runtime: ${hostNode} (${process.version})`);
+    }
+  } else {
+    console.warn(
+      `[pack-native] NOTE: 宿主为 ${platform}，未内嵌 Node 运行时；该包需目标机自备 Node 20+`,
+    );
+  }
 }
 
 copy(join(root, "deploy", "native", "bin"), join(bundleDir, "bin"));
@@ -132,6 +165,7 @@ writeFileSync(
     `date=${new Date().toISOString()}`,
     `glibc_baseline=${baseline || "host"}`,
     `native_source=${payloadTar ? "baseline-payload" : "local-build"}`,
+    `node_bundled=${nodeBundled ? "yes" : "no"}`,
     `vite_api_base=${process.env.VITE_API_BASE || "/api"}`,
     `vite_ws_url=${process.env.VITE_WS_URL || "auto"}`,
   ].join("\n") + "\n",
@@ -158,6 +192,7 @@ writeFileSync(
     `Offline native bundle: ${bundleName}.tar.gz`,
     `Arch: ${arch}  (install on matching Linux CPU)`,
     `glibc baseline: ${baseline || "host build"}`,
+    `bundled Node runtime: ${nodeBundled ? "yes (runtime/bin/node)" : "NO - target needs Node.js 20+ in PATH"}`,
     "",
     "On target:",
     `  tar -xzf ${bundleName}.tar.gz`,

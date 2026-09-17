@@ -1,7 +1,7 @@
 # Meeting 离线发布包 — 安装说明
 
 适用于 **Linux x86_64 / aarch64**（含银河麒麟、统信 UOS 等）。  
-包内含：前端静态资源、API、信令/SFU（含本机构建的 mediasoup）、systemd 单元、`install.sh`、内置 HTTP 网关。
+包内含：前端静态资源、API、信令/SFU（含本机构建的 mediasoup）、**Node 运行时**（`runtime/bin/node`，与 rpm/deb 一致，目标机无需预装 Node）、systemd 单元、`install.sh`、内置 HTTP 网关。
 
 > **重要**：离线包必须在与目标机 **相同 CPU 架构的 Linux** 上执行 `npm run pack:native` 生成（mediasoup 原生模块不可跨架构）。
 
@@ -13,7 +13,7 @@
 |------|------|
 | OS | Linux（systemd 推荐） |
 | CPU | x86_64 或 aarch64，与安装包 `ARCH.txt` 一致 |
-| Node.js | **20+**（`node -v`），需已装在 PATH |
+| Node.js | **无需预装**：包内自带 Node 22 运行时（`runtime/bin/node` → 安装后为 `/opt/meeting/runtime/bin/node`）。仅当包内缺少 `runtime/` 时才需要系统 Node 20+（x64 + glibc 2.17 环境需 unofficial glibc-217 版本） |
 | 数据库 | MySQL 8 或 PostgreSQL 12+（本机或可达地址） |
 | Redis | 7.x（本机或可达地址） |
 | 防火墙 | 放行 `443/TCP`（HTTPS 入口，`GATEWAY_PORT` 默认 443）、UDP `40000-41000`（WebRTC） |
@@ -80,7 +80,7 @@ sudo ./install.sh
 
 `install.sh` 会：
 
-1. 检查架构 / Node 版本  
+1. 检查架构，并优先使用包内自带的 Node 运行时（缺省才回退系统 Node 20+）  
 2. 创建系统用户 `meeting`（可用环境变量改）  
 3. 部署到 `/opt/meeting`（可用 `MEETING_PREFIX` 改）  
 4. 首次生成 `/opt/meeting/conf/.env`  
@@ -284,6 +284,7 @@ sudo rm -rf /opt/meeting
     front/           # 静态资源
     serve/api|realtime|shared|db
     node_modules/
+  runtime/bin/node   # 包内自带的 Node 运行时（与 rpm/deb 同路径）
   bin/gateway.mjs
   bin/start-all.sh
   logs/
@@ -296,9 +297,10 @@ sudo rm -rf /opt/meeting
 | 现象 | 处理 |
 |------|------|
 | 架构不符 | 看包内 `ARCH.txt`，换对应 tar |
+| `install.sh` 报"未找到 node" | 该包内不含 `runtime/`（旧包，或在非 Linux 宿主用 `PACK_NATIVE_FORCE=1` 打的包）。改用内嵌 Node 的 rpm/deb 包，或先在目标机安装 Node 20+ 再重跑 |
 | mediasoup / realtime 起不来 | 确认包在目标同架构 Linux 上构建；装 `python3 make g++` 后于构建机重打 |
 | 能开页面不能音视频 | 查 `MEDIASOUP_ANNOUNCED_IP`、UDP 40000-41000 |
 | DB 连接失败 | 查 `.env` 与本机库监听、防火墙 |
 | 仅 API 502 | `systemctl status meeting-api`，看 `/opt/meeting/logs/api.err.log` |
-| 443 无法绑定 / 网关起不来 | 旧版 systemd 需权限：确认已 `setcap 'cap_net_bind_service=+ep' <node>`（install.sh 已自动尝试）或改用 Nginx 前置 |
+| 443 无法绑定 / 网关起不来 | 旧版 systemd 需权限：确认已 `setcap 'cap_net_bind_service=+ep' /opt/meeting/runtime/bin/node`（install.sh 已自动尝试；若用的是系统 Node 则换成系统 node 路径）或改用 Nginx 前置 |
 | 浏览器证书错误 | 用 `genssl.sh` 生成并把 `ca.crt` 导入客户端系统/浏览器信任库 |

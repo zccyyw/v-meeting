@@ -18,6 +18,7 @@
  *   <output-dir>/ca.crt           — 根 CA 证书（导入浏览器信任库）
  *   <output-dir>/ca.key           — 根 CA 私钥（保管）
  */
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +41,48 @@ if (!host) {
 
 const outDir = args[1] ? path.resolve(args[1]) : path.resolve(__dirname, "../certs");
 fs.mkdirSync(outDir, { recursive: true });
+
+// ─── 证书归属/权限（重要）───────────────────────────────────────────────
+// meeting-gateway 以**非特权用户**运行（systemd User=meeting），而本脚本通常用
+// sudo 执行：若不调整归属，privkey.pem 会是 root:root 0600 → 网关启动即报
+//   Error: EACCES: permission denied, open '/opt/meeting/certs/privkey.pem'
+// 因此这里在 root 下自动把运行时需要的证书切给应用用户（默认 meeting）。
+const APP_USER = process.env.MEETING_USER || "meeting";
+const APP_GROUP = process.env.MEETING_GROUP || APP_USER;
+
+function validName(n) {
+  return /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(n);
+}
+
+/** 显式设定权限，并把运行时证书的归属切到应用用户 */
+function fixCertOwnership(files) {
+  for (const f of files) {
+    try {
+      fs.chmodSync(f.path, f.mode);
+    } catch {
+      /* ignore */
+    }
+  }
+  const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+  if (!isRoot) {
+    console.log("");
+    console.log("提示: 当前不是 root，未调整证书归属。若 meeting-gateway 报 EACCES，请执行：");
+    console.log(`  sudo chown ${APP_USER}:${APP_GROUP} ${files.map((f) => f.path).join(" ")}`);
+    return;
+  }
+  if (!validName(APP_USER) || !validName(APP_GROUP)) {
+    console.log(`提示: MEETING_USER/MEETING_GROUP 取值异常（${APP_USER}:${APP_GROUP}），未调整证书归属`);
+    return;
+  }
+  for (const f of files) {
+    try {
+      execFileSync("chown", [`${APP_USER}:${APP_GROUP}`, f.path], { stdio: "ignore" });
+    } catch {
+      console.log(`提示: chown 失败：${f.path}（可手动执行 sudo chown ${APP_USER}:${APP_GROUP} ${f.path}）`);
+    }
+  }
+  console.log(`已设置证书归属：${APP_USER}:${APP_GROUP}（privkey.pem 0600），网关可直接读取`);
+}
 
 const isIP = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
 
@@ -153,6 +196,14 @@ if (useCa) {
   fs.writeFileSync(fullchainPath, fullchain, { mode: 0o644 });
   fs.writeFileSync(privkeyPath, forge.pki.privateKeyToPem(serverKeys.privateKey), { mode: 0o600 });
 
+  // 归属/权限：让以 meeting 用户运行的 gateway 能读到私钥
+  fixCertOwnership([
+    { path: fullchainPath, mode: 0o644 },
+    { path: privkeyPath, mode: 0o600 },
+    { path: caCertPath, mode: 0o644 },
+  ]);
+  console.log("提示: ca.key 是根 CA 私钥，建议移出本目录并仅 root 可读（0600）保管");
+
   console.log("");
   console.log("=== 完成 ===");
   console.log(`  ca.crt         → ${path.join(outDir, "ca.crt")} (导入浏览器信任库)`);
@@ -211,6 +262,12 @@ const keyPath = path.join(outDir, "privkey.pem");
 
 fs.writeFileSync(certPath, certPem, { mode: 0o644 });
 fs.writeFileSync(keyPath, keyPem, { mode: 0o600 });
+
+// 归属/权限：让以 meeting 用户运行的 gateway 能读到私钥
+fixCertOwnership([
+  { path: certPath, mode: 0o644 },
+  { path: keyPath, mode: 0o600 },
+]);
 
 console.log(`OK: ${certPath}`);
 console.log(`OK: ${keyPath}`);

@@ -2,14 +2,20 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="%VITE_APP_LOGO%" />
+    <!-- 图标统一约定：logo = 前端静态目录下的 /favicon.svg（兼容 /favicon.ico，部署期替换即可，
+         见部署文档「品牌定制」）。构建期由 front/vite.config.ts 的品牌插件按 config/branding.json 注入 href -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0b1220" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="%VITE_APP_NAME%" />
-    <title>%VITE_APP_NAME%</title>
+    <meta name="apple-mobile-web-app-title" content="Meeting" />
+    <title>Meeting</title>
+    <!-- 运行时配置注入点 /app-config.js：docker 由 web 容器启动时按 .env 生成；
+         主机部署由网关动态输出（读 conf/.env）。必须在 <head> 同步加载（首帧前生效） -->
+    <script src="/app-config.js"></script>
   </head>
   <body>
     <div id="root"></div>

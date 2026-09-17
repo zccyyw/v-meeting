@@ -1,13 +1,16 @@
 import type { ClientMessage, ServerMessage } from "@meeting/shared";
+import { getAppConfig } from "@/appConfig";
 
 function resolveWsUrl(): string {
-  const env = (import.meta.env.VITE_WS_URL as string | undefined)?.trim();
-  if (env && env !== "auto") {
-    if (env.startsWith("/") && typeof window !== "undefined") {
+  // 运行时配置优先（部署端经 /app-config.js 注入），构建期值兜底
+  const raw =
+    getAppConfig().wsUrl?.trim() || (import.meta.env.VITE_WS_URL as string | undefined)?.trim() || "";
+  if (raw && raw !== "auto") {
+    if (raw.startsWith("/") && typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      return `${proto}//${window.location.host}${env}`;
+      return `${proto}//${window.location.host}${raw}`;
     }
-    if (env.startsWith("ws://") || env.startsWith("wss://")) return env;
+    if (raw.startsWith("ws://") || raw.startsWith("wss://")) return raw;
   }
   if (typeof window !== "undefined") {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";

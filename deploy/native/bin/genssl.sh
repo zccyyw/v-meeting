@@ -138,6 +138,21 @@ cp server.key privkey.pem
 chmod 600 privkey.pem
 chmod 644 ca.crt server.crt fullchain.pem
 
+# 归属：meeting-gateway 以非特权用户运行（systemd User=meeting），而本脚本需 root 执行；
+# 不调整归属时 privkey.pem 是 root:root 0600 → 网关启动会报
+#   Error: EACCES: permission denied, open '/opt/meeting/certs/privkey.pem'
+APP_USER="${MEETING_USER:-meeting}"
+APP_GROUP="${MEETING_GROUP:-$APP_USER}"
+if [ "$(id -u)" -eq 0 ] && id -u "$APP_USER" >/dev/null 2>&1; then
+  chown "$APP_USER:$APP_GROUP" ca.crt fullchain.pem privkey.pem server.crt 2>/dev/null || true
+  chmod 644 ca.crt fullchain.pem server.crt 2>/dev/null || true
+  chmod 600 privkey.pem 2>/dev/null || true
+  echo "已设置证书归属：$APP_USER:$APP_GROUP（privkey.pem 0600）"
+else
+  echo "提示: 未调整证书归属（非 root 或用户 $APP_USER 不存在）。若 gateway 报 EACCES："
+  echo "  sudo chown $APP_USER:$APP_GROUP $(pwd)/privkey.pem && sudo chmod 600 $(pwd)/privkey.pem"
+fi
+
 # ---------- 输出 ----------
 echo ""
 echo "===== 证书生成完成 ====="

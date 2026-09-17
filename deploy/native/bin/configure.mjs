@@ -66,14 +66,19 @@ function ensureDirs() {
 
 function loadEnvTemplate() {
   if (!fs.existsSync(ENV_EXAMPLE)) {
-    // Fallback: generate a minimal template
+    // Fallback: generate a minimal template（与发布包默认一致：MySQL）
     return `# Meet configuration
-DB_DRIVER=sqlite
-SQLITE_PATH=${DATA_DIR}/meeting.sqlite
+DB_DRIVER=mysql
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=meeting
+MYSQL_PASSWORD=meetingpass
+MYSQL_DATABASE=meeting
 REDIS_HOST=memory
 API_PORT=8080
 WS_PORT=8082
 GATEWAY_PORT=443
+VITE_APP_NAME=Meeting
 MEDIASOUP_ANNOUNCED_IP=127.0.0.1
 MEDIASOUP_LISTEN_IP=0.0.0.0
 RTC_MIN_PORT=40000
@@ -173,7 +178,7 @@ async function generateConfig() {
 
   console.log("");
   console.log("--- Database Configuration ---");
-  const dbDriver = await ask("Database driver (sqlite/mysql/postgres)", "sqlite");
+  const dbDriver = await ask("Database driver (mysql/sqlite/postgres)", "mysql");
 
   let config = {};
 

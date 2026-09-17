@@ -1,13 +1,16 @@
 import { getSessionId } from "@/auth/session";
+import { getAppConfig } from "@/appConfig";
 import { encryptPassword } from "@meeting/shared";
 
 function resolveApiBase(): string {
-  const env = (import.meta.env.VITE_API_BASE as string | undefined)?.trim();
-  if (env && env !== "auto") {
-    if (env.startsWith("/") && typeof window !== "undefined") {
-      return `${window.location.origin}${env.replace(/\/$/, "")}`;
+  // 运行时配置优先（部署端经 /app-config.js 注入，「安装前改 .env、启动后生效」），构建期值兜底
+  const raw =
+    getAppConfig().apiBase?.trim() || (import.meta.env.VITE_API_BASE as string | undefined)?.trim() || "";
+  if (raw && raw !== "auto") {
+    if (raw.startsWith("/") && typeof window !== "undefined") {
+      return `${window.location.origin}${raw.replace(/\/$/, "")}`;
     }
-    return env.replace(/\/$/, "");
+    return raw.replace(/\/$/, "");
   }
   if (typeof window !== "undefined") {
     return `${window.location.origin}/api`;
