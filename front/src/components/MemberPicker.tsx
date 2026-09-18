@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   SearchOutlined,
@@ -32,6 +32,8 @@ type Props = {
   excludeUserIds?: number[];
   /** Max selectable users, 0 = unlimited. */
   maxUsers?: number;
+  /** 不可移除/取消勾选的用户（如群主本人）。 */
+  lockedUserIds?: number[];
 };
 
 export function MemberPicker({
@@ -39,18 +41,18 @@ export function MemberPicker({
   onChange,
   excludeUserIds = [],
   maxUsers = 0,
+  lockedUserIds = [],
 }: Props) {
   const { t } = useTranslation();
   const [userSearch, setUserSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [userPage, setUserPage] = useState(1);
-  const [userTotal, setUserTotal] = useState(0);
   const [users, setUsers] = useState<SimpleUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
 
   // Selected state (local, synced with value prop)
   const [selectedUsers, setSelectedUsers] = useState<Map<number, SelectedUser>>(new Map());
+  // 用户信息缓存：跨搜索/翻页累积已见过的用户，
+  // 保证已选列表始终能映射出昵称（而非用户 ID 兜底）
+  const [userCache, setUserCache] = useState<Map<number, SimpleUser>>(new Map());
 
   // Sync from value prop
   useEffect(() => {
@@ -60,7 +62,7 @@ export function MemberPicker({
     }
     const userMap = new Map<number, SelectedUser>();
     for (const uid of value.userIds) {
-      const found = users.find((u) => u.userId === uid);
+      const found = userCache.get(uid);
       if (found) {
         userMap.set(uid, {
           userId: uid,
@@ -73,33 +75,23 @@ export function MemberPicker({
     }
     setSelectedUsers(userMap);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync from external value
-  }, [value?.userIds.join(",")]);
+  }, [value?.userIds.join(","), userCache]);
 
-  // Debounce search input
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setDebouncedSearch(userSearch);
-      setUserPage(1);
-    }, 300);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [userSearch]);
-
-  // Load all users (no dept filter), support search
+  // 一次性拉取全部用户（不分页），搜索改为前端本地过滤
   useEffect(() => {
     setUsersLoading(true);
-    void SysUserApi.simpleList({
-      userName: debouncedSearch || undefined,
-      page: userPage,
-      pageSize: 50,
-    }).then((res) => {
+    void SysUserApi.simpleList({ pageSize: 5000 }).then((res) => {
       setUsers(res.items);
-      setUserTotal(res.total);
+      // 累积进缓存，保证已选用户昵称稳定
+      setUserCache((prev) => {
+        const next = new Map(prev);
+        for (const u of res.items) next.set(u.userId, u);
+        return next;
+      });
     }).catch(() => {
       setUsers([]);
-      setUserTotal(0);
     }).finally(() => setUsersLoading(false));
-  }, [debouncedSearch, userPage]);
+  }, []);
 
   const isUserSelected = useCallback(
     (uid: number) => selectedUsers.has(uid),
@@ -108,6 +100,7 @@ export function MemberPicker({
 
   const toggleUser = useCallback(
     (user: SimpleUser) => {
+      if (lockedUserIds.includes(user.userId)) return;
       const next = new Map(selectedUsers);
       if (next.has(user.userId)) {
         next.delete(user.userId);
@@ -126,11 +119,12 @@ export function MemberPicker({
         deptIds: value?.deptIds ?? [],
       });
     },
-    [selectedUsers, maxUsers, onChange, value?.deptIds],
+    [selectedUsers, maxUsers, onChange, value?.deptIds, lockedUserIds],
   );
 
   const removeUser = useCallback(
     (uid: number) => {
+      if (lockedUserIds.includes(uid)) return;
       const next = new Map(selectedUsers);
       next.delete(uid);
       setSelectedUsers(next);
@@ -139,10 +133,19 @@ export function MemberPicker({
         deptIds: value?.deptIds ?? [],
       });
     },
-    [selectedUsers, onChange, value?.deptIds],
+    [selectedUsers, onChange, value?.deptIds, lockedUserIds],
   );
 
-  const totalPages = Math.ceil(userTotal / 50);
+  // 搜索本地过滤：userName / 昵称模糊匹配
+  const visibleUsers = useMemo(() => {
+    const kw = userSearch.trim().toLowerCase();
+    if (!kw) return users;
+    return users.filter(
+      (u) =>
+        u.userName.toLowerCase().includes(kw) ||
+        u.nickName.toLowerCase().includes(kw),
+    );
+  }, [users, userSearch]);
 
   return (
     <div className="member-picker member-picker-simple">
@@ -162,18 +165,19 @@ export function MemberPicker({
 
         <div className="member-picker-user-list">
           {usersLoading && <p className="muted">{t("common.loading")}</p>}
-          {!usersLoading && users.length === 0 && (
+          {!usersLoading && visibleUsers.length === 0 && (
             <p className="muted">{t("memberPicker.noUsers")}</p>
           )}
-          {users.map((user) => {
+          {visibleUsers.map((user) => {
             const excluded = excludeUserIds.includes(user.userId);
+            const locked = lockedUserIds.includes(user.userId);
             const selected = isUserSelected(user.userId);
             return (
               <button
                 key={user.userId}
                 type="button"
-                className={`member-picker-user${selected ? " is-selected" : ""}${excluded ? " is-disabled" : ""}`}
-                disabled={excluded}
+                className={`member-picker-user${selected ? " is-selected" : ""}${excluded || (locked && selected) ? " is-disabled" : ""}`}
+                disabled={excluded || (locked && selected)}
                 onClick={() => toggleUser(user)}
               >
                 {/* 自定义复选框 */}
@@ -187,25 +191,6 @@ export function MemberPicker({
             );
           })}
         </div>
-        {totalPages > 1 && (
-          <div className="member-picker-pagination">
-            <button
-              type="button"
-              disabled={userPage <= 1}
-              onClick={() => setUserPage((p) => p - 1)}
-            >
-              ‹
-            </button>
-            <span>{userPage} / {totalPages}</span>
-            <button
-              type="button"
-              disabled={userPage >= totalPages}
-              onClick={() => setUserPage((p) => p + 1)}
-            >
-              ›
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Right: selected members */}
@@ -226,6 +211,7 @@ export function MemberPicker({
                 type="button"
                 className="member-picker-remove"
                 onClick={() => removeUser(u.userId)}
+                disabled={lockedUserIds.includes(u.userId)}
                 aria-label={t("common.remove")}
               >
                 <CloseOutlined style={{ fontSize: 14 }} />

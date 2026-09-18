@@ -5,6 +5,7 @@ import { Button, Card, Input, Modal as AntModal, Popconfirm, Space, Table, Tag, 
 import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined, HomeOutlined, TeamOutlined, StarOutlined, StarFilled } from "@ant-design/icons";
 import { MeetingGroupApi, type MeetingGroupItem } from "@/api/client";
 import { MemberPicker, type MemberPickerValue } from "@/components/MemberPicker";
+import { getUserId } from "@/auth/session";
 import { showMessage } from "@/ui/toast";
 
 export function GroupManagePage() {
@@ -17,6 +18,8 @@ export function GroupManagePage() {
   const [groupName, setGroupName] = useState("");
   const [memberValue, setMemberValue] = useState<MemberPickerValue>({ userIds: [], deptIds: [] });
   const [busy, setBusy] = useState(false);
+  // 群主（自己）：创建时默认选中且不可移除
+  const selfId = getUserId();
   const [quickStartGroup, setQuickStartGroup] = useState<MeetingGroupItem | null>(null);
   const [quickTitle, setQuickTitle] = useState("");
   const [quickWaiting, setQuickWaiting] = useState(false);
@@ -39,7 +42,8 @@ export function GroupManagePage() {
 
   function openCreate() {
     setGroupName("");
-    setMemberValue({ userIds: [], deptIds: [] });
+    // 默认选中自己（群主），且不可移除
+    setMemberValue({ userIds: selfId != null ? [selfId] : [], deptIds: [] });
     setEditGroup(null);
     setCreateOpen(true);
   }
@@ -51,8 +55,11 @@ export function GroupManagePage() {
     setCreateOpen(true);
     // Load group detail to prefill members
     void MeetingGroupApi.get(group.groupId).then((detail) => {
+      // 群主（自己）始终保留在成员中，老群缺失时自动补上
+      const userIds = new Set(detail.members.map((m) => m.userId));
+      if (selfId != null) userIds.add(selfId);
       setMemberValue({
-        userIds: detail.members.map((m) => m.userId),
+        userIds: [...userIds],
         // 保留已有的部门成员 ID，编辑提交时会原样传递
         deptIds: detail.deptMembers.map((d) => d.deptId),
       });
@@ -65,6 +72,11 @@ export function GroupManagePage() {
       showMessage(t("group.groupName") + " ?");
       return;
     }
+    // 提交前兜底：群主（自己）必须包含在成员里
+    const userIds =
+      selfId != null && !memberValue.userIds.includes(selfId)
+        ? [...memberValue.userIds, selfId]
+        : memberValue.userIds;
     setBusy(true);
     try {
       if (editGroup) {
@@ -72,8 +84,8 @@ export function GroupManagePage() {
         const existing = await MeetingGroupApi.get(editGroup.groupId);
         const existingUserIds = new Set(existing.members.map((m) => m.userId));
         const existingDeptIds = new Set(existing.deptMembers.map((d) => d.deptId));
-        const newUserIds = memberValue.userIds.filter((id) => !existingUserIds.has(id));
-        const removeUserIds = [...existingUserIds].filter((id) => !memberValue.userIds.includes(id));
+        const newUserIds = userIds.filter((id) => !existingUserIds.has(id));
+        const removeUserIds = [...existingUserIds].filter((id) => !userIds.includes(id));
         const newDeptIds = memberValue.deptIds.filter((id) => !existingDeptIds.has(id));
         const removeDeptIds = [...existingDeptIds].filter((id) => !memberValue.deptIds.includes(id));
 
@@ -89,7 +101,7 @@ export function GroupManagePage() {
         // Create mode
         await MeetingGroupApi.create({
           groupName: groupName.trim(),
-          memberUserIds: memberValue.userIds.length ? memberValue.userIds : undefined,
+          memberUserIds: userIds.length ? userIds : undefined,
           memberDeptIds: memberValue.deptIds.length ? memberValue.deptIds : undefined,
         });
         showMessage(t("common.success"));
@@ -295,6 +307,7 @@ export function GroupManagePage() {
             <MemberPicker
               value={memberValue}
               onChange={setMemberValue}
+              lockedUserIds={selfId != null ? [selfId] : []}
             />
           </div>
           <div style={{ textAlign: "right" }}>

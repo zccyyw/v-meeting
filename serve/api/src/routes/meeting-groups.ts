@@ -81,8 +81,10 @@ export async function meetingGroupRoutes(app: FastifyInstance, db: Db, redis: Re
     );
     const groupId = Number((result as ResultHeader).insertId);
 
+    // 群主始终为群成员（前端默认勾选自己，此处兜底去重）
+    const memberUserIds = [...new Set([user.id, ...body.memberUserIds])];
     // 插入用户成员
-    for (const userId of body.memberUserIds) {
+    for (const userId of memberUserIds) {
       await db.query(
         `INSERT INTO meeting_group_members (group_id, user_id) VALUES (?, ?)`,
         [groupId, userId],
@@ -252,6 +254,11 @@ export async function meetingGroupRoutes(app: FastifyInstance, db: Db, redis: Re
     if (!group) return reply.code(404).send({ error: "not_found" });
     if (group.owner_id !== user.id && !user.roles.includes("admin")) {
       return reply.code(403).send({ error: "forbidden" });
+    }
+
+    // 群主不能被移出群组（管理员编辑他人群组时同样锁定群主本人）
+    if (body.removeUserIds?.includes(Number(group.owner_id))) {
+      return reply.code(400).send({ error: "cannot_remove_owner" });
     }
 
     // 修改群组名称

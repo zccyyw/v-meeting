@@ -58,6 +58,13 @@ const ListQuery = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+// simple-list 专用：群组成员选择器一次拉全量（用户量小），pageSize 上限放宽
+const SimpleListQuery = z.object({
+  userName: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(5000).default(50),
+});
+
 const CreateUserBody = z.object({
   deptId: z.number().optional().nullable(),
   userName: z.string().min(3).max(30),
@@ -164,7 +171,7 @@ export async function sysUserRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
 
-    const q = ListQuery.parse(req.query ?? {});
+    const q = SimpleListQuery.parse(req.query ?? {});
     const offset = (q.page - 1) * q.pageSize;
 
     let where = `WHERE u.del_flag = '0' AND u.status = '0'`;
