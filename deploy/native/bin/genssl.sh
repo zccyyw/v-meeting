@@ -13,9 +13,10 @@ set -euo pipefail
 # 用法：
 #   bash genssl.sh <服务器IP> [输出目录]
 #   示例：bash genssl.sh 192.168.1.100
-#   示例：bash genssl.sh 10.0.0.5 /opt/meeting/certs
+#   示例：bash genssl.sh 10.0.0.5 /opt/meeting/certs   # 已安装到 /opt/meeting 时显式指定
 #
-# 默认输出目录：/opt/meeting/certs（离线包安装后的证书目录）
+# 默认输出目录：脚本所在目录的上一级 certs/（即「项目根/certs」，与 bin 同级）。
+#   解压后原地运行即落于 <解压目录>/certs；gateway 默认也读 ../certs，前后一致，无需额外配置。
 #
 # 产物：
 #   ca.crt          — 根 CA 证书（需导入浏览器/系统信任库）
@@ -34,7 +35,10 @@ set -euo pipefail
 # ====================================================================
 
 HOST="${1:?用法: $0 <服务器IP> [输出目录]}"
-OUT_DIR="${2:-/opt/meeting/certs}"
+# 默认输出到「项目根/certs」（与 bin 同级）：解压后原地运行即此处；
+# gateway 启动时默认读 ../certs，故无需设置 CERT_DIR。可用第 2 参数覆盖。
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OUT_DIR="${2:-$SCRIPT_DIR/../certs}"
 
 mkdir -p "$OUT_DIR"
 cd "$OUT_DIR"

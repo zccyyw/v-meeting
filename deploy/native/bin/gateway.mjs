@@ -36,7 +36,7 @@ if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
     console.error(`[gateway] 读取证书失败（${err.code || "ERROR"}）：${err.path || certDir}`);
     console.error(`[gateway] 修复：sudo chown meeting:meeting ${keyFile} && sudo chmod 600 ${keyFile}`);
     console.error("[gateway] 重新生成（脚本会自动调整归属）：");
-    console.error("[gateway]   sudo /opt/meeting/runtime/bin/node /opt/meeting/bin/gen-cert.mjs --ca <服务器IP>");
+    console.error("[gateway]   重新生成（从项目根执行）：sudo ./bin/gen-cert.mjs --ca <服务器IP>");
     process.exit(1);
   }
 }

@@ -197,9 +197,11 @@ sudo nginx -t && sudo systemctl reload nginx
 **方式 A — 使用内置 genssl.sh（信创环境推荐）**
 
 ```bash
-# 生成 CA 根证书 + 服务器 IP 证书（默认输出到 /opt/meeting/certs）
-sudo /opt/meeting/bin/genssl.sh <服务器IP>
+# 生成 CA 根证书 + 服务器 IP 证书
+# 默认输出到「项目根/certs」（与 bin 同级）；解压后原地运行即 <解压目录>/certs，gateway 默认也读这里
+sudo /opt/meeting/bin/genssl.sh <服务器IP>          # 已安装到 /opt/meeting 时（第 2 参数可指定其他目录）
 # 示例：sudo /opt/meeting/bin/genssl.sh 192.168.1.100
+# 示例（解压后原地运行）：sudo ./bin/genssl.sh 192.168.1.100
 
 # 将 ca.crt 复制到各信创客户端，导入浏览器/系统根信任机构
 # 然后使用 Nginx 或 gateway 加载证书
@@ -208,6 +210,7 @@ sudo /opt/meeting/bin/genssl.sh <服务器IP>
 **方式 B — 使用已有证书**
 
 ```bash
+# 证书目录：解压后原地运行由 genssl.sh 自动建「项目根/certs」，无需手动建；已安装到 /opt/meeting 时：
 sudo mkdir -p /opt/meeting/certs
 # 放入 fullchain.pem / privkey.pem
 ```
@@ -223,7 +226,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 **配置 gateway HTTPS（默认 443）**
 
-编辑 `/opt/meeting/conf/.env`，设置 `CERT_DIR=/opt/meeting/certs`（放入 `fullchain.pem` + `privkey.pem`，网关自动检测即启用 HTTPS），然后：
+gateway 默认读取「项目根/certs」（与 bin 同级），放入 `fullchain.pem` + `privkey.pem` 即自动启用 HTTPS，一般无需改 .env。已安装到 /opt/meeting 时目录为 `/opt/meeting/certs`（systemd 已设 CERT_DIR）；如需覆盖，编辑 `/opt/meeting/conf/.env` 设 `CERT_DIR=<证书目录>`，然后：
 
 ```bash
 sudo systemctl restart meeting-gateway
