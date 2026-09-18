@@ -571,16 +571,36 @@ jobs:
         run: |
           set -eu
           tag="${GITHUB_REF_NAME}"
+          # 逐个顺序上传资产：gh 的 create/upload 默认并发上传，多资产（尤其 native 包现已内嵌
+          # Node 运行时，体积较大）时 GitHub 资产接口会偶发返回 HTTP 400；顺序上传可规避并发，
+          # 并对单个资产失败做重试。Release 已存在时 release upload --clobber 可补齐缺失资产。
+          upload_one() {
+            local f="$1"
+            for i in 1 2 3; do
+              echo "→ 上传资产（尝试 $i/3）：$(basename "$f")"
+              if gh release upload "$tag" -R "$GITHUB_REPOSITORY" --clobber "$f"; then
+                return 0
+              fi
+              sleep 3
+            done
+            echo "::error::资产上传失败：$f"
+            return 1
+          }
           if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "→ Release 已存在，补充上传资产（覆盖同名）"
-            gh release upload "$tag" -R "$GITHUB_REPOSITORY" release-files/* --clobber
+            echo "→ Release 已存在，补充上传缺失资产（覆盖同名）"
           else
-            echo "→ 创建 Release $tag 并上传资产"
+            echo "→ 创建 Release $tag（资产随后逐个上传）"
             gh release create "$tag" -R "$GITHUB_REPOSITORY" \
               --title "Meeting $tag" \
-              --generate-notes \
-              release-files/*
+              --generate-notes
           fi
+          shopt -s nullglob
+          n=0
+          for f in release-files/*; do
+            upload_one "$f" || exit 1
+            n=$((n + 1))
+          done
+          echo "→ 共上传 $n 个资产"
 
       - name: Summary
         run: |
