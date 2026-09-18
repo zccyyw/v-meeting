@@ -83,8 +83,10 @@ function brandingPlugin(fe: { appName: string; appLogo: string }): Plugin {
 /**
  * 开发用 HTTPS：存在证书文件时自动启用（局域网多人测试必需）。
  * 证书目录可由 DEV_CERT_DIR 指定，默认 <repo>/.certs。
+ * 设 DEV_HTTPS=0 可显式关闭（即使证书存在也不启用），本地 localhost 调试用。
  */
-function resolveDevHttps(certDir: string) {
+function resolveDevHttps(certDir: string, forceOff: boolean) {
+  if (forceOff) return {};
   const cert = path.resolve(repoRoot, certDir, "fullchain.pem");
   const key = path.resolve(repoRoot, certDir, "privkey.pem");
   if (!fs.existsSync(cert) || !fs.existsSync(key)) return {};
@@ -109,7 +111,7 @@ export default defineConfig(({ mode }) => {
     appLogo: env.VITE_APP_LOGO || branding.appLogo,
     pwa: env.VITE_PWA_ENABLED !== undefined ? env.VITE_PWA_ENABLED === "1" : branding.pwaEnabled,
   };
-  const devHttps = resolveDevHttps(env.DEV_CERT_DIR || ".certs");
+  const devHttps = resolveDevHttps(env.DEV_CERT_DIR || ".certs", env.DEV_HTTPS === "0");
 
   return {
     envDir: repoRoot,
