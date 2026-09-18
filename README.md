@@ -170,7 +170,7 @@ npm run dev
 | **Docker 镜像** ⭐ | 有 Docker（x64/aarch64） | `bash load-images.sh` → 配 `.env` → `docker-compose up -d` | 加载新镜像 → `docker-compose up -d` |
 | **RPM 包** | 银河麒麟 / 中科方德 / openEuler | `rpm -ivh meeting-*.rpm` → `configure.mjs` → `systemctl enable --now ...` | `rpm -Uvh` → 重启服务 |
 | **DEB 包** | 统信 UOS / 方德 DEB 系 / Debian | `dpkg -i meeting-*.deb` → 同上 | `dpkg -i` → 重启服务 |
-| **离线 tar 包** | 无 Docker 的通用 Linux | `tar -xzf` → `sudo ./install.sh` | 解压新包 → `sudo ./install.sh` |
+| **离线 zip 包** | 无 Docker 的通用 Linux | `unzip` → `sudo ./install.sh` | 解压新包 → `sudo ./install.sh` |
 
 > 升级通用原则：先备份（数据库 + `.env`）；配置与数据目录自动保留；服务启动时**自动执行数据库迁移**；升级后按文档检查清单验收。
 
@@ -193,7 +193,7 @@ docker-compose up -d --build
 |---|------|---------|------|------|
 | 1 | 源码打包 | `npm run pack` | `dist/` | 编译产物归档 |
 | 2 | Docker 离线包 ⭐ | `npm run pack:docker` | `.tar` 镜像 + compose | 有 Docker 的目标环境 |
-| 3 | Native 离线包 | `npm run pack:native` | `.tar.gz` | 无 Docker，tar 解压安装 |
+| 3 | Native 离线包 | `npm run pack:native` | `.zip` | 无 Docker，unzip 解压安装 |
 | 4 | RPM 包 | `npm run pack:rpm` | `.rpm` | 银河麒麟 / 中科方德 / openEuler |
 | 5 | DEB 包 | （由 RPM 转换，CI 自动生成） | `.deb` | 统信 UOS / 方德 DEB 系 / Debian |
 
@@ -231,7 +231,7 @@ sudo dpkg -i meeting-*.deb
 sudo systemctl enable --now meeting-api meeting-realtime meeting-gateway
 
 # ── Native 离线包 ──
-tar -xzf meeting-linux-*.tar.gz && cd meeting-linux-*/ && sudo ./install.sh
+unzip meeting-native-*.zip && cd meeting-native-*/ && sudo ./install.sh
 
 # ── Docker 离线包 ──
 bash load-images.sh && cp .env.example .env && vi .env && docker-compose up -d

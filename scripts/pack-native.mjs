@@ -37,7 +37,7 @@ const payloadTar = process.env.PACK_NATIVE_PAYLOAD || "";
 /** 基线标识（如 glibc217 / glibc228），仅用于命名与元信息 */
 const baseline = process.env.PACK_NATIVE_BASELINE || "";
 const outRoot = join(root, "dist", "native");
-const bundleName = `meeting-linux-${arch}${baseline ? "-" + baseline : ""}-${version}`;
+const bundleName = `meeting-native-${arch}${baseline ? "-" + baseline : ""}-${version}`;
 const bundleDir = join(outRoot, bundleName);
 
 function run(cmd, args, opts = {}) {
@@ -181,27 +181,25 @@ try {
   /* windows pack host */
 }
 
-const tarPath = join(outRoot, `${bundleName}.tar.gz`);
-rmSync(tarPath, { force: true });
-console.log(`→ tar ${tarPath}`);
-run("tar", ["-czf", tarPath, "-C", outRoot, bundleName]);
+// Native 离线包不再内嵌 .tar.gz：以目录形式交付，由 CI release job 整体打成 .zip
+// （顶层目录重命名为与 zip 同名，避免双重嵌套与冗余体积）。
 
 writeFileSync(
   join(outRoot, "README.txt"),
   [
-    `Offline native bundle: ${bundleName}.tar.gz`,
+    `Offline native bundle: ${bundleName}/`,
     `Arch: ${arch}  (install on matching Linux CPU)`,
     `glibc baseline: ${baseline || "host build"}`,
     `bundled Node runtime: ${nodeBundled ? "yes (runtime/bin/node)" : "NO - target needs Node.js 20+ in PATH"}`,
     "",
     "On target:",
-    `  tar -xzf ${bundleName}.tar.gz`,
-    `  cd ${bundleName}`,
+    "  unzip meeting-native-*.zip   # 解压后进入同名目录",
+    "  cd meeting-native-*/",
     "  sudo ./install.sh",
     "",
-    "See INSTALL.md inside the tarball.",
+    "See INSTALL.md inside the bundle.",
     "",
   ].join("\n"),
 );
 
-console.log(`✓ packed ${tarPath}`);
+console.log(`✓ packed ${bundleDir}`);

@@ -4,7 +4,7 @@
 # 支持全部 5 种打包方式，全部在 GitHub Actions 远程 Linux runner 上完成：
 #   1. 源码打包（pack）       → dist/ 目录的编译产物
 #   2. Docker 离线包（pack:docker）→ .tar 镜像包
-#   3. Native 离线包（pack:native）→ .tar.gz 安装包
+#   3. Native 离线包（pack:native）→ .zip 安装包（单层目录，与 zip 同名）
 #   4. RPM 包（pack:rpm）     → .rpm 安装包
 #   5. DEB 包                 → .deb 安装包
 #
@@ -20,7 +20,7 @@
 # 安装到目标服务器：
 #   sudo rpm -ivh meeting-*.rpm        # RPM 系（CentOS/麒麟/UOS）
 #   sudo dpkg -i meeting-*.deb         # DEB 系（Ubuntu/Deepin/UOS）
-#   tar -xzf meeting-linux-*.tar.gz && sudo ./install.sh  # Native 离线包
+#   unzip meeting-native-*.zip && cd meeting-native-*/ && sudo ./install.sh  # Native 离线包
 #   docker load -i meeting-app-*.tar    # Docker 离线包
 # =============================================================================
 name: Build Packages
@@ -512,7 +512,8 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   # 发布 Release（仅 tag 推送触发）：下载全部构建产物并上传到 GitHub Release
   #  - rpm/deb：单文件安装包，直接作为资产（rpm -ivh / dpkg -i 可直接用）
-  #  - 源码/Docker/Native：多文件交付包，整体 zip 保持目录结构完整
+  #  - 源码/Docker：多文件交付包，整体 zip 保持目录结构完整
+  #  - Native：单层目录 zip（顶层目录与 zip 同名，剔除冗余 .tar.gz，避免双重嵌套）
   #  - 任一构建 job 失败则跳过发布（避免半成品 Release）
   # ═══════════════════════════════════════════════════════════════════
   release:
@@ -555,8 +556,24 @@ jobs:
                 # 不对外发布，避免把中间件混进 Release 资产列表
                 echo "→ 跳过内部产物（不发布）：$name"
                 ;;
+              meeting-native-*)
+                # Native 离线包：只打包内层真实 bundle（含 install.sh/app/bin/...），
+                # 顶层目录重命名为与 zip 同名（meeting-native-<arch>-<baseline>-<ver>-<rel>），
+                # 不再内嵌冗余 .tar.gz，避免双重嵌套。install.sh 依赖的兄弟文件布局保持不变。
+                inner=$(ls -d "$name"/meeting-native-* 2>/dev/null | head -1)
+                if [ -n "$inner" ]; then
+                  staged="release-files-staging/${name}"
+                  rm -rf "$staged"; mkdir -p "$staged"
+                  cp -r "$inner/." "$staged/"
+                  [ -f "$name/README.txt" ] && cp "$name/README.txt" "$staged/"
+                  ( cd release-files-staging && zip -r -q "../release-files/${name}.zip" "$name" )
+                  rm -rf "$staged"
+                else
+                  zip -r -q "../release-files/${name}.zip" "$name"
+                fi
+                ;;
               *)
-                # 多文件交付包（源码/Docker/Native）：整体 zip
+                # 多文件交付包（源码/Docker）：整体 zip
                 zip -r -q "../release-files/${name}.zip" "$name"
                 ;;
             esac

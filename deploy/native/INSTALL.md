@@ -50,8 +50,7 @@ npm run pack:native
 
 ```
 dist/native/
-  meeting-linux-arm64-YYYYMMDD.tar.gz   # 或 x64
-  meeting-linux-arm64-YYYYMMDD/         # 未压缩目录（可选保留）
+  meeting-native-arm64-<version>/       # 未压缩目录（x64 同理），CI 再整体打成 .zip
   README.txt
 ```
 
@@ -63,7 +62,7 @@ PACK_NATIVE_FORCE=1 npm run pack:native
 
 （这样打出的 mediasoup 可能无法在 Linux ARM 上运行。）
 
-将 `.tar.gz` 拷到目标机即可（**目标机安装时不需要 npm 网络**）。
+将 `.zip` 拷到目标机即可（**目标机安装时不需要 npm 网络**）。
 
 ---
 
@@ -71,8 +70,8 @@ PACK_NATIVE_FORCE=1 npm run pack:native
 
 ```bash
 # 1) 解压
-tar -xzf meeting-linux-arm64-YYYYMMDD.tar.gz
-cd meeting-linux-arm64-YYYYMMDD
+unzip meeting-native-arm64-*-1.zip
+cd meeting-native-arm64-*-1
 
 # 2) 安装（root）
 sudo ./install.sh
@@ -245,8 +244,8 @@ Nginx 直连 `api:8080` / `realtime:8082` 与静态目录；前端使用相对 `
 sudo tar czf /tmp/meeting-data-$(date +%F).tar.gz -C /opt/meeting data logs
 
 # 2) 解压新包并升级
-tar -xzf meeting-linux-<arch>-<version>.tar.gz
-cd meeting-linux-<arch>-<version>
+unzip meeting-native-<arch>-<version>-1.zip
+cd meeting-native-<arch>-<version>-1
 sudo ./install.sh        # 检测到版本变化会自动备份旧 app 到 /opt/meeting-backups/app-<旧版本>
 ```
 
@@ -296,7 +295,7 @@ sudo rm -rf /opt/meeting
 
 | 现象 | 处理 |
 |------|------|
-| 架构不符 | 看包内 `ARCH.txt`，换对应 tar |
+| 架构不符 | 看包内 `ARCH.txt`，换对应 zip 包 |
 | `install.sh` 报"未找到 node" | 该包内不含 `runtime/`（旧包，或在非 Linux 宿主用 `PACK_NATIVE_FORCE=1` 打的包）。改用内嵌 Node 的 rpm/deb 包，或先在目标机安装 Node 20+ 再重跑 |
 | mediasoup / realtime 起不来 | 确认包在目标同架构 Linux 上构建；装 `python3 make g++` 后于构建机重打 |
 | 能开页面不能音视频 | 查 `MEDIASOUP_ANNOUNCED_IP`、UDP 40000-41000 |
