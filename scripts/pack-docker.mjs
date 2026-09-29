@@ -166,32 +166,13 @@ if (existsSync(join(root, "deploy", "docker", "gen-selfsigned.sh"))) {
   );
 }
 
-// 一键安装引导脚本：自动生成 .env（含随机 MEETING_CRYPTO_KEY）并启动
+// 一键部署脚本：加载镜像(按需) + 自动生成 .env（随机密钥/口令）+ docker compose 启停统一入口
 if (existsSync(join(root, "deploy", "docker", "install.sh"))) {
   copyFileSync(
     join(root, "deploy", "docker", "install.sh"),
     join(out, "install.sh"),
   );
 }
-
-// 一键加载镜像脚本
-writeFileSync(
-  join(out, "load-images.sh"),
-  [
-    "#!/usr/bin/env bash",
-    "# 加载离线包内全部 Docker 镜像",
-    "set -euo pipefail",
-    'DIR="$(cd "$(dirname "$0")" && pwd)"',
-    "",
-    `for tar in meeting-app-*.tar meeting-base-*.tar; do`,
-    '  [ -f "$DIR/$tar" ] || continue',
-    '  echo "-> docker load -i $tar"',
-    '  docker load -i "$DIR/$tar"',
-    "done",
-    'echo "OK: 全部镜像已加载，执行 docker-compose up -d 启动"',
-    "",
-  ].join("\n"),
-);
 
 // 离线包说明
 writeFileSync(
@@ -208,18 +189,22 @@ writeFileSync(
     ...baseImages.map((b) => `  - ${b}`),
     "",
     "部署步骤：",
-    "  1. bash load-images.sh              # 加载全部镜像",
-    "  2. bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>  # 生成证书（443 HTTPS 必需）",
-    "  3. bash install.sh                  # 一键安装：自动生成 .env（随机 MEETING_CRYPTO_KEY 与",
-    "                                      #    数据库/Redis 口令、探测 ANNOUNCED_IP；已有配置保留）并启动",
-    "     手工等价：cp env.example .env && vi .env（改 MEDIASOUP_ANNOUNCED_IP 与 MYSQL_* 口令）",
-    "               && docker-compose -p meeting up -d",
+    "  1. bash install.sh                  # 一键部署：自动加载镜像(已加载则跳过) + 生成 .env",
+    "                                      #   （随机 MEETING_CRYPTO_KEY 与数据库/Redis 口令、",
+    "                                      #    探测 ANNOUNCED_IP；已有配置保留）并 docker compose up -d",
+    "  2. bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>  # 生成证书（443 HTTPS 需），",
+    "     然后 bash install.sh 重启使 caddy 挂载新证书",
     "",
-    "默认数据库 MySQL：会启动 mysql:8.4 容器（口令取 .env 的 MYSQL_*，务必修改）",
+    "手工等价：cp env.example .env && vi .env（改 MEDIASOUP_ANNOUNCED_IP 与 MYSQL_* 口令）",
+    "          && docker-compose -p meeting up -d",
+    "",
+    "默认数据库 MySQL：会启动 mysql:8.4 容器（口令由 install.sh 自动生成，可自行修改）",
     "改用零依赖单机：.env 设 COMPOSE_PROFILES=sqlite（数据存于 meeting-data volume）；亦可设 postgres",
     "",
-    "停止：docker-compose -p meeting down",
-    "升级：备份 meeting-data 卷后，重新 load-images.sh 并 up -d（API 启动自动迁移）",
+    "停止：bash install.sh stop        # docker compose stop（数据保留）",
+    "卸载：bash install.sh down        # docker compose down（数据卷保留）",
+    "      bash install.sh down -v     # 连数据卷一起删除（清空数据库/录制）",
+    "升级：备份 meeting-data 卷后，替换镜像 tar 再 bash install.sh（API 启动自动迁移）",
     "",
     `Docs: docs/install/本地部署说明-docker.md`,
     "",
@@ -230,4 +215,4 @@ writeFileSync(join(out, "PLATFORM.txt"), `${platform || "host"}\n`);
 console.log(`✓ docker pack -> ${out}/`);
 console.log(`  - ${appTar}`);
 console.log(`  - ${baseTar}`);
-console.log(`  - compose 文件与 load-images.sh`);
+console.log(`  - compose 文件与 install.sh（一键部署入口）`);
