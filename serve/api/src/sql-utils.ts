@@ -26,7 +26,35 @@ export function conflictSuffix(db: Db, conflictTarget: string): string {
 /**
  * 判断表是否存在，兼容 SQLite/MySQL/PostgreSQL
  */
+/**
+ * 表存在性检查结果缓存（进程内，按 db 实例隔离）。
+ *
+ * 安全前提：API 启动时先 await migrate(...) 完成后才开始接请求（见 src/index.ts），
+ * 进程生命周期内 schema 不再变化，因此缓存无需失效机制。
+ * 注意：migrate.ts 内部使用自己的本地 tableExists（迁移过程存在"先查后建"的
+ * 顺序依赖），不经过此缓存，互不影响。
+ */
+let tableExistsCache = new WeakMap<object, Map<string, boolean>>();
+
+/** 仅供测试使用：测试中重建表后清空缓存。 */
+export function resetTableExistsCache(): void {
+  tableExistsCache = new WeakMap();
+}
+
 export async function tableExists(db: Db, tableName: string): Promise<boolean> {
+  let cache = tableExistsCache.get(db);
+  if (!cache) {
+    cache = new Map();
+    tableExistsCache.set(db, cache);
+  }
+  const hit = cache.get(tableName);
+  if (hit !== undefined) return hit;
+  const exists = await probeTableExists(db, tableName);
+  cache.set(tableName, exists);
+  return exists;
+}
+
+async function probeTableExists(db: Db, tableName: string): Promise<boolean> {
   if (db.driver === "sqlite") {
     const [rows] = await db.query(
       `SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`,

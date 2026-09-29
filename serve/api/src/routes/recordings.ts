@@ -10,6 +10,18 @@ import { pipeline } from "node:stream/promises";
 const RECORDINGS_DIR =
   process.env.RECORDINGS_DIR ?? path.join(process.cwd(), "data", "recordings");
 
+/** 磁盘水位：上传前可用空间低于该阈值（MB）时拒绝上传（0 = 关闭水位检查） */
+const RECORDINGS_MIN_FREE_MB = (() => {
+  const n = Number(process.env.RECORDINGS_MIN_FREE_MB);
+  return Number.isFinite(n) && n > 0 ? n : 2048;
+})();
+
+/** 录制保留天数：启动/每日清理超期录制（0 = 永久保留，默认关闭，避免升级后静默删数据） */
+const RECORDINGS_RETENTION_DAYS = (() => {
+  const n = Number(process.env.RECORDINGS_RETENTION_DAYS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+})();
+
 /** 允许落盘的录制文件扩展名（其余一律按 .webm 处理），避免任意文件落盘 */
 const ALLOWED_EXT = new Set([".webm", ".mkv", ".mp4", ".ogg", ".mov"]);
 
@@ -22,6 +34,75 @@ function safeTitle(title: string): string {
   return t.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_") || "recording";
 }
 
+/**
+ * 解析 recordings.created_at（三种方言写入格式：
+ * SQLite datetime(''now'')="YYYY-MM-DD HH:MM:SS"(UTC) / MySQL NOW()(服务器本地) / PG Date 对象）。
+ * 保留期按天粒度，时区偏移数小时可忽略；解析失败返回 null（视为不过期，宁可不删）。
+ */
+export function parseRecordingCreatedAt(v: unknown): number | null {
+  if (v instanceof Date) return v.getTime();
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const t = Date.parse(s);
+    return Number.isFinite(t) ? t : null;
+  }
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/.exec(s);
+  if (m) {
+    const t = Date.parse(`${m[1]}T${m[2]}Z`);
+    return Number.isFinite(t) ? t : null;
+  }
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * 录制磁盘治理（架构评审 P1-4）：
+ * a) 保留期清理：先删 DB 行、后 unlink 文件（unlink 失败由孤儿扫描兜底）；
+ * b) 孤儿扫描：目录中存在但 DB 无对应行、且 mtime 超过 24h 的文件（含 .part 残留）直接删除。
+ * 查询全量行在 JS 侧过滤（目标部署规模为千级，避免三方言日期比较的精度/时区差异）。
+ */
+export async function cleanupRecordings(db: Db): Promise<void> {
+  if (RECORDINGS_RETENTION_DAYS > 0) {
+    const cutoffMs = Date.now() - RECORDINGS_RETENTION_DAYS * 86_400_000;
+    const [rows] = await db.query(
+      `SELECT id, created_at, storage_path FROM recordings`
+    );
+    for (const row of rows as { id: number | string; created_at: unknown; storage_path: string }[]) {
+      const createdAt = parseRecordingCreatedAt(row.created_at);
+      if (createdAt == null || createdAt > cutoffMs) continue;
+      await db.query(`DELETE FROM recordings WHERE id = ?`, [row.id]);
+      if (row.storage_path) {
+        await fs.promises.unlink(row.storage_path).catch(() => {});
+      }
+    }
+  }
+  const [rows2] = await db.query(`SELECT storage_path FROM recordings`);
+  const known = new Set(
+    (rows2 as { storage_path: string }[])
+      .map((r) => path.resolve(String(r.storage_path ?? "")))
+      .filter((p) => p.length > 0)
+  );
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(RECORDINGS_DIR);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const full = path.join(RECORDINGS_DIR, name);
+    if (known.has(path.resolve(full))) continue;
+    try {
+      const st = fs.statSync(full);
+      if (!st.isFile()) continue;
+      if (Date.now() - st.mtimeMs < 24 * 3_600_000) continue;
+      await fs.promises.unlink(full).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export async function recordingRoutes(
   app: FastifyInstance,
   db: Db,
@@ -29,11 +110,32 @@ export async function recordingRoutes(
 ) {
   ensureDir(RECORDINGS_DIR);
 
+  // 磁盘治理：启动时清理一次，此后每 24h 一次（保留期 + 孤儿扫描；失败不影响服务）
+  const runCleanup = () =>
+    cleanupRecordings(db).catch((err) => console.error("recordings cleanup failed", err));
+  void runCleanup();
+  const cleanupTimer = setInterval(runCleanup, 24 * 3_600_000);
+  cleanupTimer.unref();
+
   // 上传录制文件（multipart：file + meta 字段）
   app.post("/recordings/upload", async (req, reply) => {
     const sessionId = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sessionId);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
+
+    // 磁盘水位检查：可用空间低于阈值时拒绝上传（近似保护：流式上传前无法预知大小，
+    // 阈值保证最坏再写 1GB 仍有余量；statfs 不可用时跳过检查，不影响可用性）
+    if (RECORDINGS_MIN_FREE_MB > 0) {
+      try {
+        const st = await fs.promises.statfs(RECORDINGS_DIR);
+        const freeBytes = Number(st.bavail) * Number(st.bsize);
+        if (freeBytes < RECORDINGS_MIN_FREE_MB * 1024 * 1024) {
+          return reply.code(507).send({ error: "disk_full" });
+        }
+      } catch {
+        /* statfs 不可用（旧内核/文件系统）：跳过水位检查 */
+      }
+    }
 
     // 注意：不要先 req.file() 再 req.parts()，会把文件流消费掉导致永远落到 upload_failed
     const fields: Record<string, string> = {};

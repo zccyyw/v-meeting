@@ -5,7 +5,8 @@ import type { Db, ResultHeader } from "../db.js";
 import type { Redis } from "ioredis";
 import { hashPassword } from "../auth.js";
 import { generateMeetingCode } from "../meeting-code.js";
-import { loadSessionUser } from "../session-user.js";
+import { isApproverRole, listApproverUserIds, loadSessionUser } from "../session-user.js";
+import { notifyUser } from "../notify.js";
 import { nowSql } from "../sql-utils.js";
 import { isUniqueViolation } from "../db.js";
 
@@ -51,9 +52,18 @@ const CreateAppBody = z.object({
   endTime: z.string().optional(),
   location: z.string().max(255).optional().default(""),
   deptCount: z.number().int().min(0).default(0),
-  priority: z.enum(["高", "中", "低"]).default("中"),
+  priority: z.enum(["high", "medium", "low"]).default("medium"),
   remark: z.string().max(500).optional().default(""),
-});
+}).refine(
+  (b) => {
+    const start = Date.parse(b.meetingTime);
+    if (!Number.isFinite(start)) return false;
+    if (!b.endTime) return true;
+    const end = Date.parse(b.endTime);
+    return Number.isFinite(end) && end > start;
+  },
+  { message: "invalid_meeting_time" }
+);
 
 const ApproveBody = z.object({
   approved: z.boolean(),
@@ -67,7 +77,18 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
 
-    const body = CreateAppBody.parse(req.body ?? {});
+    let body;
+    try {
+      body = CreateAppBody.parse(req.body ?? {});
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        const msg = err.issues[0]?.message;
+        if (msg === "invalid_meeting_time") {
+          return reply.code(400).send({ error: msg });
+        }
+      }
+      throw err;
+    }
 
     const [result] = await db.query(
       `INSERT INTO meeting_applications
@@ -76,6 +97,10 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
       [body.title, user.id, body.meetingTime, body.endTime || null, body.location, body.deptCount, body.priority, body.remark],
     );
     const appId = Number((result as ResultHeader).insertId);
+    // 站内通知所有审批人（SSE 实时提醒；通知失败不影响主流程）
+    for (const approverId of await listApproverUserIds(db)) {
+      notifyUser(approverId, { type: "approvals_changed", appId });
+    }
     return reply.code(201).send({ appId, status: "pending" });
   });
 
@@ -95,8 +120,7 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     const pageSize = Number(q.pageSize ?? 20);
 
     // 授权管理员看全部待审批的，普通用户看自己提交的
-    const isApprover =
-      user.roles.includes("admin") || user.roles.includes("auth_admin");
+    const isApprover = isApproverRole(user);
 
     let where = `WHERE 1=1`;
     const params: unknown[] = [];
@@ -115,7 +139,7 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
 
     const offset = (page - 1) * pageSize;
     // 按优先级排序：高 > 中 > 低
-    const priorityOrder = `CASE priority WHEN '高' THEN 1 WHEN '中' THEN 2 WHEN '低' THEN 3 ELSE 4 END`;
+    const priorityOrder = `CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
 
     const [rows] = await db.query(
       `SELECT * FROM meeting_applications ${where} ORDER BY ${priorityOrder}, created_at DESC LIMIT ? OFFSET ?`,
@@ -140,11 +164,7 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     if (!row) return reply.code(404).send({ error: "not_found" });
 
     // 非审批人只能看自己的
-    if (
-      !user.roles.includes("admin") &&
-      !user.roles.includes("auth_admin") &&
-      row.applicant_id !== user.id
-    ) {
+    if (!isApproverRole(user) && row.applicant_id !== user.id) {
       return reply.code(403).send({ error: "forbidden" });
     }
 
@@ -156,8 +176,7 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     const sid = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    if (!user.roles.includes("admin") && !user.roles.includes("auth_admin"))
-      return reply.code(403).send({ error: "forbidden" });
+    if (!isApproverRole(user)) return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);
     const body = ApproveBody.parse(req.body ?? {});
@@ -178,6 +197,8 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
       [newStatus, user.id, body.rejectReason, id],
     );
 
+    // 站内通知申请人审批结果
+    notifyUser(Number(row.applicant_id), { type: "approvals_changed", appId: id });
     return { appId: id, status: newStatus };
   });
 
@@ -236,6 +257,11 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
       `UPDATE meeting_applications SET meeting_id = ? WHERE app_id = ?`,
       [meetingId, id],
     );
+
+    // 站内通知审批人申请已发起会议（状态闭环）
+    for (const approverId of await listApproverUserIds(db)) {
+      notifyUser(approverId, { type: "approvals_changed", appId: id, meetingId: meetingId ?? undefined });
+    }
 
     // 生成主持人 join token
     const hostToken = randomBytes(32).toString("hex");

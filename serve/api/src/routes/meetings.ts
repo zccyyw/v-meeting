@@ -8,18 +8,12 @@ import type { Db } from "../db.js";
 import type { Redis } from "ioredis";
 import { hashPassword, verifyPassword } from "../auth.js";
 import { generateMeetingCode } from "../meeting-code.js";
-import { loadSessionUser, type AppUser } from "../session-user.js";
+import { isManagerRole, loadSessionUser, type AppUser } from "../session-user.js";
 import { nowSql, insertIgnorePrefix, conflictSuffix } from "../sql-utils.js";
 import { subscribeUser, notifyUser } from "../notify.js";
 
 const zDisplayName = z.string().min(1).max(64);
 
-/** 管理后台角色（超级管理员 + 三员），用于会议监控等管理接口的授权判断 */
-const MANAGER_ROLES = ["admin", "sys_admin", "auth_admin", "audit_admin"];
-
-function isManagerRole(user: Pick<AppUser, "roles">): boolean {
-  return MANAGER_ROLES.some((r) => user.roles.includes(r));
-}
 
 /**
  * 会议访问授权：仅主持人或管理后台角色可进行会议级管理操作（查看/邀请名单等）。

@@ -28,6 +28,11 @@ const LoginBody = z.object({
  * 始终放行，避免系统因自身阈值被锁死。
  * 返回 null 表示放行；否则返回应下发的 HTTP 码与错误码。
  */
+/**
+ * [P2-10] 已知取舍：本检查为"先查后建"，并发登录存在 TOCTOU 竞态，
+ * 可能略微超过 sys.online.maxUsers 阈值。内网部署规模下影响可忽略，
+ * 明确不引入锁/原子计数（避免过度设计）。
+ */
 async function assertOnlineCapacity(
   db: Db,
   redis: Redis,

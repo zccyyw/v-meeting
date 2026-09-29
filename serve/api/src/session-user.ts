@@ -152,6 +152,9 @@ export async function loadSessionUser(
   }
 
   // ── 旧表：users（向后兼容）──
+
+  // [P2-10] 退役计划：legacy users 分支计划于后续主版本移除（决策记录见 docs/变更日志.md 2026-09-20）；
+  // 移除前提：存量部署完成 sys_user 迁移，且 login/change-password 的 users 回退分支一并清理。
   const [rows] = await db.query(
     `SELECT id, username, display_name, role, status, phone
      FROM users WHERE id = ? LIMIT 1`,
@@ -195,4 +198,56 @@ export async function requireAdmin(
   // 超级管理员或旧版 admin 角色可通过
   if (user.roles.includes("admin") || user.role === "admin") return user;
   return null;
+}
+
+// ── 角色口径统一出口（架构评审 P1-3）────────────────────────────
+// 多角色集合的授权判断必须从这里取口径，禁止在路由内联维护数组，
+// 避免将来新增角色（如"审批员"）时漏改某处判断。
+/** 管理后台角色（超级管理员 + 三员）：会议监控、用户审批等管理接口的授权判断 */
+export const MANAGER_ROLES = ["admin", "sys_admin", "auth_admin", "audit_admin"] as const;
+
+/** 审批角色：会议申请审批与用户注册审批的共用口径 */
+export const APPROVER_ROLES = ["admin", "auth_admin"] as const;
+
+export function isManagerRole(user: Pick<AppUser, "roles">): boolean {
+  return MANAGER_ROLES.some((r) => user.roles.includes(r));
+}
+
+export function isApproverRole(user: Pick<AppUser, "roles">): boolean {
+  return APPROVER_ROLES.some((r) => user.roles.includes(r));
+}
+
+// ── 审批人清单（架构评审 P1-2）──────────────────────────────────
+// 站内通知收件人查询：APPROVER_ROLES 口径（admin + auth_admin）。
+// 结果进程内缓存 60s：审批人角色授予/回收最多延迟一分钟体现在通知上，可接受。
+const approverIdsCache = new Map<object, { ids: number[]; expires: number }>();
+const APPROVER_IDS_CACHE_TTL_MS = 60_000;
+
+export async function listApproverUserIds(db: Db): Promise<number[]> {
+  const now = Date.now();
+  const cached = approverIdsCache.get(db);
+  if (cached && cached.expires > now) return cached.ids;
+
+  const ids = new Set<number>();
+  if (await tableExists(db, "sys_user")) {
+    const [rows] = await db.query(
+      `SELECT ur.user_id AS id
+       FROM sys_user_role ur
+       JOIN sys_role r ON ur.role_id = r.role_id
+       JOIN sys_user u ON u.user_id = ur.user_id
+       WHERE r.role_key IN (?, ?) AND r.status = '0' AND r.del_flag = '0'
+         AND u.status = '0' AND u.del_flag != '2'`,
+      [...APPROVER_ROLES],
+    );
+    for (const row of rows as { id: number | string }[]) ids.add(Number(row.id));
+  }
+  if (await tableExists(db, "users")) {
+    const [rows] = await db.query(
+      `SELECT id FROM users WHERE role = 'admin' AND status = 'active'`,
+    );
+    for (const row of rows as { id: number | string }[]) ids.add(Number(row.id));
+  }
+  const list = [...ids];
+  approverIdsCache.set(db, { ids: list, expires: now + APPROVER_IDS_CACHE_TTL_MS });
+  return list;
 }

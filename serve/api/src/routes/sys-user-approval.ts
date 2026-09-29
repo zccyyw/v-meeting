@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Db, ResultHeader } from "../db.js";
 import type { Redis } from "ioredis";
 import { hashPassword } from "../auth.js";
-import { loadSessionUser } from "../session-user.js";
+import { isApproverRole, loadSessionUser } from "../session-user.js";
 import { nowSql } from "../sql-utils.js";
 import { loadPasswordPolicy, validatePassword } from "../password-policy.js";
 import { decryptPassword } from "@meeting/shared";
@@ -97,8 +97,7 @@ export async function userApprovalRoutes(app: FastifyInstance, db: Db, redis: Re
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
     // 授权管理员看待审批的，系统管理员看自己提交的
-    const isApprover =
-      user.roles.includes("admin") || user.roles.includes("auth_admin");
+    const isApprover = isApproverRole(user);
 
     const q = req.query as { status?: string; page?: string; pageSize?: string };
     const page = Number(q.page ?? 1);
@@ -143,11 +142,7 @@ export async function userApprovalRoutes(app: FastifyInstance, db: Db, redis: Re
     if (!row) return reply.code(404).send({ error: "not_found" });
 
     // 系统管理员只能看自己的申请
-    if (
-      !user.roles.includes("admin") &&
-      !user.roles.includes("auth_admin") &&
-      row.requester_id !== user.id
-    ) {
+    if (!isApproverRole(user) && row.requester_id !== user.id) {
       return reply.code(403).send({ error: "forbidden" });
     }
 
@@ -160,8 +155,7 @@ export async function userApprovalRoutes(app: FastifyInstance, db: Db, redis: Re
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
     // 仅授权管理员和超级管理员可审批
-    if (!user.roles.includes("admin") && !user.roles.includes("auth_admin"))
-      return reply.code(403).send({ error: "forbidden" });
+    if (!isApproverRole(user)) return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);
     const body = ApproveBody.parse(req.body ?? {});

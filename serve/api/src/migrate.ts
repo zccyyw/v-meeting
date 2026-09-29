@@ -717,6 +717,24 @@ async function migrateUserForeignKeys(db: Db): Promise<number> {
   return count;
 }
 
+/**
+ * 会议申请优先级枚举机器码化（P2-8）：'高'/'中'/'低' → 'high'/'medium'/'low'。
+ * 幂等：仅更新仍为中文旧值的行；纯开发期直切，不做兼容读取层。
+ */
+async function migrateMeetingAppPriority(db: Db): Promise<number> {
+  if (!(await tableExists(db, "meeting_applications"))) return 0;
+  try {
+    const [result] = await db.query(
+      `UPDATE meeting_applications SET priority = CASE priority
+       WHEN '高' THEN 'high' WHEN '中' THEN 'medium' WHEN '低' THEN 'low' ELSE priority END
+       WHERE priority IN ('高', '中', '低')`,
+    );
+    return Number((result as { affectedRows?: number }).affectedRows ?? 0);
+  } catch (err: unknown) {
+    if (isIdempotentError(err)) return 0;
+    throw err;
+  }
+}
 export async function migrate(db?: Db) {
   if (!db) db = await createPool();
   const sqlDir = path.join(__dirname, "sql", db.driver);
@@ -811,6 +829,8 @@ export async function migrate(db?: Db) {
       await ensureSqliteUpdatedAtTrigger(db);
     }
   }
+  // 会议申请优先级枚举机器码化（P2-8）
+  count += await migrateMeetingAppPriority(db);
   return count;
 }
 

@@ -22,10 +22,16 @@ let pubClient: Redis | null = null;
 let subClient: Redis | null = null;
 
 export type UserNotice = {
-  /** 事件类型，前端可据此决定是否刷新列表 */
-  type: "invitations_changed";
+  /**
+   * 事件类型：
+   * - invitations_changed：待加入会议变化（群组一键开会 / 被点名邀请）
+   * - approvals_changed：审批流变化（新会议申请 / 审批结果）
+   */
+  type: "invitations_changed" | "approvals_changed";
   /** 触发的会议 id（可选） */
   meetingId?: number;
+  /** 触发的会议申请 id（可选） */
+  appId?: number;
 };
 
 /** 是否为支持 pub/sub 的真 ioredis（MemoryRedis 无 duplicate()）。 */

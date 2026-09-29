@@ -106,6 +106,41 @@ export async function countOnlineUsers(redis: Redis): Promise<number> {
 
 export type AppRedis = ReturnType<typeof createRedis>;
 
+/**
+ * MemoryRedis 未实现方法 fail-fast（架构评审 P2-9）。
+ *
+ * 背景：MemoryRedis 只实现 get/set/del/countUsers/disconnect，但各模块拿到的
+ * 是完整 ioredis 类型——任何代码调用未实现方法（如 incr/expire）在单机内存
+ * 模式下会以"undefined is not a function"崩在运行中期，难以定位。
+ * 用 Proxy 包装：未实现方法调用即抛出带明确指引的错误，把炸点前移到启动冒烟。
+ *
+ * 特性探测契约（必须保持"缺席"语义，不能返回函数）：
+ * - notify.ts 的 canPubSub 依赖 duplicate 不存在 → 内存模式降级为进程内 EventEmitter；
+ * - countOnlineUsers 依赖 countUsers 存在（该方法在 target 上，不受影响）。
+ */
+const MEMORY_REDIS_ABSENT_PROPS = new Set([
+  "duplicate",
+  "subscribe",
+  "psubscribe",
+  "unsubscribe",
+  "punsubscribe",
+]);
+
+function wrapMemoryRedis(memory: MemoryRedis): Redis {
+  return new Proxy(memory, {
+    get(target, prop, receiver) {
+      if (typeof prop !== "string") return Reflect.get(target, prop, receiver);
+      if (prop in target) return Reflect.get(target, prop, receiver);
+      if (MEMORY_REDIS_ABSENT_PROPS.has(prop)) return undefined;
+      return (...args: unknown[]) => {
+        void args;
+        throw new Error(
+          `[redis] MemoryRedis does not implement ${prop}() — add it to MemoryRedis or configure a real Redis via REDIS_HOST`
+        );
+      };
+    },
+  }) as unknown as Redis;
+}
 export function createRedis() {
   const host = process.env.REDIS_HOST;
 
@@ -113,7 +148,7 @@ export function createRedis() {
   // This enables zero-dependency single-node deployment (no Redis needed).
   if (!host || host === "memory") {
     console.log("[redis] using in-memory session store (single-node mode)");
-    return new MemoryRedis() as unknown as Redis;
+    return wrapMemoryRedis(new MemoryRedis());
   }
 
   return new Redis({
