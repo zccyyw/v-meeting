@@ -565,7 +565,7 @@ export type MeetingAppItem = {
   endTime: string;
   location: string;
   deptCount: number;
-  priority: "高" | "中" | "低";
+  priority: "high" | "medium" | "low";
   status: "pending" | "approved" | "rejected";
   approverId: number | null;
   approveTime: string;

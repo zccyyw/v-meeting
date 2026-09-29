@@ -3,9 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Badge, Button, Empty, Popover, Tag, theme } from "antd";
 import { BellOutlined } from "@ant-design/icons";
-import { MeetingApi, type MyInvitationItem } from "@/api/client";
+import { MeetingApi, MeetingAppApi, type MyInvitationItem } from "@/api/client";
 import { formatMeetingCode, getJoinPrefs } from "@/auth/joinPrefs";
 import { rememberJoin } from "@/auth/joinHistory";
+import { getRoles } from "@/auth/session";
 import { useInvitationsStream } from "@/hooks/useInvitationsStream";
 import { showMessage } from "@/ui/toast";
 
@@ -50,12 +51,24 @@ export function NotificationBell() {
   const [readIds, setReadIds] = useState<Set<number>>(() => loadReadIds());
   // 是否已完成首次拉取：避免首帧 items 为空时误清空本地已读记录
   const [loaded, setLoaded] = useState(false);
+  // 审批红点：审批角色（admin / auth_admin）额外跟踪待审批数量
+  const isApprover =
+    getRoles().includes("admin") || getRoles().includes("auth_admin");
+  const [pendingApprovals, setPendingApprovals] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
       const res = await MeetingApi.myInvitations();
       setItems(res.items);
       setLoaded(true);
+      if (isApprover) {
+        try {
+          const res = await MeetingAppApi.list({ status: "pending", page: 1, pageSize: 1 });
+          setPendingApprovals(res.total);
+        } catch {
+          /* 静默失败：不影响邀请列表 */
+        }
+      }
     } catch {
       /* 静默失败：不影响主流程 */
     }
@@ -161,7 +174,31 @@ export function NotificationBell() {
 
   const content = (
     <div style={{ width: 320, maxHeight: 400, overflowY: "auto" }}>
-      {items.length === 0 ? (
+      {isApprover && pendingApprovals > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            padding: "8px 4px",
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          }}
+        >
+          <span>
+            {t("notify.pendingApprovals")}（{pendingApprovals}）
+          </span>
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0, height: "auto" }}
+            onClick={() => navigate("/manager/meeting-approval")}
+          >
+            {t("notify.goApprove")}
+          </Button>
+        </div>
+      )}
+      {items.length === 0 && !(isApprover && pendingApprovals > 0) ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={t("notify.empty")}
@@ -259,7 +296,7 @@ export function NotificationBell() {
         aria-label={t("notify.title")}
         style={{ fontSize: 18 }}
       >
-        <Badge count={unreadCount} size="small">
+        <Badge count={unreadCount + (isApprover ? pendingApprovals : 0)} size="small">
           <BellOutlined style={{ fontSize: 18 }} />
         </Badge>
       </Button>

@@ -438,6 +438,8 @@
     "installed": "App installed"
   },
   "errors": {
+    "disk_full": "Insufficient disk space to upload the recording",
+    "invalid_meeting_time": "Invalid meeting time: end time must be after start time",
     "invalid_credentials": "Invalid username or password",
     "user_disabled": "This account has been disabled",
     "forbidden": "You do not have permission to perform this action",
@@ -548,6 +550,8 @@
     "empty": "No meetings to join",
     "join": "Join",
     "markAllRead": "Mark all read",
+    "pendingApprovals": "Pending meeting approvals",
+    "goApprove": "Review",
     "host": "Host",
     "live": "Live",
     "joinFailed": "Failed to join meeting"

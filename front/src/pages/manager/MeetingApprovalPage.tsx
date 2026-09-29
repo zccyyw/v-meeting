@@ -23,6 +23,7 @@ import {
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { MeetingAppApi, type MeetingAppItem } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
+import { useInvitationsStream } from "@/hooks/useInvitationsStream";
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -30,9 +31,16 @@ const { TextArea } = Input;
 const PAGE_SIZE_OPTIONS = ["10", "20", "30", "50"];
 
 const priorityColors: Record<string, string> = {
-  "高": "red",
-  "中": "orange",
-  "低": "green",
+  high: "red",
+  medium: "orange",
+  low: "green",
+};
+
+/** 优先级枚举（机器码）→ i18n 标签键（P2-8） */
+const priorityLabelKey: Record<string, string> = {
+  high: "meetingApp.priorityHigh",
+  medium: "meetingApp.priorityMedium",
+  low: "meetingApp.priorityLow",
 };
 
 const statusColors: Record<string, string> = {
@@ -80,6 +88,8 @@ export function MeetingApprovalPage() {
   useEffect(() => {
     void load();
   }, [load]);
+  // 审批流实时提醒：审批事件（新申请/审批结果）到达即刷新列表
+  useInvitationsStream(load);
 
   function openDetail(record: MeetingAppItem) {
     setDetail(record);
@@ -156,10 +166,10 @@ export function MeetingApprovalPage() {
       width: 80,
       align: "center",
       render: (val: string) => (
-        <Tag color={priorityColors[val] ?? "default"}>{val}</Tag>
+        <Tag color={priorityColors[val] ?? "default"}>{priorityLabelKey[val] ? t(priorityLabelKey[val]) : val}</Tag>
       ),
       sorter: (a, b) => {
-        const order = { "高": 0, "中": 1, "低": 2 };
+        const order = { high: 0, medium: 1, low: 2 };
         return (order[a.priority as keyof typeof order] ?? 3) - (order[b.priority as keyof typeof order] ?? 3);
       },
     },
@@ -272,9 +282,9 @@ export function MeetingApprovalPage() {
             allowClear
             style={{ width: 120 }}
             options={[
-              { value: "高", label: t("meetingApp.priorityHigh") },
-              { value: "中", label: t("meetingApp.priorityMedium") },
-              { value: "低", label: t("meetingApp.priorityLow") },
+              { value: "high", label: t("meetingApp.priorityHigh") },
+              { value: "medium", label: t("meetingApp.priorityMedium") },
+              { value: "low", label: t("meetingApp.priorityLow") },
             ]}
           />
         </Space>
@@ -325,7 +335,10 @@ export function MeetingApprovalPage() {
               <Text type="secondary">{t("meetingApp.priority")}</Text>
               <Paragraph>
                 <Tag color={priorityColors[detail.priority] ?? "default"}>
-                  {detail.priority}
+                  {priorityLabelKey[detail.priority]
+                    ? t(priorityLabelKey[detail.priority])
+                    : detail.priority
+                  }
                 </Tag>
               </Paragraph>
             </div>

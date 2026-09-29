@@ -80,13 +80,19 @@ type ScheduleFormValues = {
   endTime?: string;
   location?: string;
   deptCount?: number;
-  priority: "高" | "中" | "低";
+  priority: "high" | "medium" | "low";
 };
 
 export function HomePage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  // 优先级机器码 → 展示标签（P2-8）
+  const priorityLabel: Record<string, string> = {
+    high: t("meetingApp.priorityHigh"),
+    medium: t("meetingApp.priorityMedium"),
+    low: t("meetingApp.priorityLow"),
+  };
   const displayName = getDisplayName();
   const { message } = AntApp.useApp();
   const { token } = theme.useToken();
@@ -449,11 +455,11 @@ export function HomePage() {
                   const priorityColor =
                     item.kind === "invitation"
                       ? token.colorBorder
-                      : item.priority === "高"
+                      : item.priority === "high"
                         ? token.colorError
-                        : item.priority === "中"
+                        : item.priority === "medium"
                           ? token.colorWarning
-                          : item.priority === "低"
+                          : item.priority === "low"
                             ? token.colorSuccess
                             : token.colorBorder;
                   if (item.kind === "invitation") {
@@ -563,7 +569,7 @@ export function HomePage() {
                                 fontWeight: 600,
                               }}
                             >
-                              {item.priority}
+                              {priorityLabel[item.priority] ?? item.priority}
                             </Typography.Text>
                           )}
                           <div style={{ fontSize: 13, color: token.colorTextSecondary }}>
@@ -630,7 +636,7 @@ export function HomePage() {
                               fontWeight: 600,
                             }}
                           >
-                            {item.priority}
+                            {priorityLabel[item.priority] ?? item.priority}
                           </Typography.Text>
                         )}
                         <div style={{ fontSize: 13, color: token.colorTextSecondary }}>
@@ -748,9 +754,9 @@ export function HomePage() {
           <Form.Item name="priority" label={t("meetingApp.priority")}>
             <Select
               options={[
-                { value: "高", label: t("meetingApp.priorityHigh") },
-                { value: "中", label: t("meetingApp.priorityMedium") },
-                { value: "低", label: t("meetingApp.priorityLow") },
+                { value: "high", label: t("meetingApp.priorityHigh") },
+                { value: "medium", label: t("meetingApp.priorityMedium") },
+                { value: "low", label: t("meetingApp.priorityLow") },
               ]}
             />
           </Form.Item>

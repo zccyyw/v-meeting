@@ -438,6 +438,8 @@
     "installed": "应用已安装"
   },
   "errors": {
+    "disk_full": "磁盘空间不足，无法上传录制",
+    "invalid_meeting_time": "会议时间无效：结束时间必须晚于开始时间",
     "invalid_credentials": "用户名或密码错误",
     "user_disabled": "该账号已被禁用",
     "forbidden": "您没有权限执行此操作",
@@ -548,6 +550,8 @@
     "empty": "暂无待加入会议",
     "join": "加入",
     "markAllRead": "全部已读",
+    "pendingApprovals": "待审批会议申请",
+    "goApprove": "去审批",
     "host": "主持人",
     "live": "进行中",
     "joinFailed": "加入会议失败"

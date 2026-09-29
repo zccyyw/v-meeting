@@ -16,10 +16,11 @@ import { WaitingRoom } from "@/components/WaitingRoom";
 import { InvitationPanel } from "@/components/InvitationPanel";
 import { FloatingPanel } from "@/components/FloatingPanel";
 import { useIsNarrow } from "@/hooks/useIsNarrow";
+import { useRecorder } from "@/hooks/useRecorder";
 import { MediaRoom, type MediaRoomSnapshot, type MeetingLayout } from "@/media/room";
 import { SignalClient } from "@/signal/client";
 import { showMessage } from "@/ui/toast";
-import { startRecording, type RecorderHandle, type RecorderSource } from "@/media/recorder";
+import type { RecorderSource } from "@/media/recorder";
 import { App as AntApp, Dropdown } from "antd";
 
 function formatDuration(ms: number): string {
@@ -96,12 +97,8 @@ function MeetingPageInner() {
   >([]);
   const danmuIdRef = useRef(0);
   const lastChatLenRef = useRef(0);
-  const [recording, setRecording] = useState(false);
   const [immersive, setImmersive] = useState(false);
   const [shareElapsed, setShareElapsed] = useState(0);
-  const recorderHandleRef = useRef<RecorderHandle | null>(null);
-  const recordStartRef = useRef<number>(0);
-  const [recordElapsed, setRecordElapsed] = useState(0);
   const lastRecordingPeersRef = useRef<Set<string>>(new Set());
   /** 已建立录制基线的入会会话（peerId）；重连会换 peerId，需要重新建立基线 */
   const recordingBaselinePeerRef = useRef<string | null>(null);
@@ -114,6 +111,8 @@ function MeetingPageInner() {
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
   const [audioId, setAudioId] = useState("");
   const [videoId, setVideoId] = useState("");
+  // 本地录制生命周期（P1-7 拆分）：状态/计时/start/stop/discard
+  const recorder = useRecorder();
   const roomRef = useRef<MediaRoom | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   const autoShareTried = useRef(false);
@@ -128,17 +127,6 @@ function MeetingPageInner() {
     else setMembersOpen(false);
   }, [isNarrow, membersOpen, chatOpen, openOrder]);
 
-  // 录制时长计时
-  useEffect(() => {
-    if (!recording) {
-      setRecordElapsed(0);
-      return;
-    }
-    const t = window.setInterval(() => {
-      setRecordElapsed(Date.now() - recordStartRef.current);
-    }, 1000);
-    return () => window.clearInterval(t);
-  }, [recording]);
 
   // 共享时长计时（沉浸条显示）
   useEffect(() => {
@@ -279,15 +267,7 @@ function MeetingPageInner() {
 
     return () => {
       // 离开会议时停止录制
-      if (recorderHandleRef.current) {
-        try {
-          void recorderHandleRef.current.stop();
-        } catch {
-          /* ignore */
-        }
-        recorderHandleRef.current = null;
-        setRecording(false);
-      }
+      recorder.discard();
       unsub();
       room.leave();
       signal.close();
@@ -502,21 +482,17 @@ function MeetingPageInner() {
   };
 
   const handleToggleRecord = () => {
-    if (recording) {
-      // 停止并上传
-      const handle = recorderHandleRef.current;
-      if (!handle) return;
-      setRecording(false);
-      const durationMs = handle.durationMs();
+    if (recorder.recording) {
+      // 停止并上传（先通知信令再停止，顺序与原实现一致）
       roomRef.current?.notifyRecordingStopped();
-      void handle.stop().then(async (blob) => {
-        recorderHandleRef.current = null;
+      void recorder.stop().then(async (res) => {
+        if (!res) return;
         showMessage(t("meeting.recordingSaving"));
         try {
-          await RecordingsApi.upload(blob, {
+          await RecordingsApi.upload(res.blob, {
             title: `${meetingTitle}-${new Date().toLocaleString()}`,
             meetingId: meetingId ? Number(meetingId) : null,
-            durationMs,
+            durationMs: res.durationMs,
           });
           showMessage(t("meeting.recordingSaved"));
         } catch (err) {
@@ -527,15 +503,10 @@ function MeetingPageInner() {
       return;
     }
     // 开始录制
-    try {
-      const handle = startRecording(buildRecorderSources);
-      recorderHandleRef.current = handle;
-      recordStartRef.current = Date.now();
-      setRecording(true);
+    if (recorder.start(buildRecorderSources)) {
       roomRef.current?.notifyRecordingStarted();
       showMessage(t("meeting.recordingStarted"));
-    } catch (err) {
-      console.error("start recording failed", err);
+    } else {
       showMessage(t("meeting.recordingStartFailed"));
     }
   };
@@ -650,10 +621,10 @@ function MeetingPageInner() {
             )}
             <span>·</span>
             <span>{displayName}</span>
-            {recording && (
+            {recorder.recording && (
               <span className="recording-indicator" title={t("meeting.recording")}>
                 <span className="recording-dot" aria-hidden />
-                <span>{t("meeting.recording")} {formatDuration(recordElapsed)}</span>
+                <span>{t("meeting.recording")} {formatDuration(recorder.recordElapsed)}</span>
               </span>
             )}
             {roleLabel ? (
@@ -1087,7 +1058,7 @@ function MeetingPageInner() {
           onEndMeeting={() => {
             roomRef.current?.endMeeting();
           }}
-          recording={recording}
+          recording={recorder.recording}
           canRecord={canRecord}
           onToggleRecord={handleToggleRecord}
         />
