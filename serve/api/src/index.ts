@@ -24,6 +24,10 @@ import { isForceChangePassword } from "./auth.js";
 import { registerOperLogHook } from "./middleware/oper-log.js";
 import { cleanupExpiredLogs } from "./routes/sys-operlog.js";
 import { ZodError } from "zod";
+import { assertProductionCryptoKey } from "./crypto-guard.js";
+
+// 生产环境必须显式配置密码传输加密密钥（缺失/占位值时拒绝启动，详见 crypto-guard.ts）
+assertProductionCryptoKey();
 
 const app = Fastify({ logger: true });
 const db = await createPool();

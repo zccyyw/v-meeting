@@ -166,6 +166,14 @@ if (existsSync(join(root, "deploy", "docker", "gen-selfsigned.sh"))) {
   );
 }
 
+// 一键安装引导脚本：自动生成 .env（含随机 MEETING_CRYPTO_KEY）并启动
+if (existsSync(join(root, "deploy", "docker", "install.sh"))) {
+  copyFileSync(
+    join(root, "deploy", "docker", "install.sh"),
+    join(out, "install.sh"),
+  );
+}
+
 // 一键加载镜像脚本
 writeFileSync(
   join(out, "load-images.sh"),
@@ -201,10 +209,11 @@ writeFileSync(
     "",
     "部署步骤：",
     "  1. bash load-images.sh              # 加载全部镜像",
-    "  2. [ -f .env ] || cp env.example .env   # 仅首次生成；已存在则保留你的配置",
-    "     vi .env                           # 改 MEDIASOUP_ANNOUNCED_IP 与 MYSQL_* 口令等",
-    "  3. bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>  # 生成证书（443 HTTPS 必需）",
-    "  4. docker-compose -p meeting up -d   # 离线：docker-compose.yml 已去 build 段，绝不误 build",
+    "  2. bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>  # 生成证书（443 HTTPS 必需）",
+    "  3. bash install.sh                  # 一键安装：自动生成 .env（随机 MEETING_CRYPTO_KEY 与",
+    "                                      #    数据库/Redis 口令、探测 ANNOUNCED_IP；已有配置保留）并启动",
+    "     手工等价：cp env.example .env && vi .env（改 MEDIASOUP_ANNOUNCED_IP 与 MYSQL_* 口令）",
+    "               && docker-compose -p meeting up -d",
     "",
     "默认数据库 MySQL：会启动 mysql:8.4 容器（口令取 .env 的 MYSQL_*，务必修改）",
     "改用零依赖单机：.env 设 COMPOSE_PROFILES=sqlite（数据存于 meeting-data volume）；亦可设 postgres",

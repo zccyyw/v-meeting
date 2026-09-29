@@ -13,6 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import readline from "node:readline";
+import { randomBytes } from "node:crypto";
 import { spawnSync, execSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -219,6 +220,18 @@ async function generateConfig() {
   config.API_PORT = await ask("API port", "8080");
   config.WS_PORT = await ask("WebSocket port", "8082");
   config.GATEWAY_PORT = await ask("Gateway port", "443");
+
+  // --- Security ---
+  // MEETING_CRYPTO_KEY: required by the API in production (fail-fast on a
+  // missing/placeholder value, see serve/api/src/crypto-guard.ts). The env
+  // template ships it commented out, so auto-generate a random key here.
+  // The gateway delivers it to the browser via /app-config.js at runtime,
+  // so no frontend rebuild is needed.
+  const existingCryptoKey =
+    template.match(/^MEETING_CRYPTO_KEY=(.*)$/m)?.[1]?.trim() ?? "";
+  if (!existingCryptoKey || existingCryptoKey === "change-me-crypto-key") {
+    config.MEETING_CRYPTO_KEY = randomBytes(32).toString("base64");
+  }
 
   // Build env file by replacing/adding values in template
   let env = template;

@@ -42,7 +42,10 @@ COPY serve/api/package.json ./serve/api/
 COPY serve/realtime/package.json ./serve/realtime/
 COPY front/package.json ./front/
 COPY client/package.json ./client/
-RUN npm ci --ignore-scripts -w @meeting/shared -w @meeting/db -w @meeting/realtime
+# 可选 npm 镜像源：--build-arg NPM_REGISTRY=https://registry.npmmirror.com（默认空=官方源，CI 行为不变）
+ARG NPM_REGISTRY=""
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+ && npm ci --ignore-scripts -w @meeting/shared -w @meeting/db -w @meeting/realtime
 
 # Patch mediasoup's meson wrap files to use gh-proxy mirror, then build worker.
 COPY serve/realtime/patch-mediasoup-wrap.cjs ./patch-mediasoup-wrap.cjs

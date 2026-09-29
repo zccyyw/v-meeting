@@ -84,6 +84,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-meetingpass}
+      # 密码传输加密密钥：与 web 容器（entrypoint 注入前端 window.__MEETING_CRYPTO_KEY__）
+      # 必须同源一致；缺失/占位值时 api 因 crypto-guard 拒绝启动
+      MEETING_CRYPTO_KEY: ${MEETING_CRYPTO_KEY:-}
       API_PORT: 8080
       RECORDINGS_DIR: ${RECORDINGS_DIR:-/app/data/recordings}
       # 证书目录：用于登录页提供 CA 根证书下载（/api/certs/ca.crt）

@@ -9,6 +9,8 @@ User=meeting
 Group=meeting
 WorkingDirectory=/opt/meeting/app/serve/api
 EnvironmentFile=-/opt/meeting/conf/.env
+# NODE_ENV=production enables the crypto key fail-fast check (serve/api/src/crypto-guard.ts)
+Environment=NODE_ENV=production
 
 # Auto-migrate database before start (node direct, no shell)
 ExecStartPre=/opt/meeting/runtime/bin/node dist/migrate.js

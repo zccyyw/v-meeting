@@ -254,6 +254,23 @@ export const SCHEMA = [
     },
     active: false,
   },
+  {
+    key: "RECORDINGS_MIN_FREE_MB",
+    value: { dev: "2048", host: "2048", docker: "2048" },
+    active: false,
+    comment: [
+      "录制上传磁盘水位（MB）：可用空间低于阈值时拒绝上传（507 disk_full）；0 = 关闭",
+      "流式上传前无法预知大小，此为近似保护；statfs 不可用时自动跳过检查",
+    ],
+  },
+  {
+    key: "RECORDINGS_RETENTION_DAYS",
+    value: { dev: "0", host: "0", docker: "0" },
+    active: false,
+    comment: [
+      "录制保留天数：启动与每日清理超期录制（先删 DB 行后删文件），0 = 永久保留（默认关闭，避免升级后静默删数据）",
+    ],
+  },
 
   // ─────────────────────────── 会议行为 / 密钥 ───────────────────────────
   { section: "会议行为（自动结束 / 重连窗口 / 兜底扫描）" },
@@ -287,8 +304,9 @@ export const SCHEMA = [
     value: { dev: "<随机字符串>", host: "<随机字符串>", docker: "change-me-crypto-key" },
     active: { dev: false, host: false, docker: true },
     comment: [
-      "前后端共用的密码传输加密密钥，必须与前端构建时一致（未设置则用内置默认值）",
+      "前后端共用的密码传输加密密钥（网关经 /app-config.js 运行时下发给前端），未设置则用内置默认值",
       "生成：openssl rand -base64 32",
+      "生产必填：API 启动时校验（NODE_ENV=production），未设置或占位值 change-me-crypto-key 将拒绝启动，见 serve/api/src/crypto-guard.ts",
     ],
   },
 

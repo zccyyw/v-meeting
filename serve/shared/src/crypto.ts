@@ -142,6 +142,9 @@ export async function decryptPassword(stored: string): Promise<string> {
     );
     return dec.decode(plaintext);
   } catch {
+    console.warn(
+      "[crypto] password decrypt failed (key mismatch or malformed payload); treating as plaintext"
+    );
     return stored;
   }
 }

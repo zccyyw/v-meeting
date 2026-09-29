@@ -9,6 +9,8 @@ User=@USER@
 Group=@GROUP@
 WorkingDirectory=@PREFIX@/app/serve/api
 EnvironmentFile=-@PREFIX@/conf/.env
+# NODE_ENV=production enables the crypto key fail-fast check (serve/api/src/crypto-guard.ts)
+Environment=NODE_ENV=production
 # systemd 219 (Kylin V10 SP1) does not support StandardOutput=append:;
 # redirect inside the command instead. `exec` keeps PID/signals on node.
 ExecStart=/bin/sh -c "exec @NODE@ dist/index.js >> @PREFIX@/logs/api.log 2>&1"

@@ -1,0 +1,26 @@
+# 本地开发 override：在 Windows 宿主机上跑 UI，媒体面用 Linux 容器
+#
+# 背景：mediasoup-worker 在 Windows 上无法运行（0xC0000005 崩溃，与代码无关），
+# 本机联调音视频时让 api/realtime 跑 Linux 容器，浏览器仍从 Windows 访问。
+#
+# 用法（在仓库根目录）：
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# 与 docker-compose.yml 的差异：
+#   1. api    发布 8080（默认仅 expose，供 Windows 上的 vite dev 代理 /api）
+#   2. web    发布 8088（绕过 caddy 443/证书，浏览器直接 http://localhost:8088）
+#   3. realtime 的 ws 8082 与 UDP 40000-41000 基础文件已发布，无需改动
+#
+# 注意：
+#   - 跑之前停掉本机 npm run dev（否则 8080/8082 端口冲突）
+#   - MEDIASOUP_ANNOUNCED_IP 本机自测保持 127.0.0.1 即可；
+#     局域网其他设备访问时改为宿主机局域网 IP 后 `up -d` 重建 realtime
+#   - sqlite 默认 profile：数据在 meeting-data 卷，`down -v` 会清库
+services:
+  api:
+    ports:
+      - "8080:8080"
+
+  web:
+    ports:
+      - "8088:80"
