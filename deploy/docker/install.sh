@@ -7,12 +7,12 @@
 #        - MEETING_CRYPTO_KEY / MYSQL_PASSWORD / MYSQL_ROOT_PASSWORD / REDIS_PASSWORD
 #        - POSTGRES_PASSWORD（仅 postgres profile）
 #   3. MEDIASOUP_ANNOUNCED_IP 自动探测本机对外 IP 写入默认值（跨 NAT 需人工确认）
-#   4. 启动/停止统一通过 docker compose：
+#   4. 启动/停止统一通过 docker-compose 命令：
 #        up    启动（默认）        stop   停止（保留容器与数据）
 #        down  卸载（保留数据卷）  down -v 卸载并删除数据卷
 #
 # 用法：
-#   bash install.sh              # 部署：加载镜像(按需) + 准备 .env + docker compose up -d
+#   bash install.sh              # 部署：加载镜像(按需) + 准备 .env + docker-compose up -d
 #   bash install.sh stop         # 停止
 #   bash install.sh down         # 卸载（保留数据）
 #   bash install.sh down -v      # 卸载并清空数据卷
@@ -24,12 +24,12 @@ cd "$DIR"
 CMD="${1:-up}"
 
 compose() {
-  if docker compose version >/dev/null 2>&1; then
-    docker compose -p meeting "$@"
-  elif command -v docker-compose >/dev/null 2>&1; then
+  if command -v docker-compose >/dev/null 2>&1; then
     docker-compose -p meeting "$@"
+  elif docker compose version >/dev/null 2>&1; then
+    docker compose -p meeting "$@"
   else
-    echo "!! 未找到 docker compose / docker-compose，请先安装 Docker Compose v2+" >&2
+    echo "!! 未找到 docker-compose 命令或 docker compose 插件，请先安装 Docker Compose v2+" >&2
     exit 1
   fi
 }

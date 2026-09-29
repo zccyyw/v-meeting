@@ -166,7 +166,7 @@ if (existsSync(join(root, "deploy", "docker", "gen-selfsigned.sh"))) {
   );
 }
 
-// 一键部署脚本：加载镜像(按需) + 自动生成 .env（随机密钥/口令）+ docker compose 启停统一入口
+// 一键部署脚本：加载镜像(按需) + 自动生成 .env（随机密钥/口令）+ docker-compose 启停统一入口
 if (existsSync(join(root, "deploy", "docker", "install.sh"))) {
   copyFileSync(
     join(root, "deploy", "docker", "install.sh"),
@@ -191,7 +191,7 @@ writeFileSync(
     "部署步骤：",
     "  1. bash install.sh                  # 一键部署：自动加载镜像(已加载则跳过) + 生成 .env",
     "                                      #   （随机 MEETING_CRYPTO_KEY 与数据库/Redis 口令、",
-    "                                      #    探测 ANNOUNCED_IP；已有配置保留）并 docker compose up -d",
+    "                                      #    探测 ANNOUNCED_IP；已有配置保留）并 docker-compose up -d",
     "  2. bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>  # 生成证书（443 HTTPS 需），",
     "     然后 bash install.sh 重启使 caddy 挂载新证书",
     "",
@@ -201,8 +201,8 @@ writeFileSync(
     "默认数据库 MySQL：会启动 mysql:8.4 容器（口令由 install.sh 自动生成，可自行修改）",
     "改用零依赖单机：.env 设 COMPOSE_PROFILES=sqlite（数据存于 meeting-data volume）；亦可设 postgres",
     "",
-    "停止：bash install.sh stop        # docker compose stop（数据保留）",
-    "卸载：bash install.sh down        # docker compose down（数据卷保留）",
+    "停止：bash install.sh stop        # docker-compose stop（数据保留）",
+    "卸载：bash install.sh down        # docker-compose down（数据卷保留）",
     "      bash install.sh down -v     # 连数据卷一起删除（清空数据库/录制）",
     "升级：备份 meeting-data 卷后，替换镜像 tar 再 bash install.sh（API 启动自动迁移）",
     "",
