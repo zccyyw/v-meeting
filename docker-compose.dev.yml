@@ -9,10 +9,12 @@
 # 与 docker-compose.yml 的差异：
 #   1. api    发布 8080（默认仅 expose，供 Windows 上的 vite dev 代理 /api）
 #   2. web    发布 8088（绕过 caddy 443/证书，浏览器直接 http://localhost:8088）
-#   3. realtime 的 ws 8082 与 UDP 40000-41000 基础文件已发布，无需改动
+#   3. realtime 发布 8082（基础文件仅 expose，供 vite dev 代理 /ws；UDP 段基础文件已发布）
 #
 # 注意：
-#   - 跑之前停掉本机 npm run dev（否则 8080/8082 端口冲突）
+#   - api/realtime 必须一起容器化（共用 meeting-data 卷）：若 api 跑宿主机（MySQL）、
+#     realtime 跑容器（sqlite），两边数据不一致，容器侧看不到宿主机创建的会议
+#   - 本机 vite（8081）与容器 api(8080)/realtime(8082) 可共存，无端口冲突
 #   - MEDIASOUP_ANNOUNCED_IP 本机自测保持 127.0.0.1 即可；
 #     局域网其他设备访问时改为宿主机局域网 IP 后 `up -d` 重建 realtime
 #   - sqlite 默认 profile：数据在 meeting-data 卷，`down -v` 会清库
@@ -20,6 +22,10 @@ services:
   api:
     ports:
       - "8080:8080"
+
+  realtime:
+    ports:
+      - "8082:8082"
 
   web:
     ports:

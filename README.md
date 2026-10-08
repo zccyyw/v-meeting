@@ -87,9 +87,23 @@ npm run seed
 
 # 6. 启动三个服务（API / Realtime / 前端）
 npm run dev
+
+# 7. 本地开发 
+# 7.1 启动音视频
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d api realtime
+
+npm run dev:front
 ```
 
 浏览器访问 `http://localhost:8081`，默认账号 `admin / admin123`。
+
+### 全容器验证或演示
+```bash
+
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# 验证： http://localhost:8088 （admin/admin123）
+
+```
 
 > Windows 也可用 `powershell scripts/dev.ps1` 一键启动。
 

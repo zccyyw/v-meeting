@@ -187,6 +187,25 @@ export default defineConfig(({ mode }) => {
         "/ws": {
           target: `http://127.0.0.1:${wsPort}`,
           ws: true,
+          // dev:app 模式下 realtime 不随本机启动（8082 无人监听），前端加载即连 /ws
+          // 会触发 ECONNREFUSED 刷屏。此处静默该错误并提示一次如何启动媒体面。
+          configure: (proxy) => {
+            let hinted = false;
+            proxy.on("error", (err) => {
+              const code = (err as NodeJS.ErrnoException).code;
+              if (code === "ECONNREFUSED") {
+                if (!hinted) {
+                  hinted = true;
+                  console.log(
+                    `[vite] realtime 未运行(端口 ${wsPort})，进会议/音视频不可用。` +
+                    `如需媒体联调: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d realtime`,
+                  );
+                }
+                return;
+              }
+              console.error("[vite] ws proxy error:", err.message);
+            });
+          },
         },
         // 同源代理 /api：局域网 HTTPS 访问时若直连 http://127.0.0.1:8080
         // 会被浏览器按混合内容拦截（且 127.0.0.1 指向的是客户端自己）。
