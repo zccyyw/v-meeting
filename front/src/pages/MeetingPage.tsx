@@ -706,7 +706,9 @@ function MeetingPageInner() {
                     onChange={(e) => {
                       const id = e.target.value;
                       setAudioId(id);
-                      void roomRef.current?.switchDevice("audio", id);
+                      void roomRef.current?.switchDevice("audio", id).catch((err) => {
+                        console.warn("[rtc] switch audio device failed:", err);
+                      });
                     }}
                   >
                     {audioInputs.map((d) => (
@@ -726,7 +728,9 @@ function MeetingPageInner() {
                     onChange={(e) => {
                       const id = e.target.value;
                       setVideoId(id);
-                      void roomRef.current?.switchDevice("video", id);
+                      void roomRef.current?.switchDevice("video", id).catch((err) => {
+                        console.warn("[rtc] switch video device failed:", err);
+                      });
                     }}
                   >
                     {videoInputs.map((d) => (
@@ -1029,19 +1033,27 @@ function MeetingPageInner() {
           chatOpen={chatOpen}
           unreadChat={unreadChat}
           onToggleMic={() => {
-            void roomRef.current?.setMicEnabled(!snap.micEnabled);
+            void roomRef.current
+                      ?.setMicEnabled(!snap.micEnabled)
+                      .catch((err) => console.warn("[rtc] toggle mic failed:", err));
           }}
           onToggleCam={() => {
-            void roomRef.current?.setCamEnabled(!snap.camEnabled);
+            void roomRef.current
+                      ?.setCamEnabled(!snap.camEnabled)
+                      .catch((err) => console.warn("[rtc] toggle cam failed:", err));
           }}
           onToggleHand={() => {
             roomRef.current?.setHandRaised(!snap.handRaised);
           }}
           onToggleScreenShare={() => {
             if (snap.sharingScreen) {
-              void roomRef.current?.stopScreenShare();
+              void roomRef.current
+                      ?.stopScreenShare()
+                      .catch((err) => console.warn("[rtc] stop screen share failed:", err));
             } else {
-              void roomRef.current?.startScreenShare();
+              void roomRef.current
+                      ?.startScreenShare()
+                      .catch((err) => console.warn("[rtc] start screen share failed:", err));
             }
           }}
           onToggleMembers={() => {

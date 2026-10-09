@@ -1206,6 +1206,25 @@ export function createSignalHandler(db: Db) {
           break;
         }
 
+        case "restartIce": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const transport = ctx.media.transports.get(message.transportId);
+          if (!transport) {
+            send(ws, { type: "error", message: "transport_not_found" });
+            return;
+          }
+          // 生成新的 ICE ufrag/pwd；已有 UDP 映射失效（容器/NAT 超时等）时，
+          // 客户端用新参数重新连通即可自愈，无需重建 transport/消费
+          const iceParameters = transport.restartIce();
+          send(ws, {
+            type: "iceRestarted",
+            transportId: message.transportId,
+            iceParameters,
+          });
+          break;
+        }
+
         case "produce": {
           const ctx = requireAdmitted(ws);
           if (!ctx) return;

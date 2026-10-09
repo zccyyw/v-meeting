@@ -398,7 +398,8 @@ export class MediaRoom {
   async switchDevice(kind: "audio" | "video", deviceId: string): Promise<void> {
     if (!this.localStream) return;
 
-    if (kind === "audio") {
+    try {
+      if (kind === "audio") {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { deviceId: { exact: deviceId } },
         video: false,
@@ -434,6 +435,15 @@ export class MediaRoom {
       }
     }
     this.emit();
+    } catch (err) {
+      // 切换设备被拒（权限/设备占用）不应产生未捕获异常，降级为非阻断提示
+      const name = err instanceof Error ? err.name : String(err);
+      this.localMediaError =
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "media_permission_denied"
+          : "media_capture_failed";
+      this.emit();
+    }
   }
 
   async startScreenShare(): Promise<void> {
@@ -445,10 +455,21 @@ export class MediaRoom {
     }
     if (this.sharingScreen) return;
 
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: false,
-    });
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+    } catch (err) {
+      const name = err instanceof Error ? err.name : String(err);
+      // 用户在共享选择框点"取消"（NotAllowedError: Permission denied by user）
+      // 属正常取消，静默返回；不应作为错误打断会议状态
+      if (name === "NotAllowedError") return;
+      this.error = err instanceof Error ? err.message : "screen_share_failed";
+      this.emit();
+      return;
+    }
     const track = stream.getVideoTracks()[0];
     if (!track) {
       for (const t of stream.getTracks()) t.stop();
@@ -1131,9 +1152,45 @@ export class MediaRoom {
     // "看不到对方画面/听不到声音"而没有任何提示。典型原因：服务器
     // MEDIASOUP_ANNOUNCED_IP 配置错误或 UDP 40000-41000 未放行。
     transport.on("connectionstatechange", (state) => {
+      // 诊断日志：完整状态轨迹（connected→disconnected→failed 的时间序列
+      // 可区分网络抖动、NAT/UDP 映射超时与真正不可达）
+      console.log(
+        `[rtc] ${direction} transport connection state: ${state}`,
+      );
       if (state === "failed") {
-        this.error = "media_connection_failed";
-        this.emit();
+        void (async () => {
+          // 自愈：ICE restart 换取新的 iceParameters 重新连通（容器/NAT 下
+          // UDP 映射超时等瞬时故障常可恢复），不中断已建立的 produce/consume
+          try {
+            const reply = await this.request<
+              | Extract<ServerMessage, { type: "iceRestarted" }>
+              | Extract<ServerMessage, { type: "error" }>
+            >(
+              {
+                type: "restartIce",
+                transportId: transport.id,
+              },
+              (m) =>
+                (m.type === "iceRestarted" &&
+                  m.transportId === transport.id) ||
+                m.type === "error",
+            );
+            if (reply.type === "error") throw new Error(reply.message);
+            await transport.restartIce({
+              iceParameters: reply.iceParameters as never,
+            });
+            console.log(`[rtc] ${direction} transport ICE restart issued`);
+            return;
+          } catch (err) {
+            console.warn(
+              `[rtc] ${direction} transport ICE restart failed:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+          // 自愈无效才提示用户
+          this.error = "media_connection_failed";
+          this.emit();
+        })();
       }
     });
 

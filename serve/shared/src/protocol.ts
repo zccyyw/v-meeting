@@ -56,6 +56,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     dtlsParameters: z.unknown(),
   }),
   z.object({
+    type: z.literal("restartIce"),
+    transportId: z.string(),
+  }),
+  z.object({
     type: z.literal("produce"),
     transportId: z.string(),
     kind: z.enum(["audio", "video"]),
@@ -169,6 +173,12 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("transportConnected"),
     transportId: z.string(),
+  }),
+  z.object({
+    /** 客户端请求 ICE restart 后返回新的 iceParameters（网络抖动自愈） */
+    type: z.literal("iceRestarted"),
+    transportId: z.string(),
+    iceParameters: z.unknown(),
   }),
   z.object({
     /** 服务端观测到 WebRTC transport ICE/DTLS 异常时通知客户端给出可见提示 */
