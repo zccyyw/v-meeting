@@ -42,6 +42,10 @@ type RoomState = {
   mutedByHost: Set<string>;
   /** 主持人是否进过本会议：用于区分"主持人离线待重连"与"参会者早到" */
   hostJoined: boolean;
+  /** 各成员上报的到服务器 RTT（ms）与最后上报时间：广播给全房间驱动延迟角标 */
+  networkRtt: Map<string, { rttMs: number; ts: number }>;
+  /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
+  rotationEnabled: boolean;
 };
 
 function peerId() {
@@ -250,6 +254,8 @@ export function createSignalHandler(db: Db) {
           peers: new Map(),
           mutedByHost: new Set(),
           hostJoined: false,
+          networkRtt: new Map(),
+          rotationEnabled: false,
         };
         rooms.set(meetingId, state);
         return state;
@@ -489,6 +495,7 @@ export function createSignalHandler(db: Db) {
       const wasAdmitted = roomPeer != null && !roomPeer.inWaitingRoom;
       state.room.remove(peerId);
       state.peers.delete(peerId);
+      state.networkRtt.delete(peerId);
       wsToPeer.delete(media.ws);
       send(media.ws, { type: "kicked", reason: "replaced_by_new_session" });
       await closePeerMedia(state, media);
@@ -581,6 +588,7 @@ export function createSignalHandler(db: Db) {
       // 等待室准入后入会同样同步当前布局/焦点/共享权限
       layout: state.room.layout,
       focusPeerId: state.room.focusPeerId,
+      rotationEnabled: state.rotationEnabled,
       allowShare: state.room.allowShareDefault,
       peers: admittedPeerList(state).filter((p) => p.peerId !== targetPeerId),
     });
@@ -620,6 +628,7 @@ export function createSignalHandler(db: Db) {
     if (media) {
       await closePeerMedia(state, media);
       state.peers.delete(id);
+      state.networkRtt.delete(id);
     }
     const peer = state.room.getPeer(id);
     const wasAdmitted = peer != null && !peer.inWaitingRoom;
@@ -755,6 +764,7 @@ export function createSignalHandler(db: Db) {
       // 后入会者直接同步，而不是停留在前端默认值
       layout: state.room.layout,
       focusPeerId: state.room.focusPeerId,
+      rotationEnabled: state.rotationEnabled,
       allowShare: state.room.allowShareDefault,
       peers: admittedPeerList(state).filter((p) => p.peerId !== id),
     });
@@ -827,6 +837,7 @@ export function createSignalHandler(db: Db) {
           send(targetMedia.ws, { type: "kicked", reason: "denied" });
           await closePeerMedia(state, targetMedia);
           state.peers.delete(targetPeerId);
+          state.networkRtt.delete(targetPeerId);
           wsToPeer.delete(targetMedia.ws);
           try {
             targetMedia.ws.close();
@@ -896,6 +907,7 @@ export function createSignalHandler(db: Db) {
           send(targetMedia.ws, { type: "kicked", reason: "kicked_by_host" });
           await closePeerMedia(state, targetMedia);
           state.peers.delete(targetPeerId);
+          state.networkRtt.delete(targetPeerId);
           wsToPeer.delete(targetMedia.ws);
           broadcastAdmitted(state, { type: "peerLeft", peerId: targetPeerId });
           try {
@@ -1019,7 +1031,7 @@ export function createSignalHandler(db: Db) {
       switch (message.type) {
         case "ping":
           // 应用层心跳：无需已入会，收到即回 pong
-          send(ws, { type: "pong" });
+          send(ws, { type: "pong", t: message.t });
           break;
 
         case "join":
@@ -1127,6 +1139,45 @@ export function createSignalHandler(db: Db) {
             type: "layout",
             layout: ctx.state.room.layout,
             focusPeerId: message.peerId,
+          });
+          break;
+        }
+
+        case "setRotation": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.rotationEnabled = message.enabled;
+          broadcastAdmitted(ctx.state, {
+            type: "rotationChanged",
+            enabled: message.enabled,
+          });
+          break;
+        }
+
+        case "networkStats": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const now = Date.now();
+          ctx.state.networkRtt.set(ctx.media.peerId, {
+            rttMs: message.rttMs,
+            ts: now,
+          });
+          // 清理超过 20 秒未上报的僵尸条目（掉线成员不再显示延迟）
+          for (const [pid, v] of ctx.state.networkRtt) {
+            if (now - v.ts > 20_000) ctx.state.networkRtt.delete(pid);
+          }
+          // 上报即广播：全房间尽快拿到最新延迟表
+          broadcastAdmitted(ctx.state, {
+            type: "peerNetworkStats",
+            peers: [...ctx.state.networkRtt.entries()].map(([pid, v]) => ({
+              peerId: pid,
+              rttMs: v.rttMs,
+            })),
           });
           break;
         }

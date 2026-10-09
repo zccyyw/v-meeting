@@ -21,6 +21,8 @@ export type Tile = {
   micMuted?: boolean;
   /** Local screen share that may capture the meeting UI itself (monitor or window). */
   localSelfScreen?: boolean;
+  /** 该成员到服务器的网络延迟（ms），右上角角标显示 */
+  rttMs?: number;
 };
 
 type Props = {
@@ -45,6 +47,12 @@ type Props = {
    * (training/speaker mode, host only).
    */
   onFocusPeer?: (peerId: string | null) => void;
+  /** 各成员网络延迟（ms），key=peerId；驱动画面右上角延迟角标 */
+  peerRtt?: Record<string, number>;
+  /** 主持人控制的"成员画面轮换"开关 */
+  rotationEnabled?: boolean;
+  /** 轮换间隔（ms），来自本地设置（5/15/30s） */
+  rotationIntervalMs?: number;
 };
 
 function hasActiveCamera(stream: MediaStream | null | undefined): boolean {
@@ -61,6 +69,9 @@ function hasLiveVideo(stream: MediaStream | null | undefined): boolean {
 }
 
 /** Draggable side list — can be dragged as a floating panel; collapsible. */
+/** 轮换单页容量：3 列 × 2 行（panel/embed 通用） */
+const SIDE_PAGE_SIZE = 6;
+
 export function DraggableSideList({
   tiles,
   focusEnabled,
@@ -68,6 +79,9 @@ export function DraggableSideList({
   handTitle,
   onFocusPeer,
   variant = "embed",
+  rttByPeer,
+  rotationEnabled,
+  rotationIntervalMs = 15_000,
 }: {
   tiles: {
     key: string;
@@ -80,17 +94,43 @@ export function DraggableSideList({
     forceAvatar?: boolean;
     micMuted?: boolean;
     localSelfScreen?: boolean;
+    rttMs?: number;
   }[];
   focusEnabled: boolean;
   focusedPeerId?: string | null;
   handTitle: string;
   onFocusPeer?: (peerId: string | null) => void;
+  /** 各成员网络延迟（ms），key=peerId */
+  rttByPeer?: Record<string, number>;
+  /** 主持人控制的轮换开关：开启且成员数超过单页容量时按页轮换 */
+  rotationEnabled?: boolean;
+  /** 轮换间隔（ms） */
+  rotationIntervalMs?: number;
   /**
    * embed：嵌入右侧列（演讲布局，可拖动/收起）；
    * panel：固定右侧悬浮面板（培训布局，默认收起、不可拖动）。
    */
   variant?: "embed" | "panel";
 }) {
+  // —— 成员画面自动轮换：成员数超过单页容量时按页循环；hover 暂停 ——
+  const [page, setPage] = useState(0);
+  const [rotPaused, setRotPaused] = useState(false);
+  const rotating = Boolean(rotationEnabled) && tiles.length > SIDE_PAGE_SIZE;
+  const pageCount = Math.max(1, Math.ceil(tiles.length / SIDE_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page >= pageCount) setPage(0);
+  }, [page, pageCount]);
+
+  useEffect(() => {
+    if (!rotating || rotPaused || pageCount <= 1) return;
+    const timer = setInterval(() => setPage((p) => (p + 1) % pageCount), rotationIntervalMs);
+    return () => clearInterval(timer);
+  }, [rotating, rotPaused, pageCount, rotationIntervalMs]);
+
+  const visibleTiles = rotating
+    ? tiles.slice(page * SIDE_PAGE_SIZE, page * SIDE_PAGE_SIZE + SIDE_PAGE_SIZE)
+    : tiles;
   const { t } = useTranslation();
   const isPanel = variant === "panel";
   const [floating, setFloating] = useState(false);
@@ -123,6 +163,7 @@ export function DraggableSideList({
       if (!dragStart.current) return;
       const dx = e.clientX - dragStart.current.x;
       const dy = e.clientY - dragStart.current.y;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) movedRef.current = true;
       setPos({ x: dragStart.current.px + dx, y: dragStart.current.py + dy });
     };
     const onUp = () => {
@@ -169,6 +210,8 @@ export function DraggableSideList({
         isPanel ? " video-sidelist--panel" : ""
       }`}
       style={style}
+      onMouseEnter={() => setRotPaused(true)}
+      onMouseLeave={() => setRotPaused(false)}
     >
       {!isPanel ? (
         // 演讲者布局：仅保留拖动手柄，不提供收起/展开
@@ -194,7 +237,12 @@ export function DraggableSideList({
           ›
         </button>
       )}
-      {tiles.map((tile) => (
+      {rotating && (
+        <div className="video-sidelist-page" aria-live="polite">
+          {page + 1} / {pageCount}
+        </div>
+      )}
+      {visibleTiles.map((tile) => (
         <VideoTile
           key={tile.key}
           stream={tile.stream}
@@ -207,6 +255,7 @@ export function DraggableSideList({
           compact
           focused={focusedPeerId != null && tile.peerId === focusedPeerId}
           focusable={focusEnabled}
+          rttMs={rttByPeer?.[tile.peerId]}
           onClick={
             focusEnabled && onFocusPeer
               ? () => onFocusPeer(tile.peerId)
@@ -222,16 +271,54 @@ export function DraggableSideList({
  * Presenter PIP (picture-in-picture) — floats over the main stage, defaults to
  * the bottom-right corner and can be dragged anywhere.
  */
-function DraggablePip({ tile, handTitle }: { tile: Tile; handTitle: string }) {
+function DraggablePip({
+  tile,
+  handTitle,
+  rotationTiles,
+  rotationIntervalMs = 15_000,
+  participantsCount,
+}: {
+  tile: Tile;
+  handTitle: string;
+  /** 主讲人视角：其他成员摄像头轮换池（排除自己与共享画面） */
+  rotationTiles?: Tile[];
+  /** 轮换间隔（ms） */
+  rotationIntervalMs?: number;
+  /** 参会总人数（overlay 显示） */
+  participantsCount?: number;
+}) {
   const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  // 区分"拖动"与"点击"：拖动过的 mouseup 不触发模式切换
+  const movedRef = useRef(false);
+  // PiP 模式：rotation=轮换看学员；self=自己摄像头
+  const hasRotation = Boolean(rotationTiles && rotationTiles.length > 0);
+  const [mode, setMode] = useState<"rotation" | "self">(hasRotation ? "rotation" : "self");
+  const [rotIdx, setRotIdx] = useState(0);
+  const rotKey = rotationTiles?.map((t) => t.key).join("|") ?? "";
+  useEffect(() => {
+    setRotIdx(0);
+  }, [rotKey]);
+  useEffect(() => {
+    if (mode !== "rotation" || !rotationTiles || rotationTiles.length <= 1) return;
+    const timer = setInterval(
+      () => setRotIdx((i) => (i + 1) % rotationTiles.length),
+      rotationIntervalMs,
+    );
+    return () => clearInterval(timer);
+  }, [mode, rotationTiles, rotationIntervalMs]);
+  const currentTile =
+    mode === "rotation" && rotationTiles && rotationTiles.length > 0
+      ? rotationTiles[rotIdx % rotationTiles.length]
+      : tile;
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     const el = ref.current;
     if (!el) return;
+    movedRef.current = false;
     // offsetLeft/Top are relative to the positioned .video-grid container,
     // matching the absolute left/top style (avoids a jump on first drag).
     dragStart.current = { x: e.clientX, y: e.clientY, px: el.offsetLeft, py: el.offsetTop };
@@ -270,20 +357,34 @@ function DraggablePip({ tile, handTitle }: { tile: Tile; handTitle: string }) {
       className="video-pip"
       style={style}
       onMouseDown={onMouseDown}
-      title={t("meeting.dragHandle")}
+      onClick={() => {
+        if (hasRotation && !movedRef.current) {
+          setMode((m) => (m === "rotation" ? "self" : "rotation"));
+        }
+      }}
+      title={hasRotation ? t("meeting.pipSwitchHint") : t("meeting.dragHandle")}
     >
       <VideoTile
-        stream={tile.stream}
-        label={tile.label}
-        muted={tile.muted}
-        micMuted={tile.micMuted}
-        handRaised={tile.handRaised}
+        stream={currentTile.stream}
+        label={currentTile.label}
+        muted={currentTile.muted}
+        micMuted={currentTile.micMuted}
+        handRaised={currentTile.handRaised}
         handTitle={handTitle}
-        showAvatar={!tile.isScreen && tile.forceAvatar}
-        isScreen={tile.isScreen}
-        localSelfScreen={tile.localSelfScreen}
-        camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
+        showAvatar={!currentTile.isScreen && currentTile.forceAvatar}
+        isScreen={currentTile.isScreen}
+        localSelfScreen={currentTile.localSelfScreen}
+        camOff={!currentTile.isScreen && Boolean(currentTile.forceAvatar)}
+        rttMs={currentTile.rttMs}
       />
+      {mode === "rotation" && rotationTiles && rotationTiles.length > 0 && (
+        <div className="video-pip-overlay">
+          <span className="video-pip-overlay-count">
+            {t("meeting.participantsCount", { count: participantsCount ?? 0 })}
+          </span>
+          <span className="video-pip-overlay-name">{currentTile.label}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -354,8 +455,10 @@ function VideoTile({
   onClick,
   focusable,
   actionTitle,
+  rttMs,
 }: {
   stream: MediaStream | null;
+  rttMs?: number;
   label: string;
   muted?: boolean;
   micMuted?: boolean;
@@ -441,6 +544,14 @@ function VideoTile({
         </div>
       )}
       <span className={`video-label${camOff ? " video-label--cam-off" : ""}`}>{label}</span>
+      {rttMs != null && (
+        <span
+          className={`video-tile-rtt ${rttMs < 100 ? "rtt-good" : rttMs < 300 ? "rtt-mid" : "rtt-bad"}`}
+          title={t("meeting.networkDelay")}
+        >
+          {rttMs}ms
+        </span>
+      )}
       {handRaised && (
         <span className="hand-badge" title={handTitle}>
           <HandIcon />
@@ -479,6 +590,9 @@ export function VideoGrid({
   layoutCols,
   hostPeerId,
   onFocusPeer,
+  peerRtt,
+  rotationEnabled,
+  rotationIntervalMs,
 }: Props) {
   const { t } = useTranslation();
   const handTitle = t("meeting.hand");
@@ -547,6 +661,7 @@ export function VideoGrid({
       micMuted: !localMicEnabled,
       handRaised: Boolean(selfHandRaised) || Boolean(localPeerId && peerHand(localPeerId)),
       forceAvatar: !localCamEnabled || !hasActiveCamera(localStream),
+      rttMs: localPeerId != null ? peerRtt?.[localPeerId] : undefined,
     },
   ];
 
@@ -606,6 +721,7 @@ export function VideoGrid({
       micMuted: !info.micEnabled,
       handRaised: info.handRaised,
       forceAvatar: !info.camEnabled || !hasActiveCamera(stream),
+      rttMs: peerRtt?.[peerId],
     });
   }
 
@@ -673,6 +789,18 @@ export function VideoGrid({
       ? tiles.find((t) => t.peerId === screenOwnerId && !t.isScreen) ?? hostTile
       : hostTile;
 
+  // 主讲人（自己正在共享）视角：PiP 改为其他成员摄像头轮换池，
+  // 点击可在"成员轮换 ↔ 自己摄像头"间切换（默认成员轮换）。
+  // 注意：不能用 screenTile 判定——本地自捕获共享（显示器/窗口）不产生
+  // screen tile（跳过推送以避免无限嵌套），必须直接检测本地共享流。
+  const selfSharing =
+    hasScreen && Boolean(localScreenStream && hasLiveVideo(localScreenStream));
+  const rotationPool = selfSharing
+    ? tiles.filter((t) => !t.isScreen && t.peerId !== localPeerId)
+    : [];
+  const selfCamTile = tiles.find((t) => t.peerId === localPeerId && !t.isScreen);
+  const participantsCount = tiles.filter((t) => !t.isScreen).length;
+
   // 主舞台展示共享画面或他人画面时悬浮小窗：
   //  - 培训布局：始终显示（原有行为）
   //  - 任意布局：只要有投屏就显示（grid/speaker 投屏时也会走侧栏分支），
@@ -681,7 +809,9 @@ export function VideoGrid({
     (layout === "training" || hasScreen) &&
     Boolean(pipTile) &&
     focusTile != null &&
-    focusTile.key !== pipTile!.key;
+    (selfSharing
+      ? Boolean(selfCamTile) || rotationPool.length > 0
+      : focusTile.key !== pipTile!.key);
 
   // 右侧成员显示全部人员（含主持人/自己），仅排除共享画面 tile；
   // 点击不同成员（含主持人）即可切换主画面
@@ -715,10 +845,19 @@ export function VideoGrid({
               handTitle={handTitle}
               onFocusPeer={onFocusPeer}
               variant={isTraining ? "panel" : "embed"}
+              rttByPeer={peerRtt}
+              rotationEnabled={rotationEnabled}
+              rotationIntervalMs={rotationIntervalMs}
             />
           )}
           {showPip && pipTile && (
-            <DraggablePip tile={pipTile} handTitle={handTitle} />
+            <DraggablePip
+              tile={selfSharing ? (selfCamTile ?? pipTile) : pipTile}
+              handTitle={handTitle}
+              rotationTiles={selfSharing ? rotationPool : undefined}
+              rotationIntervalMs={rotationIntervalMs}
+              participantsCount={participantsCount}
+            />
           )}
         </div>
       </>
@@ -743,6 +882,7 @@ export function VideoGrid({
             showAvatar={!tile.isScreen && tile.forceAvatar}
             isScreen={tile.isScreen}
             localSelfScreen={tile.localSelfScreen}
+            rttMs={tile.rttMs}
             micMuted={tile.micMuted}
             camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
           />

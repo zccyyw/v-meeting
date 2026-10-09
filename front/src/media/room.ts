@@ -54,6 +54,10 @@ export type MediaRoomSnapshot = {
   camEnabled: boolean;
   handRaised: boolean;
   layout: MeetingLayout;
+  /** 各成员到服务器的网络延迟（ms），由各自客户端上报、服务端汇总广播 */
+  peerRtt: Record<string, number>;
+  /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
+  rotationEnabled: boolean;
   focusPeerId: string | null;
   sharingScreen: boolean;
   canShare: boolean;
@@ -129,6 +133,9 @@ export class MediaRoom {
   private camEnabled = false;
   private handRaised = false;
   private layout: MeetingLayout = "grid";
+  private peerRtt = new Map<string, number>();
+  private rotationEnabled = false;
+  private rttTimer: ReturnType<typeof setInterval> | null = null;
   private focusPeerId: string | null = null;
   private screenFocusPeerId: string | null = null;
   private sharingScreen = false;
@@ -183,6 +190,8 @@ export class MediaRoom {
       camEnabled: this.camEnabled,
       handRaised: this.handRaised,
       layout: this.layout,
+      peerRtt: Object.fromEntries(this.peerRtt),
+      rotationEnabled: this.rotationEnabled,
       focusPeerId: this.screenFocusPeerId ?? this.focusPeerId,
       sharingScreen: this.sharingScreen,
       canShare: this.canShare,
@@ -288,6 +297,36 @@ export class MediaRoom {
       );
     }
     this.emit();
+  }
+
+  /** 主持人开关"成员画面轮换"（服务端校验 host 并广播全员） */
+  setRotation(enabled: boolean): void {
+    this.signal.send({ type: "setRotation", enabled });
+    // 本地立即生效（主持人自己），服务端广播随后覆盖
+    if (this.rotationEnabled !== enabled) {
+      this.rotationEnabled = enabled;
+      this.emit();
+    }
+  }
+
+  /**
+   * 启动 RTT 周期采集：信令 ping/pong 回显测量（client 发出 → server 回显）。
+   * 不用 getStats 的 candidate-pair.currentRoundTripTime——媒体走 TCP 兜底时
+   * 不做 STUN consent 测量，该字段无值；信令 RTT 任何传输下都可用且语义一致。
+   */
+  private startRttReporting(): void {
+    if (this.rttTimer) return;
+    this.rttTimer = setInterval(() => {
+      if (this.closed || !this.recvTransport) return;
+      this.signal.send({ type: "ping", t: Date.now() });
+    }, 5_000);
+  }
+
+  private stopRttReporting(): void {
+    if (this.rttTimer) {
+      clearInterval(this.rttTimer);
+      this.rttTimer = null;
+    }
   }
 
   setLayout(layout: MeetingLayout): void {
@@ -612,6 +651,8 @@ export class MediaRoom {
   /** 释放 SFU/媒体资源，但不置 closed，以便后续自动重连复用本实例。 */
   private teardownMedia(): void {
     this.mediaReady = false;
+    this.stopRttReporting();
+    this.peerRtt.clear();
     this.device = null;
 
     for (const c of this.consumers.values()) {
@@ -793,6 +834,25 @@ export class MediaRoom {
         this.emit();
         break;
 
+      case "pong":
+        // 仅处理带时间戳的 pong（room 的 RTT 探测）；SignalClient 心跳的 pong 无 t
+        if (msg.t != null) {
+          const rttMs = Math.max(0, Date.now() - msg.t);
+          this.signal.send({ type: "networkStats", rttMs });
+        }
+        break;
+
+      case "rotationChanged":
+        this.rotationEnabled = msg.enabled;
+        this.emit();
+        break;
+
+      case "peerNetworkStats": {
+        this.peerRtt = new Map(msg.peers.map((p) => [p.peerId, p.rttMs]));
+        this.emit();
+        break;
+      }
+
       case "sharePermission":
         this.allowShare = msg.allowed;
         this.canShare = this.role === "host" || msg.allowed;
@@ -968,6 +1028,9 @@ export class MediaRoom {
     if (msg.focusPeerId !== undefined) {
       this.focusPeerId = msg.focusPeerId;
     }
+    if (msg.rotationEnabled !== undefined) {
+      this.rotationEnabled = msg.rotationEnabled;
+    }
     this.status = "joined";
     this.emit();
     await this.setupMedia();
@@ -1006,6 +1069,7 @@ export class MediaRoom {
     // 阻塞"看/听别人"。mediaReady 提前置位并冲刷排队的 newProducer；
     // 否则采集一旦失败，消费队列成为死信，表现为"进了会但看不到任何人"。
     this.mediaReady = true;
+    this.startRttReporting();
     const queued = this.pendingProducers;
     this.pendingProducers = [];
     for (const m of queued) {

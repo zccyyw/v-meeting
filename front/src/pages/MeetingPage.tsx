@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CopyOutlined, CheckOutlined, SettingOutlined, DownOutlined } from "@ant-design/icons";
+import {
+  CopyOutlined,
+  CheckOutlined,
+  SettingOutlined,
+  DownOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
+} from "@ant-design/icons";
 import { MeetingApi, RecordingsApi, InvitationApi, type InvitationItem } from "@/api/client";
 import { copyText, formatMeetingCode } from "@/auth/joinPrefs";
 import { getSessionId } from "@/auth/session";
@@ -52,6 +59,8 @@ const emptySnapshot: MediaRoomSnapshot = {
   canShare: true,
   allowShare: true,
   waitingRoomEnabled: false,
+  peerRtt: {},
+  rotationEnabled:false,
   recordAllowed: false,
   chatMessages: [],
   error: null,
@@ -78,6 +87,45 @@ function MeetingPageInner() {
   const initialCam = camParam == null ? false : camParam === "1";
 
   const [snap, setSnap] = useState<MediaRoomSnapshot>(emptySnapshot);
+  // 全屏状态：fullscreenchange 事件同步（含浏览器 ESC 退出）
+  const [isFullscreen, setIsFullscreen] = useState(() => !!document.fullscreenElement);
+  // 成员画面轮换间隔（本地设置，持久化；主持人开关状态走信令）
+  const [rotationIntervalMs, setRotationIntervalMs] = useState<number>(() => {
+    const raw = Number(localStorage.getItem("rotationIntervalMs"));
+    return raw === 5000 || raw === 15000 || raw === 30000 ? raw : 15000;
+  });
+  useEffect(() => {
+    localStorage.setItem("rotationIntervalMs", String(rotationIntervalMs));
+  }, [rotationIntervalMs]);
+  useEffect(() => {
+    const sync = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  function toggleFullscreen(): void {
+    try {
+      if (document.fullscreenElement) {
+        void document.exitFullscreen?.().catch(() => {});
+      } else {
+        void document.documentElement.requestFullscreen?.().catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** 返回首页：会议结束/被踢/主动离开时自动退出全屏（若处于全屏） */
+  function goHome(opts?: { replace?: boolean }): void {
+    try {
+      if (document.fullscreenElement) {
+        void document.exitFullscreen?.().catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
+    navigate("/", opts);
+  }
   // 非阻断警示（黄横幅）10 秒自动消散：记录已隐藏的警示内容，
   // 新内容出现时重新显示；清空时复位
   const [warningDismissed, setWarningDismissed] = useState<string | null>(null);
@@ -199,7 +247,7 @@ function MeetingPageInner() {
     // Active leave already navigates home; only meeting end / remote end.
     if (snap.endedReason === "left") return;
     showMessage(t("meeting.ended"));
-    navigate("/", { replace: true });
+    goHome({ replace: true });
   }, [snap.status, snap.endedReason, navigate, t]);
 
   useEffect(() => {
@@ -702,13 +750,28 @@ function MeetingPageInner() {
           <div className="meeting-settings" ref={settingsRef}>
             <button
               type="button"
-              className={`meeting-header-btn${settingsOpen ? " is-active" : ""}`}
+              className={`meeting-header-btn meeting-header-btn--icon${settingsOpen ? " is-active" : ""}`}
+              style={{ background: "transparent", border: 0 }}
               onClick={() => setSettingsOpen((v) => !v)}
               aria-expanded={settingsOpen}
               aria-haspopup="dialog"
               aria-label={t("meeting.settings")}
             >
               <SettingOutlined style={{ fontSize: 20 }} />
+            </button>
+            <button
+              type="button"
+              className="meeting-header-btn meeting-header-btn--icon"
+              style={{ background: "transparent", border: 0 }}
+              onClick={toggleFullscreen}
+              aria-label={isFullscreen ? t("meeting.exitFullscreen") : t("meeting.fullscreen")}
+              title={isFullscreen ? t("meeting.exitFullscreen") : t("meeting.fullscreen")}
+            >
+              {isFullscreen ? (
+                <FullscreenExitOutlined style={{ fontSize: 20 }} />
+              ) : (
+                <FullscreenOutlined style={{ fontSize: 20 }} />
+              )}
             </button>
             {settingsOpen && (
               <div className="meeting-settings-popover" role="dialog">
@@ -754,6 +817,29 @@ function MeetingPageInner() {
                           })}
                       </option>
                     ))}
+                  </select>
+                </label>
+                {isHost && (
+                  <label className="control-check">
+                    <input
+                      type="checkbox"
+                      checked={snap.rotationEnabled}
+                      onChange={(e) => {
+                        roomRef.current?.setRotation(e.target.checked);
+                      }}
+                    />
+                    {t("meeting.rotationToggle")}
+                  </label>
+                )}
+                <label className="control-select">
+                  {t("meeting.rotationInterval")}
+                  <select
+                    value={rotationIntervalMs}
+                    onChange={(e) => setRotationIntervalMs(Number(e.target.value))}
+                  >
+                    <option value={5000}>5s</option>
+                    <option value={15000}>15s</option>
+                    <option value={30000}>30s</option>
                   </select>
                 </label>
                 <label className="control-select">
@@ -856,7 +942,7 @@ function MeetingPageInner() {
             {snap.endedReason ? (
               <p className="muted">{snap.endedReason}</p>
             ) : null}
-            <button type="button" onClick={() => navigate("/")}>
+            <button type="button" onClick={() => goHome()}>
               {t("meeting.backHome")}
             </button>
           </section>
@@ -865,7 +951,7 @@ function MeetingPageInner() {
         {snap.status === "error" && snap.error === "reconnect_failed" && (
           <section className="panel meeting-ended">
             <h2>{t("meeting.reconnectFailed")}</h2>
-            <button type="button" onClick={() => navigate("/")}>
+            <button type="button" onClick={() => goHome()}>
               {t("meeting.backHome")}
             </button>
           </section>
@@ -960,6 +1046,9 @@ function MeetingPageInner() {
                       }
                     : undefined
                 }
+                peerRtt={snap.peerRtt}
+                rotationEnabled={snap.rotationEnabled}
+                rotationIntervalMs={rotationIntervalMs}
               />
               {danmuEnabled && (
                 <DanmuOverlay
@@ -1088,7 +1177,7 @@ function MeetingPageInner() {
           onInvite={() => setInviteOpen(true)}
           onLeave={() => {
             roomRef.current?.leave();
-            navigate("/");
+            goHome();
           }}
           onEndMeeting={() => {
             roomRef.current?.endMeeting();

@@ -498,6 +498,9 @@ input:not(.ant-input):focus {
 .meeting-header-btn { font: inherit; padding: 0.4rem 0.75rem; border-radius: 8px; border: 1px solid var(--meeting-bar-border); background: rgba(255, 255, 255, 0.06); color: var(--meeting-text); cursor: pointer; font-size: 0.85rem; }
 .meeting-header-btn:hover { background: rgba(255, 255, 255, 0.12); }
 .meeting-header-btn.is-active { border-color: var(--color-primary); color: #fff; background: rgba(18, 120, 255, 0.25); }
+/* 纯图标按钮（设置/全屏）：无背景无边框，hover 时轻微提亮 */
+.meeting-header-btn.meeting-header-btn--icon { border-color: transparent; background: transparent; }
+.meeting-header-btn.meeting-header-btn--icon:hover { background: rgba(255, 255, 255, 0.08); }
 
 .meeting-settings { position: relative; }
 .meeting-settings-popover { position: absolute; top: calc(100% + 0.4rem); right: 0; z-index: 40; width: min(280px, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 0.75rem; padding: 0.9rem; background: #32353b; border: 1px solid var(--meeting-bar-border); border-radius: 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
@@ -584,7 +587,7 @@ input:not(.ant-input):focus {
 .video-grid--speaker { grid-template-columns: 1fr; }
 .video-grid--training { display: flex; flex-direction: row; gap: 0.75rem; flex: 1; min-height: 0; overflow: hidden; }
 .video-grid--training .video-side-main { flex: 4 1 0; }
-.video-grid--training .video-sidelist { flex: 2 1 0; min-width: 10rem; max-width: 20rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; align-content: start; }
+.video-grid--training .video-sidelist { flex: 0 1 14rem; min-width: 9rem; max-width: 14rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 0.5rem; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; align-content: start; justify-content: center; }
 .video-grid--training .video-sidelist .video-tile { min-height: 5rem; aspect-ratio: 16 / 10; flex-shrink: 0; }
 .video-tile--focusable { cursor: pointer; transition: outline 0.15s, box-shadow 0.15s; outline: 2px solid transparent; }
 .video-tile--focusable:hover { outline-color: rgba(18, 120, 255, 0.6); box-shadow: 0 0 0 2px rgba(18, 120, 255, 0.3); }
@@ -884,4 +887,67 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
   .controls { flex-wrap: nowrap; padding-bottom: 0.35rem; }
   .controls-leave { position: absolute; right: 0.5rem; transform: translateY(-50%); width: auto; }
   .controls-cluster { max-width: calc(100% - 5rem); }
+}
+
+/* —— 成员网络延迟角标（右上角）：绿 <100ms / 黄 100-300ms / 红 >300ms —— */
+.video-tile-rtt {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 5;
+  padding: 0 0.3rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  line-height: 1.3;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.video-tile-rtt.rtt-good { background: rgba(0, 168, 112, 0.75); }
+.video-tile-rtt.rtt-mid { background: rgba(240, 160, 32, 0.75); }
+.video-tile-rtt.rtt-bad { background: rgba(227, 77, 89, 0.8); }
+
+/* —— PiP overlay：主讲人视角轮换时显示参会人数与当前成员名 —— */
+.video-pip-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.7rem;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  border-radius: 0 0 8px 8px;
+}
+.video-pip-overlay-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— 侧栏轮换页码指示 —— */
+.video-sidelist-page {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  background: inherit;
+  padding: 0.15rem 0;
+}
+
+/* —— 设置面板轮换开关行 —— */
+.control-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  cursor: pointer;
 }

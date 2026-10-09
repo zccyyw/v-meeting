@@ -186,10 +186,30 @@ export function HomePage() {
     return `/m/${id}?${sp.toString()}`;
   }
 
+  /** 进入会议默认全屏：必须在用户点击手势内同步调用（浏览器安全约束） */
+  function tryEnterFullscreen(): void {
+    try {
+      if (!document.fullscreenElement) {
+        void document.documentElement.requestFullscreen?.().catch(() => {});
+      }
+    } catch {
+      /* 浏览器拒绝则静默，会议内可手动全屏 */
+    }
+  }
+
+  function tryExitFullscreen(): void {
+    try {
+      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function completeJoin(
     meeting: { id: number; code: string; title: string },
     opts: { mic: boolean; cam: boolean; password?: string; replace?: boolean },
   ) {
+    tryEnterFullscreen();
     const { token } = await MeetingApi.joinToken(meeting.id, {
       password: opts.password,
     });
@@ -274,6 +294,7 @@ export function HomePage() {
           hour: "2-digit",
           minute: "2-digit",
         });
+      tryEnterFullscreen();
       const res = await MeetingApi.create({ title });
       if (!res.hostJoinToken) throw new Error("meeting_create_failed");
       rememberJoin(res.code, title);
@@ -348,6 +369,7 @@ export function HomePage() {
   async function onStartApplication(app: MeetingAppItem) {
     setBusy(true);
     try {
+      tryEnterFullscreen();
       const res = await MeetingAppApi.start(app.appId);
       if (!res.hostJoinToken) throw new Error("meeting_create_failed");
       rememberJoin(res.code, res.title);
