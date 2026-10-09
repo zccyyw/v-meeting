@@ -20,13 +20,27 @@
 #   - sqlite 默认 profile：数据在 meeting-data 卷，`down -v` 会清库
 services:
   api:
+    build:
+      args:
+        # 本地开发构建走国内 npm 镜像（CI 用基础文件的 build，不受影响）
+        NPM_REGISTRY: https://registry.npmmirror.com
     ports:
       - "8080:8080"
 
   realtime:
+    build:
+      args:
+        NPM_REGISTRY: https://registry.npmmirror.com
     ports:
       - "8082:8082"
+      # Docker Desktop 29.x 升级后宿主机→容器 UDP 转发失效（TCP 正常），
+      # 本地联调额外发布 TCP 媒体段：浏览器 ICE 会在 UDP 不通时自动回落到
+      # TCP 候选（mediasoup enableTcp 已开启）。UDP 恢复后可移除。
+      - "40000-41000:40000-41000/tcp"
 
   web:
+    build:
+      args:
+        NPM_REGISTRY: https://registry.npmmirror.com
     ports:
       - "8088:80"
