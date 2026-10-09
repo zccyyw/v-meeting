@@ -62,6 +62,8 @@ export type MediaRoomSnapshot = {
   recordAllowed: boolean;
   chatMessages: ChatMessage[];
   error: string | null;
+  /** 非阻断警示（黄色横幅）：媒体消费失败 / 权限受限等，不影响会议继续使用 */
+  warning: string | null;
   /** 本地媒体采集降级提示码（非阻断）：no_camera / no_media_devices / media_permission_denied / media_capture_failed */
   localMediaError: string | null;
   endedReason: string | null;
@@ -136,6 +138,7 @@ export class MediaRoom {
   private recordAllowed = false;
   private chatMessages: ChatMessage[] = [];
   private error: string | null = null;
+  private warning: string | null = null;
   private localMediaError: string | null = null;
   private endedReason: string | null = null;
 
@@ -188,6 +191,7 @@ export class MediaRoom {
       recordAllowed: this.recordAllowed,
       chatMessages: [...this.chatMessages],
       error: this.error,
+      warning: this.warning,
       localMediaError: this.localMediaError,
       endedReason: this.endedReason,
     };
@@ -449,7 +453,7 @@ export class MediaRoom {
   async startScreenShare(): Promise<void> {
     if (!this.sendTransport || this.closed) return;
     if (!this.canShare) {
-      this.error = "share_not_allowed";
+      this.warning = "share_not_allowed";
       this.emit();
       return;
     }
@@ -484,7 +488,7 @@ export class MediaRoom {
       });
     } catch (err) {
       for (const t of stream.getTracks()) t.stop();
-      this.error =
+      this.warning =
         err instanceof Error ? err.message : "screen_share_failed";
       this.emit();
       return;
@@ -553,6 +557,7 @@ export class MediaRoom {
     this.reconnecting = true;
     this.status = "reconnecting";
     this.error = null;
+    this.warning = null;
     this.endedReason = null;
     this.emit();
 
@@ -571,6 +576,7 @@ export class MediaRoom {
         if (!this.closed) {
           this.reconnecting = false;
           this.error = null;
+          this.warning = null;
           // 屏幕共享无法无人值守恢复（需要再次授权选择），重连后置为未共享
           this.sharingScreen = false;
         }
@@ -905,9 +911,13 @@ export class MediaRoom {
         break;
 
       case "mediaState":
+        // 媒体连接异常完全静默（不打扰参会用户），仅 console 记录供排查；
+        // 自愈由 ICE restart 负责，运维指引（ANNOUNCED_IP/UDP 端口）不进 UI
         if (msg.state === "failed" || msg.state === "disconnected") {
-          this.error = "media_connection_failed";
-          this.emit();
+          console.warn(
+            `[rtc] server reported media ${msg.state}` +
+              (msg.transportId ? ` (transport ${msg.transportId})` : ""),
+          );
         }
         break;
 
@@ -986,7 +996,7 @@ export class MediaRoom {
     // 以 http://<IP>:port 访问时该对象不存在，getUserMedia 会抛错并被上层吞掉，
     // 表现为"能进会议但看不到/听不到任何人"。这里提前判定并给出明确提示。
     if (typeof navigator.mediaDevices?.getUserMedia !== "function") {
-      this.error = "insecure_context";
+      this.warning = "insecure_context";
       this.emit();
       return;
     }
@@ -1187,9 +1197,8 @@ export class MediaRoom {
               err instanceof Error ? err.message : err,
             );
           }
-          // 自愈无效才提示用户
-          this.error = "media_connection_failed";
-          this.emit();
+          // 自愈无效也保持静默（用户口径：媒体异常不进 UI），继续由
+          // 后续状态事件驱动重试；运维排查依据见上方 console
         })();
       }
     });
@@ -1318,7 +1327,7 @@ export class MediaRoom {
 
   /** 记录媒体消费失败原因，界面可见（不打断会议，仅提示） */
   private setConsumeError(reason: string): void {
-    this.error = `consume_failed:${reason}`;
+    this.warning = `consume_failed:${reason}`;
     this.emit();
   }
 

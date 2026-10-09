@@ -371,6 +371,15 @@ button.danger:not(.ant-btn) {
   margin: 0 0 1rem;
 }
 
+/* 非阻断警示（黄）：网络/权限类问题，不影响会议继续使用 */
+.warning {
+  color: var(--color-warning);
+  background: rgba(240, 160, 32, 0.12);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin: 0 0 1rem;
+}
+
 .panel {
   background: #ffffff;
   border: 1px solid #e5e6eb;

@@ -55,6 +55,7 @@ const emptySnapshot: MediaRoomSnapshot = {
   recordAllowed: false,
   chatMessages: [],
   error: null,
+  warning: null,
   localMediaError: null,
   endedReason: null,
 };
@@ -77,6 +78,18 @@ function MeetingPageInner() {
   const initialCam = camParam == null ? false : camParam === "1";
 
   const [snap, setSnap] = useState<MediaRoomSnapshot>(emptySnapshot);
+  // 非阻断警示（黄横幅）10 秒自动消散：记录已隐藏的警示内容，
+  // 新内容出现时重新显示；清空时复位
+  const [warningDismissed, setWarningDismissed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!snap.warning) {
+      setWarningDismissed(null);
+      return;
+    }
+    setWarningDismissed(null);
+    const timer = setTimeout(() => setWarningDismissed(snap.warning), 10_000);
+    return () => clearTimeout(timer);
+  }, [snap.warning]);
   const [membersOpen, setMembersOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   // 浮窗打开顺序（早→晚）：决定成员/聊天左右排布，先开者在最右；关闭再打开会重新排队
@@ -800,17 +813,27 @@ function MeetingPageInner() {
       </header>
 
       <div className="meeting-stage">
+        {/* 阻断级错误（红）：进不了会 / 人数超限等 */}
         {snap.error && snap.error !== "reconnect_failed" && (
           <p className="error">
             {snap.error === "online_limit_reached"
               ? t("meeting.onlineLimitReached")
-              : snap.error === "media_connection_failed"
-                ? t("meeting.mediaConnectionFailed")
-                : snap.error === "insecure_context"
-                  ? t("meeting.insecureContext")
-                  : snap.error?.startsWith("consume_failed:")
-                  ? `${t("meeting.consumeFailed")}（${snap.error.slice("consume_failed:".length)}）`
-                  : snap.error}
+              : snap.error}
+          </p>
+        )}
+
+        {/* 非阻断警示（黄）：媒体消费失败 / 权限受限等，10 秒自动消散，不影响会议继续使用 */}
+        {inMeeting && snap.warning && warningDismissed !== snap.warning && (
+          <p className="warning">
+            {snap.warning === "insecure_context"
+              ? t("meeting.insecureContext")
+              : snap.warning === "share_not_allowed"
+              ? t("meeting.shareNotAllowed")
+              : snap.warning === "screen_share_failed"
+              ? t("meeting.screenShareFailed")
+              : snap.warning.startsWith("consume_failed:")
+              ? `${t("meeting.consumeFailed")}（${snap.warning.slice("consume_failed:".length)}）`
+              : snap.warning}
           </p>
         )}
 
