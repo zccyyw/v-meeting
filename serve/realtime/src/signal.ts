@@ -44,6 +44,10 @@ type RoomState = {
   hostJoined: boolean;
   /** 各成员上报的到服务器 RTT（ms）与最后上报时间：广播给全房间驱动延迟角标 */
   networkRtt: Map<string, { rttMs: number; ts: number }>;
+  /** RTT 广播聚合：1 秒窗口合并高频上报（大会议下避免广播风暴）；房间销毁时清理 */
+  networkRttBroadcastTimer: ReturnType<typeof setInterval> | null;
+  /** 聚合窗口内是否有新上报（无则跳过本次广播） */
+  networkRttDirty: boolean;
   /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
   rotationEnabled: boolean;
 };
@@ -255,6 +259,8 @@ export function createSignalHandler(db: Db) {
           mutedByHost: new Set(),
           hostJoined: false,
           networkRtt: new Map(),
+          networkRttBroadcastTimer: null,
+          networkRttDirty: false,
           // 成员画面轮播默认开启（对齐"成员过多时自动轮播"的产品预期），
           // 主持人可在设置面板随时关闭；后入会者随 joined 同步该状态
           rotationEnabled: true,
@@ -355,6 +361,7 @@ export function createSignalHandler(db: Db) {
     await markMeetingEnded(meetingId);
     const left = rooms.get(meetingId);
     if (left && left.peers.size === 0) {
+      cancelNetworkRttTimer(left);
       try {
         left.router.close();
       } catch {
@@ -460,6 +467,7 @@ export function createSignalHandler(db: Db) {
         /* ignore */
       }
     }
+    cancelNetworkRttTimer(state);
     state.peers.clear();
     try {
       state.router.close();
@@ -469,6 +477,43 @@ export function createSignalHandler(db: Db) {
     rooms.delete(meetingId);
     cancelEmptyRoomTimer(meetingId);
     cancelHostReconnectTimer(meetingId);
+  }
+
+  /** 停止 RTT 聚合广播定时器（房间销毁/长时间无上报时调用）。 */
+  function cancelNetworkRttTimer(state: RoomState): void {
+    if (state.networkRttBroadcastTimer) {
+      clearInterval(state.networkRttBroadcastTimer);
+      state.networkRttBroadcastTimer = null;
+    }
+    state.networkRttDirty = false;
+  }
+
+  /**
+   * 懒启动 RTT 聚合广播：1 秒窗口内合并所有成员的上报后广播一次全量延迟表
+   * （此前"每份上报即广播"，20 人会议约 4 次/秒全房间广播）。无人上报 60 秒
+   * 后自动停表，避免空转。
+   */
+  function ensureNetworkRttBroadcast(state: RoomState): void {
+    if (state.networkRttBroadcastTimer) return;
+    state.networkRttBroadcastTimer = setInterval(() => {
+      let newest = 0;
+      for (const v of state.networkRtt.values()) {
+        if (v.ts > newest) newest = v.ts;
+      }
+      if (Date.now() - newest > 60_000) {
+        cancelNetworkRttTimer(state);
+        return;
+      }
+      if (!state.networkRttDirty) return;
+      state.networkRttDirty = false;
+      broadcastAdmitted(state, {
+        type: "peerNetworkStats",
+        peers: [...state.networkRtt.entries()].map(([peerId, v]) => ({
+          peerId,
+          rttMs: v.rttMs,
+        })),
+      });
+    }, 1000);
   }
 
   /** 焦点成员离场后清空焦点并广播，避免残留指向已离开成员的焦点。 */
@@ -670,6 +715,7 @@ export function createSignalHandler(db: Db) {
     }
     // 主持人离开时即使房间空了也保留房间与路由：等他在重连窗口内回来
     if (state.peers.size === 0 && !wasHost) {
+      cancelNetworkRttTimer(state);
       try {
         state.router.close();
       } catch {
@@ -1173,14 +1219,9 @@ export function createSignalHandler(db: Db) {
           for (const [pid, v] of ctx.state.networkRtt) {
             if (now - v.ts > 20_000) ctx.state.networkRtt.delete(pid);
           }
-          // 上报即广播：全房间尽快拿到最新延迟表
-          broadcastAdmitted(ctx.state, {
-            type: "peerNetworkStats",
-            peers: [...ctx.state.networkRtt.entries()].map(([pid, v]) => ({
-              peerId: pid,
-              rttMs: v.rttMs,
-            })),
-          });
+          // 只打脏标记，由 1 秒聚合窗口统一广播（控制广播频率）
+          ctx.state.networkRttDirty = true;
+          ensureNetworkRttBroadcast(ctx.state);
           break;
         }
 
