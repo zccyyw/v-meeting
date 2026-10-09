@@ -114,7 +114,6 @@ export function DraggableSideList({
   // 一屏循环展示；用户滚轮/触摸/悬停时暂停，交互停止 10 秒后自动恢复 ——
   const listRef = useRef<HTMLDivElement>(null);
   const [userHold, setUserHold] = useState(false);
-  const [hoverPause, setHoverPause] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rotating = Boolean(rotationEnabled);
 
@@ -130,8 +129,16 @@ export function DraggableSideList({
     [],
   );
 
+  // 稳定 ref 回调（避免每次渲染重建导致 listRef 瞬时为 null，滚动被跳过）
+  const setListRef = useCallback((el: HTMLDivElement | null) => {
+    dragRef.current = el;
+    listRef.current = el;
+  }, []);
+
   useEffect(() => {
-    if (!rotating || userHold || hoverPause) return;
+    // 仅在用户手动滚动（滚轮/触摸）期间暂停；鼠标悬停不暂停——用户盯着
+    // 面板看轮播时鼠标必然停在面板上，悬停暂停会导致"看起来永不滚动"
+    if (!rotating || userHold) return;
     const timer = setInterval(() => {
       const el = listRef.current;
       if (!el) return;
@@ -142,7 +149,7 @@ export function DraggableSideList({
       el.scrollTo({ top: target, behavior: "smooth" });
     }, rotationIntervalMs);
     return () => clearInterval(timer);
-  }, [rotating, userHold, hoverPause, rotationIntervalMs, tiles.length]);
+  }, [rotating, userHold, rotationIntervalMs, tiles.length]);
 
   // 轮播关闭时复位滚动位置
   useEffect(() => {
@@ -223,16 +230,11 @@ export function DraggableSideList({
 
   return (
     <div
-      ref={(el) => {
-        dragRef.current = el;
-        listRef.current = el;
-      }}
+      ref={setListRef}
       className={`video-sidelist${floating ? " video-sidelist--floating" : ""}${
         isPanel ? " video-sidelist--panel" : ""
       }`}
       style={style}
-      onMouseEnter={() => setHoverPause(true)}
-      onMouseLeave={() => setHoverPause(false)}
       onWheel={markUserHold}
       onTouchStart={markUserHold}
     >
@@ -313,21 +315,40 @@ function DraggablePip({
   // 区分"拖动"与"点击"：拖动过的 mouseup 不触发模式切换
   const movedRef = useRef(false);
   // PiP 模式：rotation=轮换看学员；self=自己摄像头
+  // 注意：PiP 在开始共享之前就已挂载（此时 rotationTiles 为空），若只在
+  // useState 初始化时判定 mode，之后成员进入池也不会切到轮换 —— 必须
+  // 随 hasRotation 变化自动切换（用户手动点过之后尊重用户选择）。
   const hasRotation = Boolean(rotationTiles && rotationTiles.length > 0);
   const [mode, setMode] = useState<"rotation" | "self">(hasRotation ? "rotation" : "self");
+  const userPicked = useRef(false);
+  useEffect(() => {
+    if (!hasRotation) {
+      userPicked.current = false;
+      setMode("self");
+    } else if (!userPicked.current) {
+      setMode("rotation");
+    }
+  }, [hasRotation]);
   const [rotIdx, setRotIdx] = useState(0);
   const rotKey = rotationTiles?.map((t) => t.key).join("|") ?? "";
+  // rotationTiles 每次父组件渲染都是新数组引用，直接作为 effect 依赖会导致
+  // interval 每次渲染都被重建（永远等不到一个周期）——用稳定的 rotKey 做依赖，
+  // 最新数组走 ref 读取。
+  const rotTilesRef = useRef(rotationTiles);
+  rotTilesRef.current = rotationTiles;
   useEffect(() => {
     setRotIdx(0);
   }, [rotKey]);
   useEffect(() => {
-    if (mode !== "rotation" || !rotationTiles || rotationTiles.length <= 1) return;
-    const timer = setInterval(
-      () => setRotIdx((i) => (i + 1) % rotationTiles.length),
-      rotationIntervalMs,
-    );
+    const len = rotTilesRef.current?.length ?? 0;
+    if (mode !== "rotation" || len <= 1) return;
+    const timer = setInterval(() => {
+      const n = rotTilesRef.current?.length ?? 0;
+      if (n <= 1) return;
+      setRotIdx((i) => (i + 1) % n);
+    }, rotationIntervalMs);
     return () => clearInterval(timer);
-  }, [mode, rotationTiles, rotationIntervalMs]);
+  }, [mode, rotKey, rotationIntervalMs]);
   const currentTile =
     mode === "rotation" && rotationTiles && rotationTiles.length > 0
       ? rotationTiles[rotIdx % rotationTiles.length]
@@ -377,6 +398,7 @@ function DraggablePip({
       onMouseDown={onMouseDown}
       onClick={() => {
         if (hasRotation && !movedRef.current) {
+          userPicked.current = true;
           setMode((m) => (m === "rotation" ? "self" : "rotation"));
         }
       }}
@@ -397,10 +419,7 @@ function DraggablePip({
       />
       {mode === "rotation" && rotationTiles && rotationTiles.length > 0 && (
         <div className="video-pip-overlay">
-          <span className="video-pip-overlay-count">
-            {t("meeting.participantsCount", { count: participantsCount ?? 0 })}
-          </span>
-          <span className="video-pip-overlay-name">{currentTile.label}</span>
+          {t("meeting.participantsCount", { count: participantsCount ?? 0 })}
         </div>
       )}
     </div>

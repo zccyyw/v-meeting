@@ -255,7 +255,9 @@ export function createSignalHandler(db: Db) {
           mutedByHost: new Set(),
           hostJoined: false,
           networkRtt: new Map(),
-          rotationEnabled: false,
+          // 成员画面轮播默认开启（对齐"成员过多时自动轮播"的产品预期），
+          // 主持人可在设置面板随时关闭；后入会者随 joined 同步该状态
+          rotationEnabled: true,
         };
         rooms.set(meetingId, state);
         return state;

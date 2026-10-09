@@ -503,7 +503,7 @@ input:not(.ant-input):focus {
 .meeting-header-btn.meeting-header-btn--icon:hover { background: rgba(255, 255, 255, 0.08); }
 
 .meeting-settings { position: relative; }
-.meeting-settings-popover { position: absolute; top: calc(100% + 0.4rem); right: 0; z-index: 40; width: min(280px, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 0.75rem; padding: 0.9rem; background: #32353b; border: 1px solid var(--meeting-bar-border); border-radius: 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
+.meeting-settings-popover { position: absolute; top: calc(100% + 0.4rem); right: 0; z-index: 1200; /* 高于成员面板(50)/PiP(60)/成员聊天浮窗(80)/邀请浮窗(1000)，仅低于 Modal 遮罩 */ width: min(280px, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 0.75rem; padding: 0.9rem; background: #32353b; border: 1px solid var(--meeting-bar-border); border-radius: 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
 .meeting-settings-popover .control-select { flex-direction: column; align-items: stretch; gap: 0.35rem; color: var(--meeting-muted); font-size: 0.8rem; }
 .meeting-settings-popover .control-select select { max-width: none; width: 100%; color: var(--meeting-text); background: rgba(0, 0, 0, 0.25); border-color: var(--meeting-bar-border); }
 .meeting-settings-popover .danmu-toggle-row { justify-content: flex-start; font-size: 0.82rem; color: var(--meeting-text); padding: 0.2rem 0; }
@@ -940,28 +940,19 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
 .video-tile-rtt.rtt-mid { background: rgba(240, 160, 32, 0.75); }
 .video-tile-rtt.rtt-bad { background: rgba(227, 77, 89, 0.8); }
 
-/* —— PiP overlay：主讲人视角轮换时显示参会人数与当前成员名 —— */
+/* —— PiP overlay：主讲人视角轮播时在右下角显示参会人数（成员名由画面标签承担） —— */
 .video-pip-overlay {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  right: 0.3rem;
+  bottom: 0.3rem;
   z-index: 6;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.15rem 0.4rem;
-  font-size: 0.7rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  line-height: 1.4;
   color: #fff;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.55);
   pointer-events: none;
-  border-radius: 0 0 8px 8px;
-}
-.video-pip-overlay-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* —— 设置面板轮换开关行 —— */
