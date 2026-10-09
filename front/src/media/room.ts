@@ -1481,6 +1481,8 @@ export class MediaRoom {
     this.closed = true;
     this.mediaReady = false;
     this.reconnecting = false;
+    // 主动离开/会议结束：停掉 RTT 上报定时器（否则定时器持有实例引用造成累积泄漏）
+    this.stopRttReporting();
 
     for (const c of this.consumers.values()) {
       try {

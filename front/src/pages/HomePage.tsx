@@ -210,9 +210,17 @@ export function HomePage() {
     opts: { mic: boolean; cam: boolean; password?: string; replace?: boolean },
   ) {
     tryEnterFullscreen();
-    const { token } = await MeetingApi.joinToken(meeting.id, {
-      password: opts.password,
-    });
+    let token: string;
+    try {
+      const reply = await MeetingApi.joinToken(meeting.id, {
+        password: opts.password,
+      });
+      token = reply.token;
+    } catch (err) {
+      // 入会失败（密码错误/会议已结束等）：退回非全屏，避免用户卡在全屏首页
+      tryExitFullscreen();
+      throw err;
+    }
     rememberJoin(meeting.code, meeting.title);
     setJoinHistory(getJoinHistory());
     navigate(
