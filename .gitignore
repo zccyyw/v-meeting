@@ -38,3 +38,7 @@ coverage
 # 黑盒测试运行时产物（脚本: scripts/blackbox-api.mjs / ws-smoke.mjs）
 .test-data/
 ~$*.docx
+
+# 本地排查/自动化验证产物
+.tmp/
+.playwright-cli/
