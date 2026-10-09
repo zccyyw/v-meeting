@@ -69,8 +69,6 @@ function hasLiveVideo(stream: MediaStream | null | undefined): boolean {
 }
 
 /** Draggable side list — can be dragged as a floating panel; collapsible. */
-/** 轮换单页容量：3 列 × 2 行（panel/embed 通用） */
-const SIDE_PAGE_SIZE = 6;
 
 export function DraggableSideList({
   tiles,
@@ -102,7 +100,7 @@ export function DraggableSideList({
   onFocusPeer?: (peerId: string | null) => void;
   /** 各成员网络延迟（ms），key=peerId */
   rttByPeer?: Record<string, number>;
-  /** 主持人控制的轮换开关：开启且成员数超过单页容量时按页轮换 */
+  /** 主持人控制的轮播开关：开启且内容超出容器时自动平滑滚动循环展示 */
   rotationEnabled?: boolean;
   /** 轮换间隔（ms） */
   rotationIntervalMs?: number;
@@ -112,25 +110,45 @@ export function DraggableSideList({
    */
   variant?: "embed" | "panel";
 }) {
-  // —— 成员画面自动轮换：成员数超过单页容量时按页循环；hover 暂停 ——
-  const [page, setPage] = useState(0);
-  const [rotPaused, setRotPaused] = useState(false);
-  const rotating = Boolean(rotationEnabled) && tiles.length > SIDE_PAGE_SIZE;
-  const pageCount = Math.max(1, Math.ceil(tiles.length / SIDE_PAGE_SIZE));
+  // —— 成员画面自动轮播（图片轮播式）：内容超出容器时每隔"轮换间隔"平滑滚动
+  // 一屏循环展示；用户滚轮/触摸/悬停时暂停，交互停止 10 秒后自动恢复 ——
+  const listRef = useRef<HTMLDivElement>(null);
+  const [userHold, setUserHold] = useState(false);
+  const [hoverPause, setHoverPause] = useState(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rotating = Boolean(rotationEnabled);
+
+  const markUserHold = useCallback(() => {
+    setUserHold(true);
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = setTimeout(() => setUserHold(false), 10_000);
+  }, []);
+  useEffect(
+    () => () => {
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (page >= pageCount) setPage(0);
-  }, [page, pageCount]);
-
-  useEffect(() => {
-    if (!rotating || rotPaused || pageCount <= 1) return;
-    const timer = setInterval(() => setPage((p) => (p + 1) % pageCount), rotationIntervalMs);
+    if (!rotating || userHold || hoverPause) return;
+    const timer = setInterval(() => {
+      const el = listRef.current;
+      if (!el) return;
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      if (maxScroll <= 4) return;
+      const atBottom = el.scrollTop >= maxScroll - 4;
+      const target = atBottom ? 0 : Math.min(el.scrollTop + el.clientHeight, maxScroll);
+      el.scrollTo({ top: target, behavior: "smooth" });
+    }, rotationIntervalMs);
     return () => clearInterval(timer);
-  }, [rotating, rotPaused, pageCount, rotationIntervalMs]);
+  }, [rotating, userHold, hoverPause, rotationIntervalMs, tiles.length]);
 
-  const visibleTiles = rotating
-    ? tiles.slice(page * SIDE_PAGE_SIZE, page * SIDE_PAGE_SIZE + SIDE_PAGE_SIZE)
-    : tiles;
+  // 轮播关闭时复位滚动位置
+  useEffect(() => {
+    if (!rotationEnabled && listRef.current) listRef.current.scrollTop = 0;
+  }, [rotationEnabled]);
+
   const { t } = useTranslation();
   const isPanel = variant === "panel";
   const [floating, setFloating] = useState(false);
@@ -205,13 +223,18 @@ export function DraggableSideList({
 
   return (
     <div
-      ref={dragRef}
+      ref={(el) => {
+        dragRef.current = el;
+        listRef.current = el;
+      }}
       className={`video-sidelist${floating ? " video-sidelist--floating" : ""}${
         isPanel ? " video-sidelist--panel" : ""
       }`}
       style={style}
-      onMouseEnter={() => setRotPaused(true)}
-      onMouseLeave={() => setRotPaused(false)}
+      onMouseEnter={() => setHoverPause(true)}
+      onMouseLeave={() => setHoverPause(false)}
+      onWheel={markUserHold}
+      onTouchStart={markUserHold}
     >
       {!isPanel ? (
         // 演讲者布局：仅保留拖动手柄，不提供收起/展开
@@ -237,12 +260,7 @@ export function DraggableSideList({
           ›
         </button>
       )}
-      {rotating && (
-        <div className="video-sidelist-page" aria-live="polite">
-          {page + 1} / {pageCount}
-        </div>
-      )}
-      {visibleTiles.map((tile) => (
+      {tiles.map((tile) => (
         <VideoTile
           key={tile.key}
           stream={tile.stream}

@@ -964,18 +964,6 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
   white-space: nowrap;
 }
 
-/* —— 侧栏轮换页码指示 —— */
-.video-sidelist-page {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  text-align: center;
-  font-size: 0.7rem;
-  color: var(--color-text-secondary);
-  background: inherit;
-  padding: 0.15rem 0;
-}
-
 /* —— 设置面板轮换开关行 —— */
 .control-check {
   display: flex;
