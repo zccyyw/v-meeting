@@ -588,7 +588,40 @@ input:not(.ant-input):focus {
 .video-grid--training { display: flex; flex-direction: row; gap: 0.75rem; flex: 1; min-height: 0; overflow: hidden; }
 .video-grid--training .video-side-main { flex: 4 1 0; }
 .video-grid--training .video-sidelist { flex: 0 1 14rem; min-width: 9rem; max-width: 14rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 0.5rem; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; align-content: start; justify-content: center; }
-.video-grid--training .video-sidelist .video-tile { min-height: 5rem; aspect-ratio: 16 / 10; flex-shrink: 0; }
+/* 修复行高塌陷重叠：grid auto 行 sizing 不计入 aspect-ratio 高度（内容贡献
+   只有 label ~89px），而 tile 实际渲染 129px -> 相邻行覆盖。改用 padding-top
+   比例盒（相对列宽）撑高度，该高度参与 grid 行 sizing；内容绝对定位盒内。 */
+.video-grid--training .video-sidelist .video-tile {
+  min-height: 0;
+  aspect-ratio: auto;
+  height: auto;
+  padding-top: 62.5%; /* 16:10 */
+  flex-shrink: 0;
+}
+.video-grid--training .video-sidelist .video-tile > * {
+  position: absolute;
+}
+.video-grid--training .video-sidelist .video-tile > video {
+  inset: 0;
+}
+.video-grid--training .video-sidelist .video-tile > .video-label {
+  left: 0.4rem;
+  bottom: 0.3rem;
+}
+.video-grid--training .video-sidelist .video-tile > .video-tile-rtt {
+  top: 0.25rem;
+  right: 0.25rem;
+}
+.video-grid--training .video-sidelist .video-tile > .hand-badge {
+  top: 0.25rem;
+  left: 0.4rem;
+}
+.video-grid--training .video-sidelist .video-tile > .video-tile-avatar {
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .video-tile--focusable { cursor: pointer; transition: outline 0.15s, box-shadow 0.15s; outline: 2px solid transparent; }
 .video-tile--focusable:hover { outline-color: rgba(18, 120, 255, 0.6); box-shadow: 0 0 0 2px rgba(18, 120, 255, 0.3); }
 .video-tile--focusable:focus-visible { outline-color: rgba(18, 120, 255, 0.8); }
