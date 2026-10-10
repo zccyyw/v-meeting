@@ -9,6 +9,7 @@ front/public/ca.crt
 *.log
 coverage
 .superpowers/
+.cache/
 截图/
 *.tsbuildinfo
 
