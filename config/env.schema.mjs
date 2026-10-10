@@ -165,13 +165,24 @@ export const SCHEMA = [
     key: "REDIS_PASSWORD",
     value: { dev: "", host: "", docker: "change-me-redis" },
     active: { dev: false, host: false, docker: true },
-    comment: ["外部 Redis 的密码：Redis 设了密码就必须填，否则连接失败"],
+    comment: [
+      "外部 Redis 的密码：留空 = 不使用密码（客户端不发 AUTH，容器也不启用 requirepass）；",
+      "设了密码则必须与 Redis 服务端一致，否则连接失败",
+    ],
+  },
+  {
+    key: "REDIS_DATABASE",
+    value: "0",
+    comment: [
+      "Redis 库序号：默认 0；服务端 databases 调大时可指定更大的库号（非负整数）",
+    ],
   },
   {
     targets: ["docker"],
     comment: [
       "Docker 部署中：Redis 主机由 compose 内部指定（服务名 redis），",
       "此处只需把 REDIS_PASSWORD 设为强密码（同时是 redis 容器的 requirepass）",
+      "把 REDIS_PASSWORD 显式清空即启用无密码模式（容器与客户端自动一致）",
     ],
   },
 
