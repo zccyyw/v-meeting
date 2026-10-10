@@ -188,7 +188,6 @@ export function DraggableSideList({
       if (!dragStart.current) return;
       const dx = e.clientX - dragStart.current.x;
       const dy = e.clientY - dragStart.current.y;
-      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) movedRef.current = true;
       setPos({ x: dragStart.current.px + dx, y: dragStart.current.py + dy });
     };
     const onUp = () => {
@@ -372,6 +371,8 @@ function DraggablePip({
       if (!dragStart.current) return;
       const dx = e.clientX - dragStart.current.x;
       const dy = e.clientY - dragStart.current.y;
+      // 标记"发生过拖动"：否则拖动 PiP 松手会误触发点击 -> 意外切换轮播/自视模式
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) movedRef.current = true;
       setPos({ x: dragStart.current.px + dx, y: dragStart.current.py + dy });
     };
     const onUp = () => {
