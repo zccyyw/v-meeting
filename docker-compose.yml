@@ -52,11 +52,18 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-meetingpass}"]
+    # REDIS_PASSWORD 留空 = 不启用认证（不能传空的 --requirepass，redis-server 会异常）；
+    # 非空时作为 requirepass，需与 api 侧 REDIS_PASSWORD 保持一致
+    command:
+      ["sh", "-c", "exec redis-server ${REDIS_PASSWORD:+--requirepass \"$REDIS_PASSWORD\"}"]
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD:-meetingpass}' ping | grep -q PONG"]
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli ${REDIS_PASSWORD:+-a \"$REDIS_PASSWORD\"} ping | grep -q PONG",
+        ]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -83,7 +90,12 @@ services:
       PGDATABASE: ${POSTGRES_DB:-meeting}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-meetingpass}
+      # 留空 = 不使用密码（需与 redis 容器的认证配置一致）。
+      # 注意用 ${VAR-default} 而非 ${VAR:-default}：空字符串要保留为空，
+      # 才能真正做到"显式清空 = 无密码"
+      REDIS_PASSWORD: ${REDIS_PASSWORD-meetingpass}
+      # Redis 库序号（默认 0）
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
       # 密码传输加密密钥：与 web 容器（entrypoint 注入前端 window.__MEETING_CRYPTO_KEY__）
       # 必须同源一致；缺失/占位值时 api 因 crypto-guard 拒绝启动
       MEETING_CRYPTO_KEY: ${MEETING_CRYPTO_KEY:-}

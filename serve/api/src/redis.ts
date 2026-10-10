@@ -141,6 +141,21 @@ function wrapMemoryRedis(memory: MemoryRedis): Redis {
     },
   }) as unknown as Redis;
 }
+/**
+ * 解析 REDIS_DATABASE（Redis 库序号）。
+ * - 未设或留空 → 0（Redis 默认库）
+ * - 非法值（非非负整数）→ 直接抛错：宁可启动失败，也不要连上后才发现连错库
+ * 不写死上限（Redis 默认 16 库）：服务端把 databases 调大时可指定更大的库号。
+ */
+export function resolveRedisDb(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.REDIS_DATABASE?.trim();
+  if (!raw) return 0;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`[redis] REDIS_DATABASE 必须是非负整数，当前值 "${raw}"`);
+  }
+  return Number(raw);
+}
+
 export function createRedis() {
   const host = process.env.REDIS_HOST;
 
@@ -154,7 +169,10 @@ export function createRedis() {
   return new Redis({
     host,
     port: Number(process.env.REDIS_PORT ?? 6379),
+    // 留空 = 不使用密码（undefined 时 ioredis 不发 AUTH）
     password: process.env.REDIS_PASSWORD || undefined,
+    // 库序号：REDIS_DATABASE（未设/留空 → 0）
+    db: resolveRedisDb(),
     maxRetriesPerRequest: 3,
     lazyConnect: false,
   });
