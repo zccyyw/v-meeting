@@ -99,7 +99,7 @@
     "passwordRequired": "Password is required",
     "import": "Import",
     "export": "Export",
-    "exportNoSelection": "Please select data to export first",
+    "exportNoSelection": "Please select the users to export!",
     "importTitle": "Import Users",
     "importDragHint": "Click or drag a file to this area to upload",
     "importDragSubHint": "Supports .xls, .xlsx, .csv",
@@ -140,7 +140,28 @@
     "email": "Email",
     "remark": "Remark",
     "selectDept": "Select department",
-    "selectRoles": "Select roles"
+    "selectRoles": "Select roles",
+    "exportSuccess": "Exported",
+    "exportConfirmTitle": "Confirm export",
+    "exportScopeAll": "All users will be exported (deleted and reserved system accounts excluded).",
+    "exportScopeFiltered": "Users matching \"{{keyword}}\" will be exported.",
+    "exportSensitiveWarn": "The file contains password hashes and other sensitive data. Store it securely.",
+    "importStart": "Start import",
+    "importModeSimple": "Minimal import (recommended: username + nickname only)",
+    "importModeSimpleDesc": "Role defaults to Regular User and password to 123456; other fields use system defaults.",
+    "importModeFull": "Full migration (import a file exported from this system)",
+    "importModeFullDesc": "Keeps all fields and password hashes; existing accounts are overwritten — for cross-environment migration.",
+    "importTemplate": "Download import template",
+    "importTotal": "Total",
+    "importCreated": "Created",
+    "importUpdated": "Updated",
+    "importFailed": "Failed",
+    "importDefaultPwdWarn": "{{count}} new user(s) use the default password {{password}}. Ask them to change it soon.",
+    "importWarnings": "{{count}} warning(s) (e.g. unknown department left empty). See the import result for details.",
+    "importRow": "Row",
+    "importReason": "Reason",
+    "exportSelected": "{{count}} selected user(s) will be exported.",
+    "selectAllUsers": "Select all {{total}} users"
   },
   "config": {
     "title": "Config",
@@ -417,7 +438,11 @@
     "root": "Root",
     "menuName": "Name",
     "menuType": "Type",
-    "type": { "dir": "Directory", "menu": "Menu", "button": "Button" },
+    "type": {
+      "dir": "Directory",
+      "menu": "Menu",
+      "button": "Button"
+    },
     "icon": "Icon",
     "path": "Path",
     "component": "Component",
@@ -588,4 +613,3 @@
     "status_rejected": "Rejected"
   }
 }
-

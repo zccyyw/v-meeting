@@ -99,7 +99,7 @@
     "passwordRequired": "请输入密码",
     "import": "导入",
     "export": "导出",
-    "exportNoSelection": "请先选择要导出的数据",
+    "exportNoSelection": "请选择需要导出的用户！",
     "importTitle": "导入用户",
     "importDragHint": "点击或拖拽文件到此区域上传",
     "importDragSubHint": "支持 .xls、.xlsx、.csv 格式",
@@ -140,7 +140,28 @@
     "email": "邮箱",
     "remark": "备注",
     "selectDept": "请选择部门",
-    "selectRoles": "请选择角色"
+    "selectRoles": "请选择角色",
+    "exportSuccess": "导出成功",
+    "exportConfirmTitle": "确认导出用户",
+    "exportScopeAll": "将导出全部用户（不含已删除账号与系统保留账号）。",
+    "exportScopeFiltered": "将导出与「{{keyword}}」匹配的用户。",
+    "exportSensitiveWarn": "导出文件包含密码哈希等敏感信息，请妥善保管，勿外发。",
+    "importStart": "开始导入",
+    "importModeSimple": "最小化导入（推荐：仅需账号 + 昵称）",
+    "importModeSimpleDesc": "角色默认「普通用户」、密码默认 123456，其余字段留空使用系统默认值。",
+    "importModeFull": "完整迁移（导入本系统导出的文件）",
+    "importModeFullDesc": "保留全部字段与密码哈希，账号已存在则覆盖更新——用于跨环境迁移。",
+    "importTemplate": "下载导入模板",
+    "importTotal": "总行数",
+    "importCreated": "新建",
+    "importUpdated": "更新",
+    "importFailed": "失败",
+    "importDefaultPwdWarn": "有 {{count}} 个新建用户使用默认密码 {{password}}，请提醒其尽快修改。",
+    "importWarnings": "另有 {{count}} 条提示（如部门不存在已自动留空），可在导入结果中查看。",
+    "importRow": "行号",
+    "importReason": "失败原因",
+    "exportSelected": "将导出选中的 {{count}} 个用户。",
+    "selectAllUsers": "选择全部 {{total}} 个用户"
   },
   "config": {
     "title": "参数设置",
@@ -417,7 +438,11 @@
     "root": "根目录",
     "menuName": "菜单名称",
     "menuType": "菜单类型",
-    "type": { "dir": "目录", "menu": "菜单", "button": "按钮" },
+    "type": {
+      "dir": "目录",
+      "menu": "菜单",
+      "button": "按钮"
+    },
     "icon": "图标",
     "path": "路由地址",
     "component": "组件路径",
@@ -588,4 +613,3 @@
     "status_rejected": "已拒绝"
   }
 }
-

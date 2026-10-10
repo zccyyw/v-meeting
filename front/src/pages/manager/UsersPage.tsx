@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   App as AntApp,
@@ -8,6 +8,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Radio,
   Select,
   Space,
   Switch,
@@ -15,7 +16,9 @@ import {
   Tag,
   Tree,
   Typography,
+  Upload,
 } from "antd";
+import type { UploadFile } from "antd/es/upload/interface";
 import {
   PlusOutlined,
   EditOutlined,
@@ -23,6 +26,10 @@ import {
   KeyOutlined,
   SearchOutlined,
   TeamOutlined,
+  ExportOutlined,
+  UploadOutlined,
+  DownloadOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type { DataNode } from "antd/es/tree";
@@ -31,6 +38,8 @@ import {
   SysDeptApi,
   type SysUserItem,
   type DeptItem,
+  type SysUserImportMode,
+  type SysUserImportResult,
 } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 import { getUserId, hasPermission } from "@/auth/session";
@@ -61,7 +70,7 @@ function formatTime(iso: string, localeTag: string): string {
 
 export function UsersPage() {
   const { t, i18n } = useTranslation();
-  const { message } = AntApp.useApp();
+  const { message, modal } = AntApp.useApp();
   const localeTag = i18n.language.startsWith("zh") ? "zh-CN" : "en-US";
   const currentUserId = getUserId();
 
@@ -97,6 +106,110 @@ export function UsersPage() {
   const [resetTarget, setResetTarget] = useState<SysUserItem | null>(null);
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetForm] = Form.useForm<{ password: string }>();
+
+  // ── 导入 / 导出 ──
+  // 默认「最小化」模式：只需账号+昵称，角色默认普通用户、密码默认 123456
+  const [importOpen, setImportOpen] = useState(false);
+  const [importMode, setImportMode] = useState<SysUserImportMode>("simple");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importSubmitting, setImportSubmitting] = useState(false);
+  const [importResult, setImportResult] = useState<SysUserImportResult | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  // 勾选导出：selectedUserIds 为跨页累积勾选的账号 id；
+  // selectAllUsers 为「选择全部 N 个用户」模式（此时忽略 ids，按全部用户导出）
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+  const [selectAllUsers, setSelectAllUsers] = useState(false);
+  // 标记刚点击过「选择全部」，用于区分 antd 随之触发的 onChange 与用户手动勾选
+  const allSelectModeRef = useRef(false);
+
+  const openImport = () => {
+    setImportOpen(true);
+    setImportMode("simple");
+    setImportFile(null);
+    setImportResult(null);
+  };
+
+  const closeImport = () => {
+    setImportOpen(false);
+    setImportFile(null);
+    setImportResult(null);
+  };
+
+  /**
+   * 导出：仅导出勾选的用户
+   * - 勾选若干账号 → 导出这些账号（支持跨页累积勾选）
+   * - 勾选「选择全部 N 个用户」→ 导出全部未删除用户（带当前搜索条件时按条件全量导出）
+   * - 未勾选任何账号 → 提示，不发起请求
+   * 文件含密码哈希，导出前二次确认
+   */
+  const onExport = () => {
+    const count = selectedUserIds.length;
+    if (!selectAllUsers && count === 0) {
+      message.warning(t("users.exportNoSelection"));
+      return;
+    }
+    const keyword = searchName || searchPhone;
+    modal.confirm({
+      title: t("users.exportConfirmTitle"),
+      content: (
+        <div>
+          <p>
+            {selectAllUsers
+              ? keyword
+                ? t("users.exportScopeFiltered", { keyword })
+                : t("users.exportScopeAll")
+              : t("users.exportSelected", { count })}
+          </p>
+          <p style={{ color: "#cf1322" }}>{t("users.exportSensitiveWarn")}</p>
+        </div>
+      ),
+      okText: t("users.export"),
+      cancelText: t("common.cancel"),
+      onOk: async () => {
+        setExporting(true);
+        try {
+          const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+          await SysUserApi.exportUsers(
+            selectAllUsers ? { q: keyword || undefined } : { ids: selectedUserIds },
+            `users-${stamp}.xlsx`,
+          );
+          message.success(t("users.exportSuccess"));
+        } catch (err) {
+          message.error(apiErrorMessage(t, err));
+        } finally {
+          setExporting(false);
+        }
+      },
+    });
+  };
+
+  const onDownloadTemplate = async () => {
+    try {
+      await SysUserApi.downloadUserImportTemplate(importMode);
+    } catch (err) {
+      message.error(apiErrorMessage(t, err));
+    }
+  };
+
+  const onConfirmImport = async () => {
+    if (!importFile) {
+      message.warning(t("users.importNoFile"));
+      return;
+    }
+    setImportSubmitting(true);
+    try {
+      const res = await SysUserApi.importUsers(importFile, importMode);
+      setImportResult(res);
+      message.success(t("users.importSuccess"));
+      if (page !== 1) setPage(1);
+      else await load();
+    } catch (err) {
+      message.error(apiErrorMessage(t, err));
+    } finally {
+      setImportSubmitting(false);
+    }
+  };
 
   const loadDeptTree = useCallback(async () => {
     setDeptLoading(true);
@@ -381,6 +494,16 @@ export function UsersPage() {
                 {t("users.create")}
               </Button>
             )}
+            {hasPermission("system:user:export") && (
+              <Button icon={<ExportOutlined />} loading={exporting} onClick={onExport}>
+                {t("users.export")}
+              </Button>
+            )}
+            {hasPermission("system:user:import") && (
+              <Button icon={<UploadOutlined />} onClick={openImport}>
+                {t("users.import")}
+              </Button>
+            )}
           </Space>
         </div>
 
@@ -391,6 +514,40 @@ export function UsersPage() {
           dataSource={items}
           pagination={pagination}
           scroll={{ x: 1100 }}
+          rowSelection={{
+            // 跨页累积勾选，导出时按 id 列表导出
+            preserveSelectedRowKeys: true,
+            selectedRowKeys: selectedUserIds,
+            selections: [
+              {
+                key: "all",
+                text: t("users.selectAllUsers", { total }),
+                // antd 6 的自定义选项回调是 onSelect（onClick 已被移除，写 onClick 会被静默忽略）
+                onSelect: (currentRowKeys) => {
+                  // 标记「全选模式」：点击该选项后 antd 可能紧接触发一次 onChange，
+                  // 靠此标记避免被当成手动勾选而退出全选模式
+                  allSelectModeRef.current = true;
+                  setSelectAllUsers(true);
+                  setSelectedUserIds(currentRowKeys.map((k) => Number(k)));
+                  // 若本次没有触发 onChange，下一轮事件循环也要解除标记，
+                  // 否则下一次手动勾选会被误当作全选流程而被忽略
+                  window.setTimeout(() => {
+                    allSelectModeRef.current = false;
+                  }, 0);
+                },
+              },
+            ],
+            onChange: (keys) => {
+              const ids = (keys as number[]).map((k) => Number(k));
+              setSelectedUserIds(ids);
+              if (allSelectModeRef.current) {
+                allSelectModeRef.current = false;
+                return; // 保持「全部用户」模式
+              }
+              // 手动勾选/取消（含表头当前页全选）即退出「全部」模式
+              setSelectAllUsers(false);
+            },
+          }}
         />
       </div>
 
@@ -429,6 +586,119 @@ export function UsersPage() {
             )}
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 导入 Modal */}
+      <Modal
+        open={importOpen}
+        title={t("users.import")}
+        onCancel={closeImport}
+        onOk={() => void onConfirmImport()}
+        confirmLoading={importSubmitting}
+        okText={t("users.importStart")}
+        cancelText={t("common.close")}
+        okButtonProps={{ disabled: !importFile }}
+        destroyOnHidden
+        centered
+        width={640}
+      >
+        <Radio.Group
+          value={importMode}
+          onChange={(e) => {
+            setImportMode(e.target.value as SysUserImportMode);
+            setImportResult(null);
+          }}
+        >
+          <Space direction="vertical" size={4}>
+            <Radio value="simple">{t("users.importModeSimple")}</Radio>
+            <Typography.Paragraph type="secondary" style={{ margin: "0 0 0 24px", fontSize: 12 }}>
+              {t("users.importModeSimpleDesc")}
+            </Typography.Paragraph>
+            <Radio value="full">{t("users.importModeFull")}</Radio>
+            <Typography.Paragraph type="secondary" style={{ margin: "0 0 0 24px", fontSize: 12 }}>
+              {t("users.importModeFullDesc")}
+            </Typography.Paragraph>
+          </Space>
+        </Radio.Group>
+
+        <Upload.Dragger
+          accept=".xlsx"
+          maxCount={1}
+          beforeUpload={(file) => {
+            setImportFile(file);
+            setImportResult(null);
+            return false;
+          }}
+          onRemove={() => {
+            setImportFile(null);
+            return true;
+          }}
+          fileList={importFile ? [{ uid: "-1", name: importFile.name } as UploadFile] : []}
+          style={{ marginTop: 12 }}
+        >
+          <p className="ant-upload-drag-icon">
+            <InboxOutlined />
+          </p>
+          <p className="ant-upload-text">{t("users.importDragHint")}</p>
+        </Upload.Dragger>
+
+        <Button
+          type="link"
+          size="small"
+          icon={<DownloadOutlined />}
+          style={{ paddingLeft: 0 }}
+          onClick={() => void onDownloadTemplate()}
+        >
+          {t("users.importTemplate")}
+        </Button>
+
+        {importResult && (
+          <div style={{ marginTop: 12, borderTop: "1px solid #f0f0f0", paddingTop: 12 }}>
+            <Space size={16} wrap>
+              <Typography.Text>
+                {t("users.importTotal")}: <strong>{importResult.total}</strong>
+              </Typography.Text>
+              <Typography.Text type="success">
+                {t("users.importCreated")}: <strong>{importResult.created}</strong>
+              </Typography.Text>
+              <Typography.Text type="warning">
+                {t("users.importUpdated")}: <strong>{importResult.updated}</strong>
+              </Typography.Text>
+              {importResult.failed.length > 0 && (
+                <Typography.Text type="danger">
+                  {t("users.importFailed")}: <strong>{importResult.failed.length}</strong>
+                </Typography.Text>
+              )}
+            </Space>
+            {importResult.defaultPasswordApplied > 0 && (
+              <Typography.Paragraph type="warning" style={{ marginBottom: 4 }}>
+                {t("users.importDefaultPwdWarn", {
+                  count: importResult.defaultPasswordApplied,
+                  password: importResult.defaultPassword,
+                })}
+              </Typography.Paragraph>
+            )}
+            {importResult.warnings.length > 0 && (
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 4 }}>
+                {t("users.importWarnings", { count: importResult.warnings.length })}
+              </Typography.Paragraph>
+            )}
+            {importResult.failed.length > 0 && (
+              <Table
+                size="small"
+                rowKey={(r) => `${r.row}`}
+                pagination={false}
+                scroll={{ y: 180 }}
+                dataSource={importResult.failed}
+                columns={[
+                  { title: t("users.importRow"), dataIndex: "row", width: 70 },
+                  { title: t("users.username"), dataIndex: "username", width: 140 },
+                  { title: t("users.importReason"), dataIndex: "reason" },
+                ]}
+              />
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* 新增/编辑 Modal */}

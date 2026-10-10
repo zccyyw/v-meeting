@@ -88,78 +88,6 @@ export const AuthApi = {
   },
 };
 
-export type UserRow = {
-  id: number;
-  username: string;
-  displayName: string;
-  role: "admin" | "user";
-  status: "active" | "disabled";
-  phone: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export const UsersApi = {
-  list: (q: { q?: string; page?: number; pageSize?: number }) => {
-    const sp = new URLSearchParams();
-    if (q.q) sp.set("q", q.q);
-    if (q.page) sp.set("page", String(q.page));
-    if (q.pageSize) sp.set("pageSize", String(q.pageSize));
-    return api<{ items: UserRow[]; total: number; page: number; pageSize: number }>(
-      `/users?${sp}`,
-    );
-  },
-  create: (body: Record<string, unknown>) =>
-    api<UserRow>("/users", { method: "POST", body: JSON.stringify(body) }),
-  patch: (id: number, body: Record<string, unknown>) =>
-    api<UserRow>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  remove: (id: number) => api<void>(`/users/${id}`, { method: "DELETE" }),
-  exportUrl: () => `${API_BASE}/users/export`,
-  importFile: async (file: File) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    const headers = new Headers();
-    const sid = getSessionId();
-    if (sid) headers.set("x-session-id", sid);
-    const res = await fetch(`${API_BASE}/users/import`, { method: "POST", headers, body: fd });
-    if (!res.ok) await throwApiError(res);
-    return res.json() as Promise<{ created: number; updated: number; total: number }>;
-  },
-};
-
-export async function downloadExport(ids: number[], q?: string) {
-  const headers = new Headers();
-  const sid = getSessionId();
-  if (sid) headers.set("x-session-id", sid);
-  headers.set("content-type", "application/json");
-  const res = await fetch(UsersApi.exportUrl(), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ ids, q: q || undefined }),
-  });
-  if (!res.ok) throw new Error(`${res.status}`);
-  const blob = await res.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "users.xlsx";
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-export async function downloadImportTemplate() {
-  const headers = new Headers();
-  const sid = getSessionId();
-  if (sid) headers.set("x-session-id", sid);
-  const res = await fetch(`${API_BASE}/users/import-template`, { headers });
-  if (!res.ok) throw new Error(`${res.status}`);
-  const blob = await res.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "users-import-template.xlsx";
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
 export type MyInvitationItem = {
   invitationId: number;
   invitationStatus: string;
@@ -413,6 +341,33 @@ export type SysUserItem = {
   roleIds: number[];
 };
 
+/** 用户导入模式：simple=最小化（仅必填字段，默认普通用户+默认密码）/ full=完整迁移（导出文件原样导入） */
+export type SysUserImportMode = "simple" | "full";
+
+export type SysUserImportResult = {
+  total: number;
+  created: number;
+  updated: number;
+  /** 以哈希形式导入的密码条数（原样写入，密码保持不变） */
+  passwordHashed: number;
+  /** 以明文导入后重新哈希的密码条数 */
+  passwordPlain: number;
+  failed: { row: number; username: string; reason: string }[];
+  warnings: { row: number; message: string }[];
+  /** 使用默认密码新建的用户数（最小化模式） */
+  defaultPasswordApplied: number;
+  defaultPassword: string;
+};
+
+/** 触发浏览器下载 blob（用户导出、导入模板下载共用） */
+export function downloadBlob(blob: Blob, fileName: string): void {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 export const SysUserApi = {
   list: (params?: { deptId?: number; userName?: string; phonenumber?: string; status?: string; page?: number; pageSize?: number }) => {
     const sp = new URLSearchParams();
@@ -448,6 +403,43 @@ export const SysUserApi = {
   changeStatus: (id: number, status: string) =>
     api<{ ok: boolean }>(`/sys-user/${id}/changeStatus`, { method: "PATCH", body: JSON.stringify({ status }) }),
   roles: () => api<{ role_id: number; role_name: string; role_key: string; status: string }[]>(`/sys-user/roles`),
+  /**
+   * 导出用户为 xlsx（全字段，含密码哈希与角色标识）。
+   * 传 ids 导出勾选行，传 q 按当前搜索条件导出，都不传则导出全部未删除用户。
+   */
+  exportUsers: async (payload: { ids?: number[]; q?: string }, fileName: string) => {
+    const headers = new Headers({ "content-type": "application/json" });
+    const sid = getSessionId();
+    if (sid) headers.set("x-session-id", sid);
+    const res = await fetch(`${API_BASE}/sys-user/export`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await throwApiError(res);
+    downloadBlob(await res.blob(), fileName);
+  },
+  /** 导入用户：multipart 上传文件 + mode（simple 最小化 / full 完整迁移） */
+  importUsers: async (file: File, mode: SysUserImportMode) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("mode", mode);
+    const headers = new Headers();
+    const sid = getSessionId();
+    if (sid) headers.set("x-session-id", sid);
+    const res = await fetch(`${API_BASE}/sys-user/import`, { method: "POST", headers, body: fd });
+    if (!res.ok) await throwApiError(res);
+    return (await res.json()) as SysUserImportResult;
+  },
+  /** 下载导入模板（sheet1 表头+示例行，sheet2 填写说明） */
+  downloadUserImportTemplate: async (mode: SysUserImportMode) => {
+    const headers = new Headers();
+    const sid = getSessionId();
+    if (sid) headers.set("x-session-id", sid);
+    const res = await fetch(`${API_BASE}/sys-user/import-template?mode=${mode}`, { headers });
+    if (!res.ok) await throwApiError(res);
+    downloadBlob(await res.blob(), `users-import-template-${mode}.xlsx`);
+  },
 };
 
 // ── 参数设置 API ──
