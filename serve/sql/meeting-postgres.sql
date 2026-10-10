@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
   dept_id BIGINT,
   user_type VARCHAR(2) DEFAULT '00',
   email VARCHAR(50) DEFAULT '',
+  phonenumber VARCHAR(32) DEFAULT '',
   sex CHAR(1) DEFAULT '0',
   avatar VARCHAR(100) DEFAULT '',
   del_flag CHAR(1) DEFAULT '0',
