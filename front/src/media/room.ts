@@ -102,6 +102,19 @@ export class MediaRoom {
   private audioProducer: Producer | null = null;
   private videoProducer: Producer | null = null;
   private screenProducer: Producer | null = null;
+  /**
+   * 屏幕共享音频混音（方案 B）：把「麦克风 + 共享声音」经 WebAudio 混成一条
+   * 音轨替换进 audioProducer 发送，服务端与接收端零改动。
+   * 共享声音经 screenGain 恒定输出，麦克风支路经 micGain 受静音控制——
+   * 静音时不能走 producer.pause()，否则会把共享声音一起停掉。
+   * 后期演进：独立音轨（方案 A，需改协议/服务端/播放层）。
+   */
+  private screenAudioMixer: {
+    ctx: AudioContext;
+    micGain: GainNode;
+    screenStream: MediaStream;
+    originalMicTrack: MediaStreamTrack | null;
+  } | null = null;
   private consumers = new Map<string, Consumer>();
   private consumerMeta = new Map<
     string,
@@ -410,7 +423,12 @@ export class MediaRoom {
     this.micEnabled = enabled;
     const track = this.localStream?.getAudioTracks()[0];
     if (track) track.enabled = enabled;
-    if (this.audioProducer && !this.audioProducer.closed) {
+    if (this.screenAudioMixer) {
+      // 屏幕共享混音激活期间：producer 保持 live，仅把麦克风支路静音，
+      // 否则 pause 会把共享声音一起停掉；也不发 pauseProducer——
+      // 他人仍应听到共享声音，其 UI 显示麦克风开启是符合事实的
+      this.screenAudioMixer.micGain.gain.value = enabled ? 1 : 0;
+    } else if (this.audioProducer && !this.audioProducer.closed) {
       if (enabled) this.audioProducer.resume();
       else this.audioProducer.pause();
       this.signal.send({
@@ -456,7 +474,10 @@ export class MediaRoom {
         prev.stop();
       }
       next.enabled = this.micEnabled;
-      if (this.audioProducer && !this.audioProducer.closed) {
+      if (this.screenAudioMixer) {
+        // 屏幕共享混音激活：用新麦克风轨重建混音，保持共享声音输出
+        await this.attachScreenAudio(this.screenAudioMixer.screenStream);
+      } else if (this.audioProducer && !this.audioProducer.closed) {
         await this.audioProducer.replaceTrack({ track: next });
       }
     } else {
@@ -500,9 +521,11 @@ export class MediaRoom {
 
     let stream: MediaStream;
     try {
+      // audio:true：共享「标签页」并在浏览器弹窗勾选「共享标签页音频」时才有音频轨；
+      // 共享窗口/整屏在多数平台无音频轨（attachScreenAudio 会自动跳过混音）
       stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: false,
+        audio: true,
       });
     } catch (err) {
       const name = err instanceof Error ? err.name : String(err);
@@ -533,6 +556,17 @@ export class MediaRoom {
       return;
     }
 
+    // 屏幕音频混音（方案 B）：有音频轨则混入麦克风音轨发送；
+    // 混音失败不阻断共享（降级为无共享声音）。同时提示回声风险（外放 + 同时说话）。
+    if (stream.getAudioTracks().length > 0) {
+      await this.attachScreenAudio(stream);
+      if (this.screenAudioMixer) this.warning = "screenShareAudioActive";
+    } else {
+      console.info(
+        "[rtc] screen share has no audio track (window/full-screen sharing on most platforms)",
+      );
+    }
+
     this.localScreenStream = stream;
     this.sharingScreen = true;
     if (this.peerId) this.screenFocusPeerId = this.peerId;
@@ -559,6 +593,8 @@ export class MediaRoom {
         /* ignore */
       }
     }
+    // 先恢复麦克风音轨并释放混音资源，再停止屏幕轨
+    await this.detachScreenAudio();
     if (this.localScreenStream) {
       for (const t of this.localScreenStream.getTracks()) t.stop();
       this.localScreenStream = null;
@@ -571,6 +607,91 @@ export class MediaRoom {
           : null;
     }
     this.emit();
+  }
+
+  /**
+   * 把共享音频混入当前麦克风音轨（方案 B，接收端/服务端零改动）。
+   * 浏览器未给音频轨（多数平台共享窗口/整屏无声音）时不做任何事；
+   * audioProducer 不存在（无麦克风权限）时也无法混音，保持现状。
+   * 已有混音时重复调用 = 用当前麦克风轨重建（供 switchDevice 使用）。
+   */
+  private async attachScreenAudio(screenStream: MediaStream): Promise<void> {
+    const screenTrack = screenStream.getAudioTracks()[0] ?? null;
+    if (!screenTrack) return;
+    if (!this.audioProducer || this.audioProducer.closed) {
+      console.warn("[rtc] screen audio captured but no audio producer; skip mixing");
+      return;
+    }
+    const micTrack = this.localStream?.getAudioTracks()[0] ?? null;
+    let ctx: AudioContext | null = null;
+    try {
+      ctx = new AudioContext();
+      const dest = ctx.createMediaStreamDestination();
+      // 共享声音支路：恒定输出，不受静音控制
+      const screenGain = ctx.createGain();
+      screenGain.gain.value = 1;
+      ctx.createMediaStreamSource(new MediaStream([screenTrack])).connect(screenGain);
+      screenGain.connect(dest);
+      // 麦克风支路：受静音控制（gain，而非 producer.pause）
+      const micGain = ctx.createGain();
+      micGain.gain.value = this.micEnabled ? 1 : 0;
+      if (micTrack) {
+        ctx.createMediaStreamSource(new MediaStream([micTrack])).connect(micGain);
+        micGain.connect(dest);
+      }
+      const mixed = dest.stream.getAudioTracks()[0];
+      if (!mixed) throw new Error("mixer produced no track");
+      await this.audioProducer.replaceTrack({ track: mixed });
+      // 重建场景：丢弃旧混音节点
+      const prev = this.screenAudioMixer;
+      if (prev) {
+        try {
+          void prev.ctx.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      this.screenAudioMixer = { ctx, micGain, screenStream, originalMicTrack: micTrack };
+      console.info("[rtc] screen audio mixed into mic track");
+    } catch (err) {
+      // 混音失败不阻断共享（降级为无共享声音）
+      try {
+        void ctx?.close();
+      } catch {
+        /* ignore */
+      }
+      console.warn(
+        "[rtc] screen audio mixing unavailable:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  /** 停止共享：换回原麦克风音轨并释放混音资源 */
+  private async detachScreenAudio(): Promise<void> {
+    const mixer = this.screenAudioMixer;
+    if (!mixer) return;
+    this.screenAudioMixer = null;
+    try {
+      const micTrack = this.localStream?.getAudioTracks()[0] ?? null;
+      if (micTrack && this.audioProducer && !this.audioProducer.closed) {
+        await this.audioProducer.replaceTrack({ track: micTrack });
+      }
+    } catch (err) {
+      console.warn("[rtc] restore mic track failed:", err instanceof Error ? err.message : err);
+    }
+    try {
+      void mixer.ctx.close();
+    } catch {
+      /* ignore */
+    }
+    for (const t of mixer.screenStream.getAudioTracks()) {
+      try {
+        t.stop();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   leave(): void {
@@ -665,6 +786,16 @@ export class MediaRoom {
     this.consumers.clear();
     this.consumerMeta.clear();
 
+    // 释放屏幕共享音频混音（须在关 producer 前做，避免残留对已关 producer 的引用）
+    const mixer = this.screenAudioMixer;
+    if (mixer) {
+      this.screenAudioMixer = null;
+      try {
+        void mixer.ctx.close();
+      } catch {
+        /* ignore */
+      }
+    }
     for (const p of [this.audioProducer, this.videoProducer, this.screenProducer]) {
       if (p && !p.closed) {
         try {
@@ -1494,6 +1625,16 @@ export class MediaRoom {
     this.consumers.clear();
     this.consumerMeta.clear();
 
+    // 释放屏幕共享音频混音（须在关 producer 前做，避免残留对已关 producer 的引用）
+    const mixer = this.screenAudioMixer;
+    if (mixer) {
+      this.screenAudioMixer = null;
+      try {
+        void mixer.ctx.close();
+      } catch {
+        /* ignore */
+      }
+    }
     for (const p of [this.audioProducer, this.videoProducer, this.screenProducer]) {
       if (p && !p.closed) {
         try {

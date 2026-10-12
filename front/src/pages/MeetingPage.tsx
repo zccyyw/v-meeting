@@ -917,6 +917,8 @@ function MeetingPageInner() {
               ? t("meeting.shareNotAllowed")
               : snap.warning === "screen_share_failed"
               ? t("meeting.screenShareFailed")
+              : snap.warning === "screenShareAudioActive"
+              ? t("meeting.screenShareAudioActive")
               : snap.warning.startsWith("consume_failed:")
               ? `${t("meeting.consumeFailed")}（${snap.warning.slice("consume_failed:".length)}）`
               : snap.warning}

@@ -349,7 +349,8 @@
     "screenShareFailed": "共享屏幕失败，请稍后重试",
     "mediaConnectionFailed": "媒体连接失败：请检查服务器 MEDIASOUP_ANNOUNCED_IP 配置是否为客户端可达 IP，以及 UDP 40000-41000 端口是否已放行。",
     "consumeFailed": "接收对方音视频失败",
-    "insecureContext": "当前为非安全上下文：请通过 HTTPS 或 localhost 访问，否则浏览器不提供摄像头/麦克风能力。"
+    "insecureContext": "当前为非安全上下文：请通过 HTTPS 或 localhost 访问，否则浏览器不提供摄像头/麦克风能力。",
+    "screenShareAudioActive": "已共享屏幕声音；共享期间点「静音」仅关闭麦克风，共享声音继续。建议佩戴耳机，避免扬声器声音被麦克风再次拾取产生回声。"
   },
   "recordings": {
     "title": "录制历史",
