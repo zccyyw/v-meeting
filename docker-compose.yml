@@ -186,6 +186,10 @@ services:
         VITE_PWA_ENABLED: ${VITE_PWA_ENABLED:-0}
     image: ${MEETING_WEB_IMAGE:-meeting-web:latest}
     restart: unless-stopped
+    # nginx 的 proxy_pass 在启动时解析 upstream 主机名，realtime 未启动会
+    # emerg 退出（host not found in upstream "realtime"）。强制先起 realtime。
+    depends_on:
+      - realtime
     environment:
       # 运行时配置注入：这些键在「安装前」改 .env 即生效（web 容器启动时写入 /app-config.js，
       # 随 up -d 重建 web 容器加载），无需重建镜像；未设置时用镜像内构建期默认
