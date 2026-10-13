@@ -170,6 +170,8 @@ function MeetingPageInner() {
   const [copyHint, setCopyHint] = useState<string | null>(null);
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
+  /** 共享内容声音本端静音（纯本地状态，不影响其他成员，也不经信令） */
+  const [screenAudioMuted, setScreenAudioMuted] = useState(false);
   const [audioId, setAudioId] = useState("");
   const [videoId, setVideoId] = useState("");
   // 本地录制生命周期（P1-7 拆分）：状态/计时/start/stop/discard
@@ -1040,6 +1042,8 @@ function MeetingPageInner() {
                 selfHandRaised={snap.handRaised}
                 remoteStreams={snap.remoteStreams}
                 screenStreams={snap.screenStreams}
+                screenAudioStreams={snap.screenAudioStreams}
+                screenAudioMuted={screenAudioMuted}
                 peers={snap.peers}
                 layout={snap.layout}
                 focusPeerId={snap.focusPeerId}
@@ -1196,6 +1200,9 @@ function MeetingPageInner() {
           recording={recorder.recording}
           canRecord={canRecord}
           onToggleRecord={handleToggleRecord}
+          screenAudioAvailable={snap.screenAudioStreams.size > 0}
+          screenAudioMuted={screenAudioMuted}
+          onToggleScreenAudio={() => setScreenAudioMuted((m) => !m)}
         />
       )}
 

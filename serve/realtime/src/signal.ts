@@ -56,14 +56,17 @@ function peerId() {
   return randomBytes(8).toString("hex");
 }
 
-type ProducerSource = "microphone" | "camera" | "screen";
+type ProducerSource = "microphone" | "camera" | "screen" | "screen-audio";
 
 function producerSource(
   kind: "audio" | "video",
   appData: Record<string, unknown> | undefined
 ): ProducerSource {
+  // 共享内容音频：独立于麦克风（appData 优先于 kind），供接收端单独播放/调音量
+  if (appData?.source === "screen") {
+    return kind === "audio" ? "screen-audio" : "screen";
+  }
   if (kind === "audio") return "microphone";
-  if (appData?.source === "screen") return "screen";
   return "camera";
 }
 
@@ -637,6 +640,8 @@ export function createSignalHandler(db: Db) {
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
       allowShare: state.room.allowShareDefault,
+      // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
+      capabilities: { screenAudio: true },
       peers: admittedPeerList(state).filter((p) => p.peerId !== targetPeerId),
     });
     replayProducersToPeer(state, targetPeerId);
@@ -814,6 +819,8 @@ export function createSignalHandler(db: Db) {
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
       allowShare: state.room.allowShareDefault,
+      // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
+      capabilities: { screenAudio: true },
       peers: admittedPeerList(state).filter((p) => p.peerId !== id),
     });
     // Late-joining hosts need a waiting-room snapshot (guests may already be waiting).

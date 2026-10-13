@@ -352,7 +352,10 @@
     "insecureContext": "Insecure context: access via HTTPS or localhost, otherwise the browser blocks camera/microphone access.",
     "screenShareAudioActive": "Screen audio is being shared. Muting only turns off your microphone; shared audio keeps playing. Headphones are recommended to avoid echo.",
     "audioDeviceLost": "Microphone disconnected or unavailable; auto-recovery failed. Re-select the microphone in Settings after reconnecting it.",
-    "videoDeviceLost": "Camera disconnected or unavailable; auto-recovery failed. Re-select the camera in Settings after reconnecting it."
+    "videoDeviceLost": "Camera disconnected or unavailable; auto-recovery failed. Re-select the camera in Settings after reconnecting it.",
+    "screenAudio": "Screen audio",
+    "screenAudioOn": "Mute screen audio",
+    "screenAudioOff": "Unmute screen audio"
   },
   "recordings": {
     "title": "Recordings",

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { App } from "antd";
 import {
   AudioOutlined,
+  SoundOutlined,
   AudioMutedOutlined,
   VideoCameraOutlined,
   DesktopOutlined,
@@ -34,6 +35,10 @@ type Props = {
   onToggleCam: () => void;
   onToggleHand: () => void;
   onToggleScreenShare: () => void;
+  /** 存在共享内容声音（任一成员在共享且带音频）时显示该开关 */
+  screenAudioAvailable?: boolean;
+  screenAudioMuted?: boolean;
+  onToggleScreenAudio?: () => void;
   onToggleMembers: () => void;
   onToggleChat: () => void;
   onInvite: () => void;
@@ -97,6 +102,9 @@ export function Controls({
   onToggleCam,
   onToggleHand,
   onToggleScreenShare,
+  screenAudioAvailable,
+  screenAudioMuted,
+  onToggleScreenAudio,
   onToggleMembers,
   onToggleChat,
   onInvite,
@@ -156,6 +164,24 @@ export function Controls({
           icon={<UserAddOutlined style={ICON_STYLE} aria-hidden />}
           onClick={onInvite}
         />
+        {screenAudioAvailable && onToggleScreenAudio && (
+          <ControlButton
+            label={t("meeting.screenAudio")}
+            icon={
+              screenAudioMuted ? (
+                <span className="icon-slashed" aria-hidden>
+                  <SoundOutlined style={ICON_STYLE} />
+                </span>
+              ) : (
+                <SoundOutlined style={ICON_STYLE} aria-hidden />
+              )
+            }
+            className={screenAudioMuted ? "is-off" : "is-active"}
+            onClick={onToggleScreenAudio}
+            ariaLabel={screenAudioMuted ? t("meeting.screenAudioOff") : t("meeting.screenAudioOn")}
+            ariaPressed={!screenAudioMuted}
+          />
+        )}
         <ControlButton
           label={recording ? t("meeting.stopRecord") : t("meeting.record")}
           icon={

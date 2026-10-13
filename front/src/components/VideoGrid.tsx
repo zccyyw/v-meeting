@@ -36,6 +36,10 @@ type Props = {
   selfHandRaised?: boolean;
   remoteStreams: Map<string, MediaStream>;
   screenStreams: Map<string, MediaStream>;
+  /** 其他成员的共享内容声音（独立音轨），渲染为单独的 <audio> 播放 */
+  screenAudioStreams?: Map<string, MediaStream>;
+  /** 共享内容声音本端静音开关（纯本地状态，不经信令） */
+  screenAudioMuted?: boolean;
   peers: PeerInfo[];
   layout: MeetingLayout;
   focusPeerId: string | null;
@@ -435,8 +439,13 @@ function avatarLetter(name: string): string {
 }
 
 /** Play remote audio even when the peer tile shows avatar (no <video>). */
-function RemoteAudio({ stream }: { stream: MediaStream }) {
+function RemoteAudio({ stream, muted }: { stream: MediaStream; muted?: boolean }) {
   const ref = useRef<HTMLAudioElement>(null);
+
+  // React 的 JSX muted 属性存在与 DOM property 不同步的已知问题，显式同步
+  useEffect(() => {
+    if (ref.current) ref.current.muted = muted ?? false;
+  }, [muted]);
 
   useEffect(() => {
     const el = ref.current;
@@ -464,14 +473,20 @@ function RemoteAudio({ stream }: { stream: MediaStream }) {
     };
   }, [stream]);
 
-  return <audio ref={ref} autoPlay playsInline />;
+  return <audio ref={ref} autoPlay playsInline muted={muted ?? false} />;
 }
 
-function RemoteAudios({ streams }: { streams: Map<string, MediaStream> }) {
+function RemoteAudios({
+  streams,
+  muted,
+}: {
+  streams: Map<string, MediaStream>;
+  muted?: boolean;
+}) {
   return (
     <div className="remote-audios" aria-hidden>
       {[...streams.entries()].map(([peerId, stream]) => (
-        <RemoteAudio key={peerId} stream={stream} />
+        <RemoteAudio key={peerId} stream={stream} muted={muted} />
       ))}
     </div>
   );
@@ -622,6 +637,8 @@ export function VideoGrid({
   selfHandRaised,
   remoteStreams,
   screenStreams,
+  screenAudioStreams,
+  screenAudioMuted,
   peers,
   layout,
   focusPeerId,
@@ -783,6 +800,10 @@ export function VideoGrid({
     hasLiveVideo(localScreenStream) ||
     [...screenStreams.values()].some((s) => hasLiveVideo(s));
   const remoteAudio = <RemoteAudios streams={remoteStreams} />;
+  const screenAudio =
+    screenAudioStreams && screenAudioStreams.size > 0 ? (
+      <RemoteAudios streams={screenAudioStreams} muted={screenAudioMuted} />
+    ) : null;
 
   const screenTile =
     (focusPeerId &&
@@ -860,6 +881,7 @@ export function VideoGrid({
     return (
       <>
         {remoteAudio}
+        {screenAudio}
         <div className={`video-grid ${isTraining ? "video-grid--training" : "video-grid--side"}`}>
           <div className="video-side-main">
             <VideoTile
@@ -905,6 +927,7 @@ export function VideoGrid({
   return (
     <>
       {remoteAudio}
+      {screenAudio}
       <div
         className="video-grid video-grid--grid"
         data-cols={layoutCols}

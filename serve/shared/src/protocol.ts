@@ -111,6 +111,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     meetingId: z.string(),
     role: UserRoleSchema,
     inWaitingRoom: z.boolean(),
+    /** 服务端能力标记：客户端据此决定是否发送屏幕共享音频轨（旧服务端缺省 → 降级不发送） */
+    capabilities: z
+      .object({ screenAudio: z.boolean().optional() })
+      .optional(),
     waitingRoomEnabled: z.boolean().optional(),
     recordAllowed: z.boolean().optional(),
     // 房间当前布局与焦点：后入会者据此直接落到主持人已切换的布局，
@@ -225,13 +229,13 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     kind: z.enum(["audio", "video"]),
     appData: z.record(z.unknown()).optional(),
     paused: z.boolean().optional(),
-    source: z.enum(["microphone", "camera", "screen"]).optional(),
+    source: z.enum(["microphone", "camera", "screen", "screen-audio"]).optional(),
   }),
   z.object({
     type: z.literal("producerClosed"),
     producerId: z.string(),
     peerId: z.string(),
-    source: z.enum(["microphone", "camera", "screen"]).optional(),
+    source: z.enum(["microphone", "camera", "screen", "screen-audio"]).optional(),
   }),
   z.object({
     type: z.literal("producerPaused"),
@@ -239,7 +243,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     producerId: z.string(),
     kind: z.enum(["audio", "video"]),
     paused: z.boolean(),
-    source: z.enum(["microphone", "camera", "screen"]).optional(),
+    source: z.enum(["microphone", "camera", "screen", "screen-audio"]).optional(),
   }),
   z.object({
     type: z.literal("consumed"),
