@@ -50,6 +50,7 @@ const emptySnapshot: MediaRoomSnapshot = {
   localScreenStream: null,
   remoteStreams: new Map(),
   screenStreams: new Map(),
+  screenAudioStreams: new Map(),
   micEnabled: true,
   camEnabled: false,
   handRaised: false,
