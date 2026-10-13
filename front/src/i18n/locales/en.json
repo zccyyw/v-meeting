@@ -350,7 +350,9 @@
     "mediaConnectionFailed": "Media connection failed: check that MEDIASOUP_ANNOUNCED_IP is a client-reachable IP and UDP ports 40000-41000 are open.",
     "consumeFailed": "Failed to receive peer media",
     "insecureContext": "Insecure context: access via HTTPS or localhost, otherwise the browser blocks camera/microphone access.",
-    "screenShareAudioActive": "Screen audio is being shared. Muting only turns off your microphone; shared audio keeps playing. Headphones are recommended to avoid echo."
+    "screenShareAudioActive": "Screen audio is being shared. Muting only turns off your microphone; shared audio keeps playing. Headphones are recommended to avoid echo.",
+    "audioDeviceLost": "Microphone disconnected or unavailable; auto-recovery failed. Re-select the microphone in Settings after reconnecting it.",
+    "videoDeviceLost": "Camera disconnected or unavailable; auto-recovery failed. Re-select the camera in Settings after reconnecting it."
   },
   "recordings": {
     "title": "Recordings",

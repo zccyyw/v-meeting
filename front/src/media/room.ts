@@ -136,6 +136,17 @@ export class MediaRoom {
   private closedProducerIds = new Set<string>();
   /** 是否正在自动重连（防止并发触发多条重连流程） */
   private reconnecting = false;
+  /**
+   * 本地轨生命周期监听的卸载函数。浏览器安全模型下，已建立的
+   * MediaStreamTrack 绑定获取时的设备：插拔设备/修改系统默认设备
+   * 不会自动迁移，只能靠监听 ended（设备拔出）后重新采集并热替换。
+   */
+  private trackWatchers: (() => void)[] = [];
+  /** 防止设备拔出后的重采并发触发 */
+  private reacquiring: { audio: boolean; video: boolean } = {
+    audio: false,
+    video: false,
+  };
 
   private status: MediaRoomStatus = "idle";
   private peerId: string | null = null;
@@ -326,11 +337,13 @@ export class MediaRoom {
    * 启动 RTT 周期采集：信令 ping/pong 回显测量（client 发出 → server 回显）。
    * 不用 getStats 的 candidate-pair.currentRoundTripTime——媒体走 TCP 兜底时
    * 不做 STUN consent 测量，该字段无值；信令 RTT 任何传输下都可用且语义一致。
+   * 不以 recvTransport 为前提：媒体初始化失败（浏览器过老/媒体端口被阻断）的
+   * 成员也上报 RTT，其「有 RTT 但无画面」本身即是媒体故障的定位信号。
    */
   private startRttReporting(): void {
     if (this.rttTimer) return;
     this.rttTimer = setInterval(() => {
-      if (this.closed || !this.recvTransport) return;
+      if (this.closed) return;
       this.signal.send({ type: "ping", t: Date.now() });
     }, 5_000);
   }
@@ -474,6 +487,7 @@ export class MediaRoom {
         prev.stop();
       }
       next.enabled = this.micEnabled;
+      this.watchLocalTracks(this.localStream);
       if (this.screenAudioMixer) {
         // 屏幕共享混音激活：用新麦克风轨重建混音，保持共享声音输出
         await this.attachScreenAudio(this.screenAudioMixer.screenStream);
@@ -494,6 +508,7 @@ export class MediaRoom {
         prev.stop();
       }
       next.enabled = this.camEnabled;
+      this.watchLocalTracks(this.localStream);
       if (this.videoProducer && !this.videoProducer.closed) {
         await this.videoProducer.replaceTrack({ track: next });
       }
@@ -694,6 +709,88 @@ export class MediaRoom {
     }
   }
 
+  /**
+   * 监听本地音视频轨生命周期（设备热插拔自愈）：
+   * - ended（设备被拔出/禁用）→ 自动重新采集同类设备并热替换 producer；
+   * - 不监听 mute：浏览器在省电/采集暂停时也会触发，误报率高。
+   */
+  private watchLocalTracks(stream: MediaStream): void {
+    this.unwatchLocalTracks();
+    for (const kind of ["audio", "video"] as const) {
+      const track = stream.getTracks().find((t) => t.kind === kind);
+      if (!track) continue;
+      const onEnded = () => {
+        if (this.closed) return;
+        console.warn(`[rtc] local ${kind} track ended (device unplugged?), reacquiring`);
+        void this.reacquireTrack(kind);
+      };
+      track.addEventListener("ended", onEnded);
+      this.trackWatchers.push(() => track.removeEventListener("ended", onEnded));
+    }
+  }
+
+  private unwatchLocalTracks(): void {
+    for (const off of this.trackWatchers) off();
+    this.trackWatchers = [];
+  }
+
+  /**
+   * 设备拔出后重新采集并热替换。用无 deviceId 约束（取系统当前默认设备）；
+   * 无可用设备时提示用户，插入设备后 devicechange → 重新选择设备即恢复。
+   */
+  private async reacquireTrack(kind: "audio" | "video"): Promise<void> {
+    if (this.closed || this.reacquiring[kind]) return;
+    this.reacquiring[kind] = true;
+    try {
+      const constraints: MediaStreamConstraints =
+        kind === "audio"
+          ? { audio: true, video: false }
+          : { audio: false, video: { width: { ideal: 1280 }, height: { ideal: 720 } } };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const next = (kind === "audio" ? stream.getAudioTracks() : stream.getVideoTracks())[0];
+      if (!next) throw new Error("no track");
+      if (this.closed) {
+        for (const t of stream.getTracks()) t.stop();
+        return;
+      }
+      const prev = (
+        kind === "audio"
+          ? this.localStream?.getAudioTracks()
+          : this.localStream?.getVideoTracks()
+      )?.[0] ?? null;
+      if (this.localStream) {
+        if (prev) this.localStream.removeTrack(prev);
+        this.localStream.addTrack(next);
+      }
+      next.enabled = kind === "audio" ? this.micEnabled : this.camEnabled;
+      const producer = kind === "audio" ? this.audioProducer : this.videoProducer;
+      if (producer && !producer.closed) await producer.replaceTrack({ track: next });
+      if (prev) {
+        try {
+          prev.stop();
+        } catch {
+          /* ignore */
+        }
+      }
+      // 混音激活时音频轨重采后需重建混音（新麦克风轨接入）
+      if (kind === "audio" && this.screenAudioMixer) {
+        await this.attachScreenAudio(this.screenAudioMixer.screenStream);
+      }
+      console.info(`[rtc] local ${kind} track reacquired after device change`);
+    } catch (err) {
+      // 无可用设备（拔出后未插入新设备）等场景：提示用户，插入设备后
+      // 在设置面板重新选择即可恢复（switchDevice 仍可用）
+      this.warning = kind === "audio" ? "audioDeviceLost" : "videoDeviceLost";
+      this.emit();
+      console.warn(
+        `[rtc] reacquire ${kind} track failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    } finally {
+      this.reacquiring[kind] = false;
+    }
+  }
+
   leave(): void {
     try {
       this.signal.send({ type: "leave" });
@@ -787,6 +884,7 @@ export class MediaRoom {
     this.consumerMeta.clear();
 
     // 释放屏幕共享音频混音（须在关 producer 前做，避免残留对已关 producer 的引用）
+    this.unwatchLocalTracks();
     const mixer = this.screenAudioMixer;
     if (mixer) {
       this.screenAudioMixer = null;
@@ -1217,6 +1315,7 @@ export class MediaRoom {
       return;
     }
     this.localStream = stream;
+    this.watchLocalTracks(stream);
 
     const audioTrack = stream.getAudioTracks()[0];
     const videoTrack = stream.getVideoTracks()[0];
@@ -1626,6 +1725,7 @@ export class MediaRoom {
     this.consumerMeta.clear();
 
     // 释放屏幕共享音频混音（须在关 producer 前做，避免残留对已关 producer 的引用）
+    this.unwatchLocalTracks();
     const mixer = this.screenAudioMixer;
     if (mixer) {
       this.screenAudioMixer = null;

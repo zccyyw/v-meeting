@@ -374,8 +374,13 @@ function MeetingPageInner() {
         const videos = devices.filter((d) => d.kind === "videoinput");
         setAudioInputs(audios);
         setVideoInputs(videos);
-        setAudioId((prev) => prev || audios[0]?.deviceId || "");
-        setVideoId((prev) => prev || videos[0]?.deviceId || "");
+        // 当前选中设备被拔出/禁用时自动切到可用设备（媒体轨由 room 层自愈重采）
+        setAudioId((prev) =>
+          prev && audios.some((d) => d.deviceId === prev) ? prev : audios[0]?.deviceId || "",
+        );
+        setVideoId((prev) =>
+          prev && videos.some((d) => d.deviceId === prev) ? prev : videos[0]?.deviceId || "",
+        );
       } catch {
         /* permission may be pending */
       }
@@ -919,6 +924,10 @@ function MeetingPageInner() {
               ? t("meeting.screenShareFailed")
               : snap.warning === "screenShareAudioActive"
               ? t("meeting.screenShareAudioActive")
+              : snap.warning === "audioDeviceLost"
+              ? t("meeting.audioDeviceLost")
+              : snap.warning === "videoDeviceLost"
+              ? t("meeting.videoDeviceLost")
               : snap.warning.startsWith("consume_failed:")
               ? `${t("meeting.consumeFailed")}（${snap.warning.slice("consume_failed:".length)}）`
               : snap.warning}
