@@ -27,6 +27,8 @@ import {
   ScheduleOutlined,
   MonitorOutlined,
   LockOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { clearSession, getDisplayName, getRoles } from "@/auth/session";
@@ -38,7 +40,7 @@ const { Header, Sider, Content } = Layout;
 
 /**
  * 导航项定义：每项关联所需角色或权限。
- * - admin（超级管理员）可见全部
+ * - admin（系统管理员（admin））可见全部
  * - sys_admin: 用户管理、部门管理、参数设置
  * - auth_admin: 用户审批、会议审批、登录日志
  * - audit_admin: 操作日志
@@ -72,7 +74,7 @@ const navItems = [
  */
 function filterNavItems(): typeof navItems {
   const roles = getRoles();
-  // 超级管理员可见全部
+  // 系统管理员（admin）可见全部
   if (roles.includes("admin")) return navItems;
   return navItems.filter((item) =>
     item.roles.some((r) => roles.includes(r))
@@ -85,7 +87,15 @@ function ManagerShellInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const { token } = theme.useToken();
-  const [collapsed, setCollapsed] = useState(false);
+  // 侧栏收起状态持久化：刷新后保持上次的展开/收起
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("manager.siderCollapsed") === "1",
+  );
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      localStorage.setItem("manager.siderCollapsed", c ? "0" : "1");
+      return !c;
+    });
   const [pwdOpen, setPwdOpen] = useState(false);
   const displayName = getDisplayName();
 
@@ -105,7 +115,7 @@ function ManagerShellInner() {
       void api("/auth/logout", { method: "POST" }).catch(() => {});
       clearSession();
       message.warning(t("idle.timeoutMessage"));
-      navigate("/manager/login", { replace: true });
+      navigate("/login", { replace: true });
     },
     onWarning: () => {
       message.warning(t("idle.warningMessage"));
@@ -138,7 +148,8 @@ function ManagerShellInner() {
         // 通知服务端注销会话，立即释放“在线人数”名额
         await api("/auth/logout", { method: "POST" }).catch(() => {});
         clearSession();
-        navigate("/manager/login", { replace: true });
+        // 退出后跳主站登录页（/manager/login 仅手动输入 URL 可达）
+        navigate("/login", { replace: true });
       },
     });
   }
@@ -247,11 +258,12 @@ function ManagerShellInner() {
         {/* 左侧菜单 */}
         <Sider
           width={210}
-          collapsible
           collapsed={collapsed}
-          onCollapse={setCollapsed}
+          collapsedWidth={64}
+          trigger={null}
           style={{
-            overflow: "hidden",
+            // visible：半圆把手骑缝在右边缘，不能被裁剪（菜单滚动由 Menu 自身 overflow:auto 负责）
+            overflow: "visible",
             height: "calc(100vh - 56px)",
             position: "sticky",
             top: 56,
@@ -268,6 +280,48 @@ function ManagerShellInner() {
             items={menuItems}
             style={{ flex: 1, borderRight: 0, background: "transparent", overflow: "auto" }}
           />
+
+          {/* 半圆把手：左缘与 Sider 右边框对齐、垂直居中，点击切换收起/展开 */}
+          <button
+            type="button"
+            aria-label={t(collapsed ? "nav.expandMenu" : "nav.collapseMenu")}
+            aria-expanded={!collapsed}
+            onClick={toggleCollapsed}
+            style={{
+              position: "absolute",
+              right: -22,
+              top: "50%",
+              transform: "translateY(-50%)",
+              // 宽 = 高的一半（22×44）→ 右侧 border-radius 构成完整半圆
+              width: 22,
+              height: 44,
+              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: token.colorBgContainer,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderLeft: 0,
+              borderRadius: "0 22px 22px 0",
+              color: token.colorTextSecondary,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = token.colorPrimaryBg;
+              e.currentTarget.style.color = token.colorPrimary;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = token.colorBgContainer;
+              e.currentTarget.style.color = token.colorTextSecondary;
+            }}
+          >
+            {collapsed ? (
+              <MenuUnfoldOutlined style={{ fontSize: 11 }} />
+            ) : (
+              <MenuFoldOutlined style={{ fontSize: 11 }} />
+            )}
+          </button>
         </Sider>
 
         {/* 右侧主内容 */}

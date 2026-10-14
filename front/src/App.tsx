@@ -72,13 +72,14 @@ function RequireAuth() {
   return <AuthBootstrap />;
 }
 
-// ── 系统管理鉴权：未登录跳 /manager/login ──
+// ── 系统管理鉴权：未登录/无权限跳主站登录页 ──
+// /manager/login 仅允许手动输入 URL 访问，代码不再主动跳转该页
 function RequireManagerAuth() {
   if (!getSessionId()) {
-    return <Navigate to="/manager/login" replace />;
+    return <Navigate to="/login" replace />;
   }
   if (!isManager()) {
-    return <Navigate to="/manager/login" replace />;
+    return <Navigate to="/login" replace />;
   }
   return <Outlet />;
 }
