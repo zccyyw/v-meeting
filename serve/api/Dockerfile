@@ -1,7 +1,11 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
-  && apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+# buildkit 构建网络中 HTTP:80 被 Docker Desktop 内部代理劫持且不可用（HTTP→28.0.0.30:80 失败），
+# HTTPS:443 正常；slim 镜像无系统 CA，故 HTTPS 源需在构建期临时关闭证书校验（仅内网镜像源，风险可控）
+RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+  && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update \
+  && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y python3 make g++ ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 COPY serve/shared/package.json ./serve/shared/
 COPY serve/db/package.json ./serve/db/

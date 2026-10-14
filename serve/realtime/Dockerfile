@@ -11,9 +11,9 @@ WORKDIR /app
 ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG GHPROXY=https://gh-proxy.com
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends \
+RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+  && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update \
+  && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends \
     ca-certificates \
     python3 \
     python3-pip \
