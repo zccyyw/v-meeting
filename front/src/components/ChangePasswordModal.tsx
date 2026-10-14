@@ -61,7 +61,8 @@ export function ChangePasswordModal({ open, onClose }: Props) {
       okButtonProps={{ disabled: done }}
       cancelButtonProps={{ style: { display: done ? "none" : undefined } }}
       centered
-      width={420}
+      // 500：容纳密码强度提示的单行规则（nowrap 约 400px + 弹窗内边距）
+      width={500}
     >
       <div style={{ display: done ? "none" : undefined }}>
         <Form

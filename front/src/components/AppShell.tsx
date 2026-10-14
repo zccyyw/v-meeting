@@ -13,6 +13,7 @@ import {
 import {
   HomeOutlined,
   TeamOutlined,
+  SettingOutlined,
   LockOutlined,
   LogoutOutlined,
   DownloadOutlined,
@@ -23,6 +24,7 @@ import {
 } from "@/auth/session";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 import { NotificationBell } from "@/components/NotificationBell";
+import { isManager } from "@/auth/session";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { api } from "@/api/client";
@@ -124,6 +126,17 @@ function AppShellInner() {
       icon: <TeamOutlined />,
       label: <NavLink to="/groups">{t("group.title")}</NavLink>,
     },
+    // 管理后台入口：仅管理角色（系统管理员/授权管理员/审计管理员）可见；
+    // 未登录管理后台时由 /manager 路由守卫引导至管理登录页
+    ...(isManager()
+      ? [
+          {
+            key: "/manager",
+            icon: <SettingOutlined />,
+            label: <NavLink to="/manager">{t("nav.manager")}</NavLink>,
+          },
+        ]
+      : []),
   ];
 
   return (

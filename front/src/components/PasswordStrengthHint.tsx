@@ -51,7 +51,7 @@ export function PasswordStrengthHint({ password }: Props) {
           margin: "4px 0 0",
           padding: 0,
           display: "flex",
-          flexWrap: "wrap",
+          flexWrap: "nowrap", // 单行不折行：5 条规则排一行，超出缩进区向右延伸（右下方为空白区）
           gap: "4px 12px",
         }}
       >
@@ -62,6 +62,7 @@ export function PasswordStrengthHint({ password }: Props) {
               display: "flex",
               alignItems: "center",
               gap: 3,
+              whiteSpace: "nowrap", // 防止 flex 空间不足时压缩文字导致竖排
               fontSize: "0.72rem",
               color: r.passed ? "#52c41a" : "#bfbfbf",
             }}
