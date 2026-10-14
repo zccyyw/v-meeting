@@ -84,7 +84,7 @@ async function loadUserRolesAndPerms(
   );
   const roles = (roleRows as RoleRow[]).map((r) => r.role_key);
 
-  // 超级管理员拥有所有权限
+  // 系统管理员（admin）拥有所有权限
   if (roles.includes("admin")) {
     const [permsRows] = await db.query(
       `SELECT DISTINCT perms FROM sys_menu WHERE perms IS NOT NULL AND perms != '' AND status = '0'`,
@@ -195,7 +195,7 @@ export async function requireAdmin(
 ): Promise<AppUser | null> {
   const user = await loadSessionUser(db, redis, sessionId);
   if (!user) return null;
-  // 超级管理员或旧版 admin 角色可通过
+  // 系统管理员（admin）或旧版 admin 角色可通过
   if (user.roles.includes("admin") || user.role === "admin") return user;
   return null;
 }
@@ -203,7 +203,7 @@ export async function requireAdmin(
 // ── 角色口径统一出口（架构评审 P1-3）────────────────────────────
 // 多角色集合的授权判断必须从这里取口径，禁止在路由内联维护数组，
 // 避免将来新增角色（如"审批员"）时漏改某处判断。
-/** 管理后台角色（超级管理员 + 三员）：会议监控、用户审批等管理接口的授权判断 */
+/** 管理后台角色（系统管理员（admin） + 三员）：会议监控、用户审批等管理接口的授权判断 */
 export const MANAGER_ROLES = ["admin", "sys_admin", "auth_admin", "audit_admin"] as const;
 
 /** 审批角色：会议申请审批与用户注册审批的共用口径 */

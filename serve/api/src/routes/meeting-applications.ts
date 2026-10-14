@@ -171,7 +171,7 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     return mapRow(row);
   });
 
-  // ── 审批（仅授权管理员/超级管理员）──
+  // ── 审批（仅授权管理员/系统管理员（admin））──
   app.patch("/meeting-applications/:id/approve", async (req, reply) => {
     const sid = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sid);

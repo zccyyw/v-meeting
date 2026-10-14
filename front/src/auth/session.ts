@@ -35,7 +35,7 @@ export function isAdmin() {
 }
 
 /**
- * 判断是否为管理后台用户（三员 + 超级管理员）。
+ * 判断是否为管理后台用户（三员 + 系统管理员（admin））。
  * admin / sys_admin / auth_admin / audit_admin 均可进入管理后台。
  */
 export function isManager() {

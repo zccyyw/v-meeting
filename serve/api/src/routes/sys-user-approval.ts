@@ -53,7 +53,7 @@ export async function userApprovalRoutes(app: FastifyInstance, db: Db, redis: Re
     const sid = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    // 仅系统管理员和超级管理员可提交申请
+    // 仅系统管理员和系统管理员（admin）可提交申请
     if (
       !user.roles.includes("admin") &&
       !user.roles.includes("sys_admin") &&
@@ -154,7 +154,7 @@ export async function userApprovalRoutes(app: FastifyInstance, db: Db, redis: Re
     const sid = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    // 仅授权管理员和超级管理员可审批
+    // 仅授权管理员和系统管理员（admin）可审批
     if (!isApproverRole(user)) return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);

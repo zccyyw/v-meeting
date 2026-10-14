@@ -560,7 +560,7 @@ async function migrateSysUser(db: Db): Promise<number> {
       }
     }
 
-    // ── Step 6: 给超级管理员角色分配所有菜单 ──
+    // ── Step 6: 给系统管理员（admin）角色分配所有菜单 ──
     await db.query(
       `${insertIgnore(db)} sys_role_menu (role_id, menu_id)
        SELECT 1, menu_id FROM sys_menu

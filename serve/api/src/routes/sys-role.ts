@@ -198,7 +198,7 @@ export async function roleRoutes(app: FastifyInstance, db: Db, redis: Redis) {
 
     const id = Number((req.params as { id: string }).id);
 
-    // 超级管理员角色不允许删除
+    // 系统管理员（admin）角色不允许删除
     if (id === 1) return reply.code(403).send({ error: "cannot_delete_admin" });
 
     // 检查是否有用户关联此角色

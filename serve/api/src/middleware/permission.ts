@@ -10,7 +10,7 @@ import { loadSessionUser, type AppUser } from "../session-user.js";
  *   import { checkPermission } from "../middleware/permission.js";
  *   app.get("/users", { preHandler: checkPermission(db, redis, "system:user:list") }, handler);
  *
- * 超级管理员 (role_key = 'admin') 拥有所有权限，无需检查 perms。
+ * 系统管理员（admin） (role_key = 'admin') 拥有所有权限，无需检查 perms。
  */
 export function checkPermission(db: Db, redis: Redis, perm: string) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
@@ -21,7 +21,7 @@ export function checkPermission(db: Db, redis: Redis, perm: string) {
       return reply.code(401).send({ error: "unauthorized" });
     }
 
-    // 超级管理员拥有所有权限
+    // 系统管理员（admin）拥有所有权限
     if (user.roles.includes("admin")) return;
 
     // 检查权限标识

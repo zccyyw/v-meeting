@@ -59,12 +59,15 @@ function limitClause(db: Db, page: number, pageSize: number): string {
  * - 审计管理员：除自己外所有日志
  * - 授权管理员：仅登录日志
  * - 系统管理员：仅操作日志
- * - 超级管理员：全部日志
+ * - 系统管理员（admin）：全部日志
+ * - 其他角色：即使被分配 system:operlog:list 权限码，也仅能查看自己的日志
+ *   （等保语义：个人可查本人操作记录，不可见他人）
  */
 function buildLogScope(user: { roles: string[]; username: string }): string {
+  const self = `'${user.username.replace(/'/g, "''")}'`;
   if (user.roles.includes("admin")) return ""; // 全部
   if (user.roles.includes("audit_admin")) {
-    return ` AND oper_user_name != '${user.username.replace(/'/g, "''")}'`;
+    return ` AND oper_user_name != ${self}`;
   }
   if (user.roles.includes("auth_admin")) {
     return ` AND log_type = 'login'`;
@@ -72,7 +75,7 @@ function buildLogScope(user: { roles: string[]; username: string }): string {
   if (user.roles.includes("sys_admin")) {
     return ` AND log_type = 'operation'`;
   }
-  return ` AND 1=0`; // 无权限查看
+  return ` AND oper_user_name = ${self}`; // 仅本人日志
 }
 
 export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) {
@@ -140,7 +143,7 @@ export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const row = (rows as OperLogRow[])[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
 
-    // 三员分立检查：非超级管理员不能看自己范围的日志
+    // 三员分立检查：非系统管理员（admin）不能看自己范围的日志
     const scope = buildLogScope(user);
     if (scope) {
       const [scopeCheck] = await db.query(

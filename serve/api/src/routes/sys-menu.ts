@@ -227,7 +227,7 @@ export async function menuRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     let params: unknown[];
 
     if (user.roles.includes("admin")) {
-      // 超级管理员获取所有菜单
+      // 系统管理员（admin）获取所有菜单
       sql = `SELECT * FROM sys_menu WHERE status = '0' AND menu_type IN ('M', 'C') ORDER BY parent_id, order_num`;
       params = [];
     } else {
