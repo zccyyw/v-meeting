@@ -4,7 +4,6 @@ import {
   App as AntApp,
   Button,
   Drawer,
-  Popconfirm,
   Select,
   Space,
   Table,
@@ -12,12 +11,9 @@ import {
   Typography,
   theme,
 } from "antd";
-import {
-  DeleteOutlined,
-  ClearOutlined,
-  EyeOutlined,
-} from "@ant-design/icons";
+import { EyeOutlined } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import { indexColumn } from "@/components/indexColumn";
 import { SysOperLogApi, type OperLogItem } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 
@@ -74,32 +70,13 @@ const { token } = theme.useToken();
 
   useEffect(() => { void load(); }, [load]);
 
-  async function onClean() {
-    try {
-      await SysOperLogApi.clean();
-      message.success(t("common.deleteSuccess"));
-      await load();
-    } catch (err) {
-      message.error(apiErrorMessage(t, err));
-    }
-  }
-
-  async function onDelete(row: OperLogItem) {
-    try {
-      await SysOperLogApi.remove(row.operId);
-      message.success(t("common.deleteSuccess"));
-      await load();
-    } catch (err) {
-      message.error(apiErrorMessage(t, err));
-    }
-  }
-
   function showDetail(row: OperLogItem) {
     setDetail(row);
     setDrawerOpen(true);
   }
 
   const columns: ColumnsType<OperLogItem> = [
+    indexColumn<OperLogItem>(page, pageSize, { title: t("common.index") }),
     {
       title: t("operlog.title"), dataIndex: "title", width: 100, fixed: "left",
     },
@@ -129,19 +106,17 @@ const { token } = theme.useToken();
     },
     { title: t("operlog.operTime"), dataIndex: "operTime", width: 170 },
     {
-      title: t("common.actions"), key: "actions", width: 100, fixed: "right",
+      title: t("common.actions"), key: "actions", width: 60, fixed: "right",
       render: (_, row) => (
         <Space size={4}>
           <Button type="text" icon={<EyeOutlined />} onClick={() => showDetail(row)} />
-          <Popconfirm title={t("operlog.confirmDelete")} onConfirm={() => void onDelete(row)} okButtonProps={{ danger: true }}>
-            <Button type="text" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
         </Space>
       ),
     },
   ];
 
   const pagination: TablePaginationConfig = {
+    showTotal: (n) => t("common.totalItems", { count: n }),
     current: page,
     pageSize,
     total,
@@ -179,9 +154,6 @@ const { token } = theme.useToken();
               { value: 1, label: t("operlog.statusFail") },
             ]}
           />
-          <Popconfirm title={t("operlog.confirmClean")} onConfirm={() => void onClean()} okButtonProps={{ danger: true }}>
-            <Button danger icon={<ClearOutlined />}>{t("operlog.clean")}</Button>
-          </Popconfirm>
         </Space>
       </div>
 

@@ -21,6 +21,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import { indexColumn } from "@/components/indexColumn";
 import { SysNoticeApi, type NoticeItem } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 
@@ -128,6 +129,7 @@ export function NoticesPage() {
   }
 
   const columns: ColumnsType<NoticeItem> = [
+    indexColumn<NoticeItem>(page, pageSize, { title: t("common.index") }),
     { title: t("notice.title"), dataIndex: "noticeTitle", ellipsis: true },
     {
       title: t("notice.type"), dataIndex: "noticeType", width: 100,
@@ -157,6 +159,7 @@ export function NoticesPage() {
   ];
 
   const pagination: TablePaginationConfig = {
+    showTotal: (n) => t("common.totalItems", { count: n }),
     current: page,
     pageSize,
     total,

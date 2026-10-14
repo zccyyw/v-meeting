@@ -14,6 +14,7 @@ import {
 } from "antd";
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { indexColumn } from "@/components/indexColumn";
 import {
   InvitationApi,
   type AttendeeDetail,
@@ -122,6 +123,7 @@ export function MeetingMonitorPage() {
   });
 
   const columns: ColumnsType<MeetingOnlineInfo> = [
+    indexColumn<MeetingOnlineInfo>(undefined, undefined, { fixed: false, title: t("common.index") }),
     {
       title: t("meetingMonitor.code", "会议码"),
       dataIndex: "code",

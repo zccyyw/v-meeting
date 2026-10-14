@@ -4,11 +4,13 @@ import {
   App as AntApp,
   Button,
   Card,
+  Col,
   Form,
   Input,
   Modal,
   Popconfirm,
   Radio,
+  Row,
   Select,
   Space,
   Switch,
@@ -32,6 +34,7 @@ import {
   InboxOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import { indexColumn } from "@/components/indexColumn";
 import type { DataNode } from "antd/es/tree";
 import {
   SysUserApi,
@@ -56,9 +59,9 @@ type FormValues = {
   email: string;
   phonenumber: string;
   sex: "0" | "1" | "2";
-  status: "0" | "1";
   remark: string;
-  roleIds: number[];
+  /** 角色：UI 单选；提交时包装为 roleIds 数组（后端协议不变） */
+  roleId?: number;
 };
 
 type RoleOption = { value: number; label: string };
@@ -267,11 +270,10 @@ export function UsersPage() {
     form.setFieldsValue({
       deptId: selectedDeptId,
       sex: "0",
-      status: "0",
       email: "",
       phonenumber: "",
       remark: "",
-      roleIds: [],
+      roleId: undefined,
     });
     setModalOpen(true);
   }
@@ -286,9 +288,9 @@ export function UsersPage() {
       email: row.email,
       phonenumber: row.phonenumber,
       sex: row.sex as "0" | "1" | "2",
-      status: row.status as "0" | "1",
       remark: row.remark,
-      roleIds: row.roleIds,
+      // 角色 UI 单选：多角色用户回填第一个（保存后收敛为单角色）
+      roleId: row.roleIds?.[0],
     });
     setModalOpen(true);
   }
@@ -300,12 +302,18 @@ export function UsersPage() {
       if (modalMode === "create") {
         await SysUserApi.create({
           ...values,
+          status: "0", // 表单不含状态：新建默认启用
+          roleIds: values.roleId ? [values.roleId] : [],
           password: values.password,
         });
         message.success(t("common.createSuccess"));
       } else if (editing) {
-        const { password: _pw, passwordConfirm: _pwc, userName: _un, ...rest } = values;
-        await SysUserApi.patch(editing.userId, rest);
+        const { password: _pw, passwordConfirm: _pwc, userName: _un, roleId, ...rest } = values;
+        await SysUserApi.patch(editing.userId, {
+          ...rest,
+          // 未选角色 = 不修改角色；选了 = 更新（UI 单选，后端仍收数组）
+          ...(roleId ? { roleIds: [roleId] } : {}),
+        });
         message.success(t("common.updateSuccess"));
       }
       setModalOpen(false);
@@ -363,6 +371,7 @@ export function UsersPage() {
   }
 
   const columns: ColumnsType<SysUserItem> = [
+    indexColumn<SysUserItem>(page, pageSize, { title: t("common.index") }),
     { title: t("users.username"), dataIndex: "userName", ellipsis: true },
     { title: t("users.displayName"), dataIndex: "nickName", ellipsis: true },
     {
@@ -425,7 +434,7 @@ export function UsersPage() {
     total,
     showSizeChanger: true,
     pageSizeOptions: PAGE_SIZE_OPTIONS,
-    showTotal: (n) => t("users.total", { count: n }),
+    showTotal: (n) => t("common.totalItems", { count: n }),
     onChange: (p, size) => {
       if (size !== pageSize) { setPage(1); setPageSize(size); } else { setPage(p); }
     },
@@ -562,7 +571,8 @@ export function UsersPage() {
         cancelText={t("common.cancel")}
         destroyOnHidden
         centered
-        width={440}
+        // 520：容纳密码强度提示的单行规则（nowrap 约 400px + 弹窗内边距）
+        width={520}
       >
         {resetTarget && (
           <p style={{ marginBottom: 16 }}>
@@ -712,83 +722,104 @@ export function UsersPage() {
         cancelText={t("common.cancel")}
         destroyOnHidden
         centered
-        width={560}
+        width={760}
       >
-        <Form form={form} layout="vertical" requiredMark>
-          {modalMode === "create" && (
-            <Form.Item name="userName" label={t("users.username")} rules={[{ required: true }, { min: 3, max: 30 }]}>
-              <Input autoComplete="off" autoFocus />
-            </Form.Item>
-          )}
-          <Form.Item name="nickName" label={t("users.displayName")} rules={[{ required: true }, { max: 30 }]}>
-            <Input autoFocus={modalMode === "edit"} />
-          </Form.Item>
-          {modalMode === "create" && (
-            <>
-              <Form.Item name="password" label={t("users.password")} rules={[{ required: true }, { min: 6, max: 128 }]}>
-                <Input.Password autoComplete="new-password" />
+        {/* 两列网格 + label 与控件同行；状态不在表单中（新建默认启用，启停走列表状态开关） */}
+        <Form form={form} layout="horizontal" requiredMark labelCol={{ span: 8 }} wrapperCol={{ span: 16 }}>
+          <Row gutter={16}>
+            {modalMode === "create" && (
+              <Col span={12}>
+                <Form.Item name="userName" label={t("users.username")} rules={[{ required: true }, { min: 3, max: 30 }]}>
+                  <Input autoComplete="off" autoFocus />
+                </Form.Item>
+              </Col>
+            )}
+            <Col span={12}>
+              <Form.Item name="nickName" label={t("users.displayName")} rules={[{ required: true }, { max: 30 }]}>
+                <Input autoFocus={modalMode === "edit"} />
               </Form.Item>
-              <Form.Item shouldUpdate>
-                {({ getFieldValue }) => (
-                  <PasswordStrengthHint password={getFieldValue("password") || ""} />
-                )}
+            </Col>
+            {modalMode === "create" && (
+              <>
+                <Col span={12}>
+                  <Form.Item name="password" label={t("users.password")} rules={[{ required: true }, { min: 6, max: 128 }]} style={{ marginBottom: 0 }}>
+                    <Input.Password autoComplete="new-password" />
+                  </Form.Item>
+                  {/* 强度提示：缩进 33.33%（= labelCol 8/24）与密码输入框左缘对齐；负 margin 抵消 Form.Item 下边距使提示紧贴密码框 */}
+                  <Form.Item noStyle shouldUpdate>
+                    {({ getFieldValue }) => (
+                      <div style={{ paddingLeft: "33.33%", margin: "2px 0 16px" }}>
+                        <PasswordStrengthHint password={getFieldValue("password") || ""} />
+                      </div>
+                    )}
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="passwordConfirm"
+                    label={t("users.passwordConfirm")}
+                    dependencies={["password"]}
+                    rules={[
+                      { required: true, message: t("users.passwordConfirmRequired") },
+                      ({ getFieldValue }) => ({
+                        validator(_, value) {
+                          if (value !== getFieldValue("password")) return Promise.reject(new Error(t("users.passwordMismatch")));
+                          return Promise.resolve();
+                        },
+                      }),
+                    ]}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <Input.Password autoComplete="new-password" />
+                  </Form.Item>
+                </Col>
+              </>
+            )}
+            <Col span={12}>
+              <Form.Item name="deptId" label={t("users.dept")}>
+                <Select
+                  allowClear
+                  placeholder={t("users.selectDept")}
+                  options={[
+                    ...deptTree.map((d) => ({ value: d.deptId, label: d.deptName })),
+                  ]}
+                />
               </Form.Item>
-              <Form.Item
-                name="passwordConfirm"
-                label={t("users.passwordConfirm")}
-                dependencies={["password"]}
-                rules={[
-                  { required: true, message: t("users.passwordConfirmRequired") },
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      if (value !== getFieldValue("password")) return Promise.reject(new Error(t("users.passwordMismatch")));
-                      return Promise.resolve();
-                    },
-                  }),
-                ]}
-              >
-                <Input.Password autoComplete="new-password" />
+            </Col>
+            <Col span={12}>
+              <Form.Item name="roleId" label={t("users.roles")} rules={[{ required: true, message: t("users.selectRoles") }]}>
+                <Select
+                  allowClear
+                  placeholder={t("users.selectRoles")}
+                  options={roleOptions}
+                />
               </Form.Item>
-            </>
-          )}
-          <Form.Item name="deptId" label={t("users.dept")}>
-            <Select
-              allowClear
-              placeholder={t("users.selectDept")}
-              options={[
-                ...deptTree.map((d) => ({ value: d.deptId, label: d.deptName })),
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="roleIds" label={t("users.roles")}>
-            <Select
-              mode="multiple"
-              placeholder={t("users.selectRoles")}
-              options={roleOptions}
-            />
-          </Form.Item>
-          <Form.Item name="phonenumber" label={t("users.phone")} rules={[{ max: 11 }]}>
-            <Input type="tel" />
-          </Form.Item>
-          <Form.Item name="email" label={t("users.email")} rules={[{ max: 50, type: "email" }]}>
-            <Input type="email" />
-          </Form.Item>
-          <Form.Item name="sex" label={t("users.sex")}>
-            <Select options={[
-              { value: "0", label: t("users.sexMale") },
-              { value: "1", label: t("users.sexFemale") },
-              { value: "2", label: t("users.sexUnknown") },
-            ]} />
-          </Form.Item>
-          <Form.Item name="status" label={t("users.status")}>
-            <Select options={[
-              { value: "0", label: t("users.statusActive") },
-              { value: "1", label: t("users.statusDisabled") },
-            ]} />
-          </Form.Item>
-          <Form.Item name="remark" label={t("users.remark")}>
-            <Input.TextArea rows={2} />
-          </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="phonenumber" label={t("users.phone")} rules={[{ max: 11 }]}>
+                <Input type="tel" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="email" label={t("users.email")} rules={[{ max: 50, type: "email" }]}>
+                <Input type="email" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="sex" label={t("users.sex")}>
+                <Select options={[
+                  { value: "0", label: t("users.sexMale") },
+                  { value: "1", label: t("users.sexFemale") },
+                  { value: "2", label: t("users.sexUnknown") },
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="remark" label={t("users.remark")} labelCol={{ span: 4 }} wrapperCol={{ span: 20 }}>
+                <Input.TextArea rows={2} />
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
       </Modal>
     </div>

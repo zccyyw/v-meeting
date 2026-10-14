@@ -22,6 +22,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import { indexColumn } from "@/components/indexColumn";
 import { SysRoleApi, type RoleItem } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 
@@ -151,6 +152,7 @@ export function RolesPage() {
   }
 
   const columns: ColumnsType<RoleItem> = [
+    indexColumn<RoleItem>(page, pageSize, { title: t("common.index") }),
     { title: t("role.roleName"), dataIndex: "roleName", ellipsis: true },
     {
       title: t("role.roleKey"), dataIndex: "roleKey", width: 140,
@@ -180,6 +182,7 @@ export function RolesPage() {
   ];
 
   const pagination: TablePaginationConfig = {
+    showTotal: (n) => t("common.totalItems", { count: n }),
     current: page,
     pageSize,
     total,

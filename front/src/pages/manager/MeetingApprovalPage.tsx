@@ -21,6 +21,7 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import { indexColumn } from "@/components/indexColumn";
 import { MeetingAppApi, type MeetingAppItem } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 import { useInvitationsStream } from "@/hooks/useInvitationsStream";
@@ -130,6 +131,7 @@ export function MeetingApprovalPage() {
   }
 
   const columns: ColumnsType<MeetingAppItem> = [
+    indexColumn<MeetingAppItem>(page, pageSize, { title: t("common.index") }),
     {
       title: t("meetingApp.title"),
       dataIndex: "title",
@@ -253,7 +255,7 @@ export function MeetingApprovalPage() {
       setPage(p);
       setPageSize(ps);
     },
-    showTotal: (tot) => `${t("common.total")} ${tot}`,
+    showTotal: (n) => t("common.totalItems", { count: n }),
   };
 
   return (

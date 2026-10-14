@@ -19,6 +19,7 @@ import {
   EyeOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import { indexColumn } from "@/components/indexColumn";
 import { UserApprovalApi, type UserApprovalItem } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 
@@ -120,6 +121,7 @@ export function UserApprovalPage() {
   }
 
   const columns: ColumnsType<UserApprovalItem> = [
+    indexColumn<UserApprovalItem>(page, pageSize, { title: t("common.index") }),
     {
       title: t("meetingApp.requestType"),
       dataIndex: "requestType",
@@ -221,7 +223,7 @@ export function UserApprovalPage() {
       setPage(p);
       setPageSize(ps);
     },
-    showTotal: (tot) => `${t("common.total")} ${tot}`,
+    showTotal: (n) => t("common.totalItems", { count: n }),
   };
 
   return (

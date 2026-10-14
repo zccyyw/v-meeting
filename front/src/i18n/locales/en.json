@@ -19,7 +19,10 @@
     "meetingApproval": "Meeting Approval",
     "meetingMonitor": "Meeting Monitor",
     "userApproval": "User Approval",
-    "userMenu": "User menu"
+    "userMenu": "User menu",
+    "manager": "Manager",
+    "collapseMenu": "Collapse menu",
+    "expandMenu": "Expand menu"
   },
   "manager": {
     "login": {
@@ -124,7 +127,6 @@
     "confirmDelete": "Delete user “{{name}}”? This cannot be undone.",
     "empty": "No users found",
     "loading": "Loading…",
-    "total": "{{count}} total",
     "roleAdmin": "Admin",
     "roleUser": "User",
     "statusActive": "Active",
@@ -394,10 +396,11 @@
     "success": "Success",
     "error": "Operation failed",
     "remove": "Remove",
-    "total": "Total",
     "createSuccess": "Created successfully",
     "updateSuccess": "Updated successfully",
-    "deleteSuccess": "Deleted successfully"
+    "deleteSuccess": "Deleted successfully",
+    "index": "No.",
+    "totalItems": "Total {{count}} items"
   },
   "dept": {
     "title": "Departments",

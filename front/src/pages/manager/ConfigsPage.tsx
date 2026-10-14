@@ -20,6 +20,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import { indexColumn } from "@/components/indexColumn";
 import { SysConfigApi, type ConfigItem } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 
@@ -128,6 +129,7 @@ export function ConfigsPage() {
   }
 
   const columns: ColumnsType<ConfigItem> = [
+    indexColumn<ConfigItem>(page, pageSize, { title: t("common.index") }),
     { title: t("config.name"), dataIndex: "configName", ellipsis: true },
     { title: t("config.key"), dataIndex: "configKey", width: 200, ellipsis: true },
     { title: t("config.value"), dataIndex: "configValue", width: 200, ellipsis: true },
@@ -153,6 +155,7 @@ export function ConfigsPage() {
   ];
 
   const pagination: TablePaginationConfig = {
+    showTotal: (n) => t("common.totalItems", { count: n }),
     current: page,
     pageSize,
     total,
