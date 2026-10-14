@@ -24,8 +24,8 @@ const LoginBody = z.object({
 /**
  * 系统同时在线人数限制（登录环节）。
  * 依据 sys_config 的 sys.online.maxUsers 阈值：当前在线用户数达到/超过阈值时
- * 不允许继续登录。system 账号为系统保留账号（拥有全部权限、用于维护该配置），
- * 始终放行，避免系统因自身阈值被锁死。
+ * 不允许继续登录。sysadmin 账号用于维护该配置（含合同授权人数），始终放行，
+ * 避免管理员被自身阈值锁在外面。
  * 返回 null 表示放行；否则返回应下发的 HTTP 码与错误码。
  */
 /**
@@ -38,7 +38,7 @@ async function assertOnlineCapacity(
   redis: Redis,
   username: string,
 ): Promise<{ code: number; error: string } | null> {
-  if (username === "system") return null;
+  if (username === "sysadmin") return null;
   const maxUsers = await getConfigInt(db, "sys.online.maxUsers", 20);
   const online = await countOnlineUsers(redis);
   if (online >= maxUsers) {

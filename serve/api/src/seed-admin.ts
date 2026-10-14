@@ -29,7 +29,7 @@ const TEST_USERS: { username: string; nickName: string }[] =
  *   2 = common（普通用户，仅有会议功能）
  */
 const ROLE_USERS = [
-  { username: "sysadmin", nickName: "系统管理员", roleId: 3 },
+  // sysadmin 曾绑定 role 3（sys_admin），013 迁移后该角色废弃，账号并入系统管理员（role 1）
   { username: "authadmin", nickName: "授权管理员", roleId: 4 },
   { username: "auditadmin", nickName: "审计管理员", roleId: 5 },
   { username: "meeting", nickName: "普通用户", roleId: 2 },
@@ -140,17 +140,18 @@ export async function seedAdmin(db?: Db) {
   if (useSysUser) {
     // ── 新表 sys_user（迁移后）──
 
-    // admin 用户（超级管理员 role_id=1）
+    // admin 用户（系统管理员（admin） role_id=1）
     await seedSysUser(db, "admin", adminHash, "管理员");
     await seedUserRole(db, "admin", 1);
     seeded.push("admin");
 
-    // system 隐藏用户（超级管理员 role_id=1，密码 System@123）
-    // 用于系统级操作，对非 system 用户不可见
-    const systemHash = await hashPassword("System@123");
-    await seedSysUser(db, "system", systemHash, "系统用户");
-    await seedUserRole(db, "system", 1);
-    seeded.push("system");
+    // sysadmin 隐藏账号（系统管理员 role_id=1）：sys.online.maxUsers（合同授权在线
+    // 人数上限）等系统专属配置的唯一管理账号，登录在线人数统计豁免；
+    // 用户列表不展示（sys-user 列表固定屏蔽 system/sysadmin）
+    const sysadminHash = await hashPassword("Sysadmin@123");
+    await seedSysUser(db, "sysadmin", sysadminHash, "系统维护");
+    await seedUserRole(db, "sysadmin", 1);
+    seeded.push("sysadmin");
 
     // 三员 + 普通用户默认账号（密码 Admin@123，符合密码策略）
     // 首次登录时提示修改密码（isDefaultPassword 检测到默认密码）
@@ -200,9 +201,8 @@ if (isMain) {
   seedAdmin()
     .then((r) => {
       console.log(`seeded ${r.seeded.length} users: ${r.seeded.join(", ")}`);
-      console.log(`  admin       / admin123   (超级管理员)`);
+      console.log(`  admin       / admin123   (系统管理员)`);
       console.log(`  system      / System@123 (系统隐藏用户)`);
-      console.log(`  sysadmin    / Admin@123  (系统管理员)`);
       console.log(`  authadmin   / Admin@123  (授权管理员)`);
       console.log(`  auditadmin  / Admin@123  (审计管理员)`);
       console.log(`  meeting     / Admin@123  (普通用户)`);

@@ -34,11 +34,12 @@ function mapRow(row: ConfigRow) {
   };
 }
 
-/** 系统保留配置键：仅 system 账号可见/可管理，其余用户一律按“不存在”处理 */
+/** 系统保留配置键：仅 sysadmin 账号可见/可管理，其余用户一律按“不存在”处理 */
 const SYSTEM_ONLY_CONFIG_KEYS = ["sys.online.maxUsers"];
 
+/** 系统专属配置的授权账号：仅 sysadmin 可见/可管理，其余账号（含 admin）一律按“不存在”处理 */
 function isSystemAccount(user: { username: string } | null): boolean {
-  return !!user && user.username === "system";
+  return !!user && user.username === "sysadmin";
 }
 
 function isSystemOnlyConfigKey(key: string): boolean {
@@ -88,7 +89,7 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     if (q.configKey) { where += ` AND config_key LIKE ?`; params.push(`%${q.configKey}%`); }
     if (q.configType) { where += ` AND config_type = ?`; params.push(q.configType); }
 
-    // 保留配置（sys.online.maxUsers）仅 system 账号可见：其余账号从列表隐藏
+    // 保留配置（sys.online.maxUsers）仅 sysadmin 账号可见：其余账号从列表隐藏
     if (!isSystemAccount(user)) {
       where += ` AND config_key <> ?`;
       params.push("sys.online.maxUsers");
@@ -117,7 +118,7 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     const [rows] = await db.query(`SELECT * FROM sys_config WHERE config_id = ? LIMIT 1`, [id]);
     const row = (rows as ConfigRow[])[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
-    // 保留配置仅 system 账号可读
+    // 保留配置仅 sysadmin 账号可读
     if (isSystemOnlyConfigKey(row.config_key) && !isSystemAccount(user)) {
       return reply.code(404).send({ error: "not_found" });
     }
@@ -134,7 +135,7 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     const [rows] = await db.query(`SELECT * FROM sys_config WHERE config_key = ? LIMIT 1`, [key]);
     const row = (rows as ConfigRow[])[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
-    // 保留配置仅 system 账号可读
+    // 保留配置仅 sysadmin 账号可读
     if (isSystemOnlyConfigKey(row.config_key) && !isSystemAccount(user)) {
       return reply.code(404).send({ error: "not_found" });
     }
@@ -150,7 +151,7 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
       return reply.code(403).send({ error: "forbidden" });
 
     const body = CreateBody.parse(req.body ?? {});
-    // 保留配置键仅 system 账号可新增
+    // 保留配置键仅 sysadmin 账号可新增
     if (isSystemOnlyConfigKey(body.configKey) && !isSystemAccount(user)) {
       return reply.code(403).send({ error: "forbidden" });
     }
@@ -191,7 +192,7 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     );
     const row = (existing as { config_id: number | string }[])[0];
     if (!row) return reply.code(404).send({ error: "config_not_found" });
-    // 保留配置仅 system 账号可修改
+    // 保留配置仅 sysadmin 账号可修改
     if (isSystemOnlyConfigKey(body.key) && !isSystemAccount(user)) {
       return reply.code(404).send({ error: "config_not_found" });
     }
@@ -220,7 +221,7 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     const body = UpdateBody.parse(req.body ?? {});
     if (Object.keys(body).length === 0) return reply.code(400).send({ error: "empty_patch" });
 
-    // 保留配置仅 system 账号可修改（非 system 视为不存在）
+    // 保留配置仅 sysadmin 账号可修改（其余账号视为不存在）
     const [exRows] = await db.query(
       `SELECT config_key FROM sys_config WHERE config_id = ? LIMIT 1`,
       [id],
@@ -256,7 +257,7 @@ export async function configRoutes(app: FastifyInstance, db: Db, redis: Redis) {
       return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);
-    // 保留配置仅 system 账号可删除（非 system 视为不存在）
+    // 保留配置仅 sysadmin 账号可删除（其余账号视为不存在）
     const [exRows] = await db.query(
       `SELECT config_key FROM sys_config WHERE config_id = ? LIMIT 1`,
       [id],
