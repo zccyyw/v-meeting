@@ -1,5 +1,7 @@
 {
-  "app": { "name": "Meeting" },
+  "app": {
+    "name": "Meeting"
+  },
   "nav": {
     "meetings": "Meetings",
     "users": "User Management",
@@ -453,7 +455,9 @@
     "updateSuccess": "Updated successfully",
     "deleteSuccess": "Deleted successfully",
     "index": "No.",
-    "totalItems": "Total {{count}} items"
+    "totalItems": "Total {{count}} items",
+    "export": "Export",
+    "clean": "Clean All"
   },
   "dept": {
     "title": "Departments",

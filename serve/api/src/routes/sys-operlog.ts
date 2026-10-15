@@ -103,8 +103,8 @@ export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const page = Number(q.page ?? 1);
     const pageSize = Number(q.pageSize ?? 20);
 
-    // 固定只查操作日志（登录/登出日志见 /sys-loginlog）
-    let where = `WHERE log_type = 'operation'`;
+    // 固定只查操作日志（登录/登出日志见 /sys-loginlog），并过滤系统内置账号
+    let where = `WHERE log_type = 'operation' AND oper_user_name != 'sysadmin'`;
     where += buildLogScope(user);
     const params: unknown[] = [];
     if (q.title) { where += ` AND title LIKE ?`; params.push(`%${q.title}%`); }
@@ -138,8 +138,11 @@ export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) 
       return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);
-    // 固定只允许查看操作日志详情（登录日志走 /sys-loginlog/:id）
-    const [rows] = await db.query(`SELECT * FROM sys_oper_log WHERE oper_id = ? AND log_type = 'operation' LIMIT 1`, [id]);
+    // 固定只允许查看操作日志详情（登录日志走 /sys-loginlog/:id），并过滤系统内置账号
+    const [rows] = await db.query(
+      `SELECT * FROM sys_oper_log WHERE oper_id = ? AND log_type = 'operation' AND oper_user_name != 'sysadmin' LIMIT 1`,
+      [id],
+    );
     const row = (rows as OperLogRow[])[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
 
@@ -177,7 +180,7 @@ export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) 
       status?: string;
     };
 
-    let where = `WHERE log_type = 'operation'`;
+    let where = `WHERE log_type = 'operation' AND oper_user_name != 'sysadmin'`;
     where += buildLogScope(user);
     const params: unknown[] = [];
     if (q.title) { where += ` AND title LIKE ?`; params.push(`%${q.title}%`); }

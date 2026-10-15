@@ -1,5 +1,7 @@
 {
-  "app": { "name": "Meeting" },
+  "app": {
+    "name": "Meeting"
+  },
   "nav": {
     "meetings": "会议",
     "users": "用户管理",
@@ -453,7 +455,9 @@
     "updateSuccess": "修改成功",
     "deleteSuccess": "删除成功",
     "index": "序号",
-    "totalItems": "共 {{count}} 条"
+    "totalItems": "共 {{count}} 条",
+    "export": "导出",
+    "clean": "清空"
   },
   "dept": {
     "title": "部门管理",

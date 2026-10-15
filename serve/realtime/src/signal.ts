@@ -402,19 +402,24 @@ export function createSignalHandler(db: Db) {
       );
       if ((dupe as unknown[]).length > 0) return;
       const [rows] = await db.query(
-        `SELECT m.code, m.title, m.scheduled_at, m.created_at, m.ended_at, u.user_name AS host_name
+        `SELECT m.code, m.title, m.scheduled_at, m.created_at, m.ended_at, m.host_user_id, u.user_name AS host_name
          FROM meetings m LEFT JOIN sys_user u ON u.user_id = m.host_user_id
          WHERE m.id = ? LIMIT 1`,
         [meetingId]
       );
       const m = (rows as Record<string, unknown>[])[0];
       if (!m) return;
+      // 参会人数 = 已入会的受邀者 + 主持人（主持人已在名单则去重不重复计）
       const [invRows] = await db.query(
-        `SELECT COUNT(*) AS cnt, MIN(joined_at) AS first_joined
+        `SELECT COUNT(*) AS cnt,
+                COALESCE(SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END), 0) AS host_in_list,
+                MIN(joined_at) AS first_joined
          FROM meeting_invitations WHERE meeting_id = ? AND status = 'attended'`,
-        [meetingId]
+        [m.host_user_id ?? -1, meetingId]
       );
-      const inv = (invRows as { cnt: number | string; first_joined: unknown }[])[0];
+      const inv = (invRows as { cnt: number | string; host_in_list: number | string; first_joined: unknown }[])[0];
+      const participantCount =
+        (Number(inv?.cnt) || 0) + (Number(inv?.host_in_list) > 0 ? 0 : 1);
       // 驱动可能返回 Date（mysql/pg）或字符串（sqlite），统一转 "YYYY-MM-DD HH:MM:SS"
       const norm = (v: unknown): string | null => {
         if (v == null) return null;
@@ -441,7 +446,7 @@ export function createSignalHandler(db: Db) {
           startTime,
           endTime,
           durationSec,
-          Number(inv?.cnt) || 0,
+          participantCount,
         ]
       );
     } catch (err) {

@@ -54,6 +54,8 @@ function buildWhere(q: {
   if (q.meetingCode) { where += ` AND meeting_code LIKE ?`; params.push(`%${q.meetingCode}%`); }
   if (q.meetingType) { where += ` AND meeting_type = ?`; params.push(q.meetingType); }
   if (q.hostName) { where += ` AND host_name LIKE ?`; params.push(`%${q.hostName}%`); }
+  // 系统内置账号 sysadmin 主持的会议默认过滤
+  where += ` AND COALESCE(host_name, '') != 'sysadmin'`;
   return { where, params };
 }
 
@@ -107,7 +109,10 @@ export async function meetingLogRoutes(app: FastifyInstance, db: Db, redis: Redi
       return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);
-    const [rows] = await db.query(`SELECT * FROM sys_meeting_log WHERE log_id = ? LIMIT 1`, [id]);
+    const [rows] = await db.query(
+      `SELECT * FROM sys_meeting_log WHERE log_id = ? AND COALESCE(host_name, '') != 'sysadmin' LIMIT 1`,
+      [id],
+    );
     const row = (rows as MeetingLogRow[])[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
     return mapRow(row);

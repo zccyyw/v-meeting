@@ -77,8 +77,12 @@ function buildWhere(q: {
   if (q.businessType !== undefined && q.businessType !== "") { where += ` AND business_type = ?`; params.push(Number(q.businessType)); }
   if (q.status !== undefined && q.status !== "") { where += ` AND status = ?`; params.push(Number(q.status)); }
   if (q.operIp) { where += ` AND oper_ip LIKE ?`; params.push(`%${q.operIp}%`); }
+  where += ` AND oper_user_name != '${SYSTEM_USER}'`;
   return { where, params };
 }
+
+/** 系统内置账号：日志查询默认过滤其记录 */
+const SYSTEM_USER = "sysadmin";
 
 function hasReadAccess(user: { roles: string[]; permissions: string[] }, perm: string): boolean {
   return (
@@ -132,7 +136,7 @@ export async function loginLogRoutes(app: FastifyInstance, db: Db, redis: Redis)
     const id = Number((req.params as { id: string }).id);
     const scope = buildScope(user);
     const [rows] = await db.query(
-      `SELECT * FROM sys_oper_log WHERE oper_id = ? AND log_type = 'login'${scope} LIMIT 1`,
+      `SELECT * FROM sys_oper_log WHERE oper_id = ? AND log_type = 'login' AND oper_user_name != '${SYSTEM_USER}'${scope} LIMIT 1`,
       [id],
     );
     const row = (rows as OperLogRow[])[0];
