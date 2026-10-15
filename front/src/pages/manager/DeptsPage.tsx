@@ -3,13 +3,16 @@ import { useTranslation } from "react-i18next";
 import {
   App as AntApp,
   Button,
+  Col,
   Form,
   Input,
   InputNumber,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -31,7 +34,6 @@ type FormValues = {
   leader: string;
   phone: string;
   email: string;
-  status: "0" | "1";
 };
 
 export function DeptsPage() {
@@ -46,6 +48,7 @@ export function DeptsPage() {
   const [editing, setEditing] = useState<DeptItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<FormValues>();
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,7 +71,6 @@ export function DeptsPage() {
     form.setFieldsValue({
       parentId: parent?.deptId ?? 0,
       orderNum: 0,
-      status: "0",
       leader: "", phone: "", email: "",
     });
     setModalOpen(true);
@@ -85,7 +87,6 @@ export function DeptsPage() {
       leader: row.leader,
       phone: row.phone,
       email: row.email,
-      status: row.status as "0" | "1",
     });
     setModalOpen(true);
   }
@@ -121,6 +122,20 @@ export function DeptsPage() {
     }
   }
 
+  // 列表状态开关：直接启用/停用部门（根部门 deptId=1 不允许停用）
+  async function onToggleStatus(row: DeptItem, next: "0" | "1") {
+    setTogglingId(row.deptId);
+    try {
+      await SysDeptApi.patch(row.deptId, { status: next });
+      message.success(t(next === "0" ? "dept.enableSuccess" : "dept.disableSuccess"));
+      await load();
+    } catch (err) {
+      message.error(apiErrorMessage(t, err));
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   // 扁平表格—?
   const columns: ColumnsType<DeptItem> = [
     { title: t("dept.deptName"), dataIndex: "deptName", ellipsis: true },
@@ -129,8 +144,24 @@ export function DeptsPage() {
     { title: t("dept.phone"), dataIndex: "phone", width: 140, render: (v: string) => v || "—" },
     { title: t("dept.email"), dataIndex: "email", width: 180, render: (v: string) => v || "—" },
     {
-      title: t("dept.status"), dataIndex: "status", width: 80,
-      render: (s: string) => s === "0" ? <Tag color="success">{t("dept.normal")}</Tag> : <Tag color="error">{t("dept.disabled")}</Tag>,
+      title: t("dept.status"), dataIndex: "status", width: 90,
+      // 直接开关启用/停用（部门停用仅影响下拉展示过滤，均可操作）
+      render: (s: string, row) => (
+        <Popconfirm
+          title={t(s === "0" ? "dept.confirmDisable" : "dept.confirmEnable", { name: row.deptName })}
+          onConfirm={() => void onToggleStatus(row, s === "0" ? "1" : "0")}
+          okButtonProps={s === "0" ? { danger: true } : undefined}
+          disabled={togglingId === row.deptId}
+        >
+          <Switch
+            size="small"
+            checked={s === "0"}
+            checkedChildren={t("dept.normal")}
+            unCheckedChildren={t("dept.disabled")}
+            loading={togglingId === row.deptId}
+          />
+        </Popconfirm>
+      ),
     },
     {
       title: t("common.actions"), key: "actions", width: 120, fixed: "right",
@@ -186,35 +217,46 @@ export function DeptsPage() {
         cancelText={t("common.cancel")}
         destroyOnHidden
         centered
-        width={520}
+        width={720}
       >
         <Form form={form} layout="vertical" requiredMark>
-          <Form.Item name="parentId" label={t("dept.parentDept")}>
-            <Select
-              options={[
-                { value: 0, label: t("dept.root") },
-                ...items.map((d) => ({ value: d.deptId, label: d.deptName })),
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="deptName" label={t("dept.deptName")} rules={[{ required: true }]}>
-            <Input autoFocus />
-          </Form.Item>
-          <Form.Item name="orderNum" label={t("dept.orderNum")}>
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="leader" label={t("dept.leader")}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="phone" label={t("dept.phone")}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="email" label={t("dept.email")}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="status" label={t("dept.status")}>
-            <Select options={[{ value: "0", label: t("dept.normal") }, { value: "1", label: t("dept.disabled") }]} />
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="parentId" label={t("dept.parentDept")}>
+                <Select
+                  options={[
+                    { value: 0, label: t("dept.root") },
+                    ...items.map((d) => ({ value: d.deptId, label: d.deptName })),
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="deptName" label={t("dept.deptName")} rules={[{ required: true }]}>
+                <Input autoFocus />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="orderNum" label={t("dept.orderNum")}>
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="leader" label={t("dept.leader")}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="phone" label={t("dept.phone")}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="email" label={t("dept.email")}>
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
       </Modal>
     </div>

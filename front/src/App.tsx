@@ -48,6 +48,12 @@ const NoticesPage = lazy(() =>
 const OperLogPage = lazy(() =>
   import("@/pages/manager/OperLogPage").then((m) => ({ default: m.OperLogPage })),
 );
+const LoginLogsPage = lazy(() =>
+  import("@/pages/manager/LoginLogsPage").then((m) => ({ default: m.LoginLogsPage })),
+);
+const MeetingLogsPage = lazy(() =>
+  import("@/pages/manager/MeetingLogsPage").then((m) => ({ default: m.MeetingLogsPage })),
+);
 const MeetingApprovalPage = lazy(() =>
   import("@/pages/manager/MeetingApprovalPage").then((m) => ({ default: m.MeetingApprovalPage })),
 );
@@ -133,6 +139,8 @@ export default function App() {
             <Route path="config" element={<Suspense fallback={null}><ConfigsPage /></Suspense>} />
             <Route path="notice" element={<Suspense fallback={null}><NoticesPage /></Suspense>} />
             <Route path="operlog" element={<Suspense fallback={null}><OperLogPage /></Suspense>} />
+            <Route path="loginlog" element={<Suspense fallback={null}><LoginLogsPage /></Suspense>} />
+            <Route path="meeting-log" element={<Suspense fallback={null}><MeetingLogsPage /></Suspense>} />
             <Route path="meeting-approval" element={<Suspense fallback={null}><MeetingApprovalPage /></Suspense>} />
             <Route path="meeting-monitor" element={<Suspense fallback={null}><MeetingMonitorPage /></Suspense>} />
             <Route path="user-approval" element={<Suspense fallback={null}><UserApprovalPage /></Suspense>} />

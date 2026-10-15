@@ -161,6 +161,10 @@ export async function roleRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     const body = UpdateRoleBody.parse(req.body ?? {});
     if (Object.keys(body).length === 0) return reply.code(400).send({ error: "empty_patch" });
 
+    // 系统管理员角色（role_id=1）不允许停用（与删除保护对齐，仅靠前端禁用不够）
+    if (id === 1 && body.status === "1")
+      return reply.code(403).send({ error: "cannot_disable_admin" });
+
     const sets: string[] = [];
     const params: unknown[] = [];
     if (body.roleName !== undefined) { sets.push("role_name = ?"); params.push(body.roleName); }
@@ -236,11 +240,15 @@ export async function roleRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     function buildTree(parentId: number): unknown[] {
       return items
         .filter((i) => i.parent_id === parentId)
-        .map((i) => ({
-          id: i.id,
-          label: i.label,
-          children: buildTree(i.id),
-        }));
+        .map((i) => {
+          const children = buildTree(i.id);
+          return {
+            id: i.id,
+            label: i.label,
+            // 叶子节点不返回 children（空数组会让 Tree 渲染无意义的展开箭头）
+            ...(children.length > 0 ? { children } : {}),
+          };
+        });
     }
     return buildTree(0);
   });

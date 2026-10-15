@@ -178,6 +178,9 @@ export async function deptRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     const body = UpdateDeptBody.parse(req.body ?? {});
     if (Object.keys(body).length === 0) return reply.code(400).send({ error: "empty_patch" });
 
+    // 说明：部门停用仅影响相关下拉的展示过滤，无系统性风险，所有部门均可开关
+    // （菜单不同：停用根目录 menu_id=1 会导致全部用户侧栏为空，故有 cannot_disable_root 保护）
+
     const sets: string[] = [];
     const params: unknown[] = [];
 

@@ -12,6 +12,11 @@
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
     "@meeting/shared": "0.0.1",
+    "@tiptap/extension-placeholder": "^3.32.0",
+    "@tiptap/extension-text-align": "^3.32.0",
+    "@tiptap/extension-text-style": "^3.32.0",
+    "@tiptap/react": "^3.32.0",
+    "@tiptap/starter-kit": "^3.32.0",
     "antd": "^6.5.1",
     "i18next": "^26.3.6",
     "lucide-react": "^1.26.0",

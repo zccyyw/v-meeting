@@ -194,7 +194,31 @@
     "remark": "备注",
     "create": "新增公告",
     "edit": "修改公告",
-    "confirmDelete": "确定删除此公告？"
+    "confirmDelete": "确定删除此公告？",
+    "contentPlaceholder": "请输入公告内容"
+  },
+  "richEditor": {
+    "placeholder": "请输入内容...",
+    "body": "正文",
+    "bold": "加粗",
+    "italic": "斜体",
+    "underline": "下划线",
+    "strike": "删除线",
+    "textColor": "文字颜色",
+    "bgColor": "背景颜色",
+    "orderedList": "有序列表",
+    "bulletList": "无序列表",
+    "alignLeft": "左对齐",
+    "alignCenter": "居中",
+    "alignRight": "右对齐",
+    "blockquote": "引用",
+    "codeBlock": "代码块",
+    "setLink": "设置链接",
+    "linkUrl": "链接地址",
+    "removeLink": "移除链接",
+    "clearFormat": "清除格式",
+    "undo": "撤销",
+    "redo": "重做"
   },
   "operlog": {
     "pageTitle": "操作日志",
@@ -206,6 +230,7 @@
     "businessDelete": "删除",
     "businessExport": "导出",
     "businessImport": "导入",
+    "businessGrant": "授权",
     "businessLogin": "登录",
     "businessLogout": "退出",
     "method": "方法",
@@ -227,6 +252,33 @@
     "clean": "清空",
     "confirmDelete": "确定删除此日志？",
     "confirmClean": "确定清空所有操作日志？此操作不可恢复。"
+  },
+  "loginlog": {
+    "pageTitle": "登录日志",
+    "action": "动作",
+    "actionLogin": "登录",
+    "actionLogout": "登出",
+    "confirmClean": "确定清空所有登录日志？此操作不可恢复。"
+  },
+  "meetinglog": {
+    "pageTitle": "会议日志",
+    "title": "会议主题",
+    "type": "会议类型",
+    "typeFast": "快速会议",
+    "typeReserved": "预约会议",
+    "meetingCode": "会议号",
+    "hostName": "主持人",
+    "participantCount": "参会人数",
+    "personUnit": "人",
+    "duration": "会议时长",
+    "unitHour": "时",
+    "unitMinute": "分",
+    "unitSecond": "秒",
+    "startTime": "开始时间",
+    "endTime": "结束时间",
+    "createTime": "记录时间",
+    "detailTitle": "会议日志详情",
+    "confirmClean": "确定清空所有会议日志？此操作不可恢复。"
   },
   "meeting": {
     "title": "会议",
@@ -418,7 +470,11 @@
     "create": "新增部门",
     "edit": "修改部门",
     "addChild": "新增子部门",
-    "confirmDelete": "确定删除部门「{{name}}」？"
+    "confirmDelete": "确定删除部门「{{name}}」？",
+    "confirmDisable": "确定停用「{{name}}」？停用后立即生效。",
+    "confirmEnable": "确定启用「{{name}}」？",
+    "enableSuccess": "已启用",
+    "disableSuccess": "已停用"
   },
   "role": {
     "title": "角色管理",
@@ -438,7 +494,11 @@
     "menuPermissions": "菜单权限",
     "create": "新增角色",
     "edit": "修改角色",
-    "confirmDelete": "确定删除角色「{{name}}」？"
+    "confirmDelete": "确定删除角色「{{name}}」？",
+    "confirmDisable": "确定停用角色「{{name}}」？停用后该角色用户将失去对应权限。",
+    "confirmEnable": "确定启用角色「{{name}}」？",
+    "enableSuccess": "角色已启用",
+    "disableSuccess": "角色已停用"
   },
   "menu": {
     "title": "菜单管理",
@@ -471,7 +531,14 @@
     "create": "新增菜单",
     "edit": "修改菜单",
     "addChild": "新增子菜单",
-    "confirmDelete": "确定删除菜单「{{name}}」？"
+    "confirmDelete": "确定删除菜单「{{name}}」？",
+    "confirmDisable": "确定停用「{{name}}」？停用后立即生效。",
+    "confirmEnable": "确定启用「{{name}}」？",
+    "enableSuccess": "已启用",
+    "disableSuccess": "已停用",
+    "iconPlaceholder": "点击选择图标",
+    "iconSearchPlaceholder": "搜索图标名称",
+    "iconClear": "清除图标"
   },
   "pwa": {
     "install": "安装应用",

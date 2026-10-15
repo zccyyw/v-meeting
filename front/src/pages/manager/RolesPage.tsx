@@ -3,13 +3,16 @@ import { useTranslation } from "react-i18next";
 import {
   App as AntApp,
   Button,
+  Col,
   Form,
   Input,
   InputNumber,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Tree,
@@ -32,10 +35,7 @@ type FormValues = {
   roleName: string;
   roleKey: string;
   roleSort: number;
-  dataScope: "1" | "2" | "3" | "4";
-  status: "0" | "1";
   remark: string;
-  menuIds: number[];
 };
 
 export function RolesPage() {
@@ -55,7 +55,8 @@ export function RolesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<FormValues>();
   const [menuTree, setMenuTree] = useState<{ id: number; label: string; children?: unknown[] }[]>([]);
-  const [checkedMenuKeys, setCheckedMenuKeys] = useState<React.Key[]>([]);
+  const [checkedMenuKeys, setCheckedMenuKeys] = useState<number[]>([]);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,7 +91,8 @@ export function RolesPage() {
     setModalMode("create");
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ roleSort: 0, dataScope: "1", status: "0", remark: "", menuIds: [] });
+    // status 由列表开关管理（默认启用）；dataScope 数据范围暂未生效，隐藏后由后端默认"全部"
+    form.setFieldsValue({ roleSort: 0, remark: "" });
     setCheckedMenuKeys([]);
     await loadMenuTree();
     setModalOpen(true);
@@ -106,12 +108,9 @@ export function RolesPage() {
         roleName: detail.roleName,
         roleKey: detail.roleKey,
         roleSort: detail.roleSort,
-        dataScope: detail.dataScope as "1" | "2" | "3" | "4",
-        status: detail.status as "0" | "1",
         remark: detail.remark,
-        menuIds: detail.menuIds,
       });
-      setCheckedMenuKeys(detail.menuIds.map(String));
+      setCheckedMenuKeys(detail.menuIds);
     } catch (err) {
       message.error(apiErrorMessage(t, err));
     }
@@ -123,7 +122,8 @@ export function RolesPage() {
     try {
       const values = await form.validateFields();
       setSubmitting(true);
-      const body = { ...values, menuIds: checkedMenuKeys.map(Number) };
+      // 不提交 status：状态由列表开关单独管理，避免整表单提交时意外覆盖
+      const body = { ...values, menuIds: [...checkedMenuKeys] };
       if (modalMode === "create") {
         await SysRoleApi.create(body);
         message.success(t("common.createSuccess"));
@@ -151,6 +151,20 @@ export function RolesPage() {
     }
   }
 
+  // 列表状态开关：直接启用/停用角色（roleId=1 系统管理员不允许停用）
+  async function onToggleStatus(row: RoleItem, next: "0" | "1") {
+    setTogglingId(row.roleId);
+    try {
+      await SysRoleApi.patch(row.roleId, { status: next });
+      message.success(t(next === "0" ? "role.enableSuccess" : "role.disableSuccess"));
+      await load();
+    } catch (err) {
+      message.error(apiErrorMessage(t, err));
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   const columns: ColumnsType<RoleItem> = [
     indexColumn<RoleItem>(page, pageSize, { title: t("common.index") }),
     { title: t("role.roleName"), dataIndex: "roleName", ellipsis: true },
@@ -160,8 +174,25 @@ export function RolesPage() {
     },
     { title: t("role.roleSort"), dataIndex: "roleSort", width: 80 },
     {
-      title: t("role.status"), dataIndex: "status", width: 80,
-      render: (s: string) => s === "0" ? <Tag color="success">{t("role.normal")}</Tag> : <Tag color="error">{t("role.disabled")}</Tag>,
+      title: t("role.status"), dataIndex: "status", width: 90,
+      // 直接开关启用/停用；系统管理员角色（roleId=1）禁用，不允许停用
+      render: (s: string, row) => (
+        <Popconfirm
+          title={t(s === "0" ? "role.confirmDisable" : "role.confirmEnable", { name: row.roleName })}
+          onConfirm={() => void onToggleStatus(row, s === "0" ? "1" : "0")}
+          okButtonProps={s === "0" ? { danger: true } : undefined}
+          disabled={row.roleId === 1 || togglingId === row.roleId}
+        >
+          <Switch
+            size="small"
+            checked={s === "0"}
+            checkedChildren={t("role.normal")}
+            unCheckedChildren={t("role.disabled")}
+            loading={togglingId === row.roleId}
+            disabled={row.roleId === 1}
+          />
+        </Popconfirm>
+      ),
     },
     { title: t("role.remark"), dataIndex: "remark", ellipsis: true, render: (v: string) => v || "—" },
     {
@@ -240,42 +271,47 @@ export function RolesPage() {
         cancelText={t("common.cancel")}
         destroyOnHidden
         centered
-        width={600}
+        width={720}
       >
         <Form form={form} layout="vertical" requiredMark>
-          <Form.Item name="roleName" label={t("role.roleName")} rules={[{ required: true }]}>
-            <Input autoFocus />
-          </Form.Item>
-          <Form.Item name="roleKey" label={t("role.roleKey")} rules={[{ required: true }]}>
-            <Input disabled={modalMode === "edit" && editing?.roleId === 1} />
-          </Form.Item>
-          <Form.Item name="roleSort" label={t("role.roleSort")}>
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="dataScope" label={t("role.dataScope")}>
-            <Select options={[
-              { value: "1", label: t("role.dataScopeAll") },
-              { value: "2", label: t("role.dataScopeCustom") },
-              { value: "3", label: t("role.dataScopeDept") },
-              { value: "4", label: t("role.dataScopeDeptAndBelow") },
-            ]} />
-          </Form.Item>
-          <Form.Item name="status" label={t("role.status")}>
-            <Select options={[{ value: "0", label: t("role.normal") }, { value: "1", label: t("role.disabled") }]} />
-          </Form.Item>
-          <Form.Item name="remark" label={t("role.remark")}>
-            <Input.TextArea rows={2} />
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="roleName" label={t("role.roleName")} rules={[{ required: true }]}>
+                <Input autoFocus />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="roleKey" label={t("role.roleKey")} rules={[{ required: true }]}>
+                <Input disabled={modalMode === "edit" && editing?.roleId === 1} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="roleSort" label={t("role.roleSort")}>
+                <InputNumber min={0} controls={true} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item label={t("role.menuPermissions")}>
             <div style={{ maxHeight: 240, overflow: "auto", border: "1px solid #d9d9d9", borderRadius: 6, padding: 8 }}>
+              {/* 后端 menu-treeselect 节点字段为 id/label，映射为 Tree 的 key/title */}
               <Tree
                 checkable
                 defaultExpandAll
+                fieldNames={{ key: "id", title: "label" }}
                 checkedKeys={checkedMenuKeys}
-                onCheck={(keys) => setCheckedMenuKeys(keys as React.Key[])}
+                onCheck={(keys) => {
+                  const arr = Array.isArray(keys) ? keys : keys.checked;
+                  setCheckedMenuKeys((arr as (number | string)[]).map(Number));
+                }}
                 treeData={menuTree as never}
               />
             </div>
+          </Form.Item>
+          {/* 备注置于表单最底部 */}
+          <Form.Item name="remark" label={t("role.remark")} style={{ marginBottom: 0 }}>
+            <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>

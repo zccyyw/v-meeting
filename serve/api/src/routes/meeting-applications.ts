@@ -119,8 +119,9 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     const page = Number(q.page ?? 1);
     const pageSize = Number(q.pageSize ?? 20);
 
-    // 授权管理员看全部待审批的，普通用户看自己提交的
-    const isApprover = isApproverRole(user);
+    // 授权管理员看全部待审批的，普通用户看自己提交的；
+    // 兼容式接入菜单权限码：勾选「会议审批」的角色视同审批人（存量三员角色不受影响）
+    const isApprover = isApproverRole(user) || user.permissions.includes("meeting:approval:list");
 
     let where = `WHERE 1=1`;
     const params: unknown[] = [];
@@ -164,7 +165,7 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     if (!row) return reply.code(404).send({ error: "not_found" });
 
     // 非审批人只能看自己的
-    if (!isApproverRole(user) && row.applicant_id !== user.id) {
+    if (!isApproverRole(user) && !user.permissions.includes("meeting:approval:list") && row.applicant_id !== user.id) {
       return reply.code(403).send({ error: "forbidden" });
     }
 
@@ -176,7 +177,8 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     const sid = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    if (!isApproverRole(user)) return reply.code(403).send({ error: "forbidden" });
+    if (!isApproverRole(user) && !user.permissions.includes("meeting:approval:list"))
+      return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);
     const body = ApproveBody.parse(req.body ?? {});

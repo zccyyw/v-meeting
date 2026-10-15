@@ -10,12 +10,16 @@ import {
   Popconfirm,
   Radio,
   Select,
+  Row,
+  Col,
   Space,
   Switch,
   Table,
   Tag,
   Typography,
 } from "antd";
+import { IconSelect } from "@/components/IconSelect";
+import { getIcon, resolveIconName } from "@/components/iconRegistry";
 import {
   PlusOutlined,
   EditOutlined,
@@ -38,7 +42,6 @@ type FormValues = {
   isFrame: boolean;
   isCache: boolean;
   visible: "0" | "1";
-  status: "0" | "1";
   perms: string;
   icon: string;
   remark: string;
@@ -59,6 +62,7 @@ export function MenusPage() {
   const [editing, setEditing] = useState<MenuItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<FormValues>();
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,7 +88,7 @@ export function MenusPage() {
       orderNum: 0,
       path: "", component: "", query: "", routeName: "",
       isFrame: false, isCache: true,
-      visible: "0", status: "0",
+      visible: "0",
       perms: "", icon: "#", remark: "",
     });
     setModalOpen(true);
@@ -106,7 +110,6 @@ export function MenusPage() {
       isFrame: row.isFrame,
       isCache: row.isCache,
       visible: row.visible as "0" | "1",
-      status: row.status as "0" | "1",
       perms: row.perms,
       icon: row.icon,
       remark: row.remark,
@@ -145,6 +148,20 @@ export function MenusPage() {
     }
   }
 
+  // 列表状态开关：直接启用/停用菜单（根目录 menuId=1 不允许停用）
+  async function onToggleStatus(row: MenuItem, next: "0" | "1") {
+    setTogglingId(row.menuId);
+    try {
+      await SysMenuApi.patch(row.menuId, { status: next });
+      message.success(t(next === "0" ? "menu.enableSuccess" : "menu.disableSuccess"));
+      await load();
+    } catch (err) {
+      message.error(apiErrorMessage(t, err));
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   // 构建树形表格数据
   function buildTreeData(flatItems: MenuItem[], parentId = 0): MenuItem[] {
     return flatItems
@@ -166,14 +183,38 @@ export function MenusPage() {
       title: t("menu.menuType"), dataIndex: "menuType", width: 80,
       render: (v: string) => <Tag color={menuTypeColor[v]}>{t(`menu.type.${menuTypeLabel[v]}`)}</Tag>,
     },
-    { title: t("menu.icon"), dataIndex: "icon", width: 60, render: (v: string) => v || "—" },
+    {
+      title: t("menu.icon"), dataIndex: "icon", width: 60,
+      // 渲染真实图标预览（存量若依短名经注册表兼容解析）
+      render: (v: string) => {
+        const el = getIcon(v);
+        return el ? el : "—";
+      },
+    },
     { title: t("menu.path"), dataIndex: "path", width: 140, ellipsis: true, render: (v: string) => v || "—" },
     { title: t("menu.component"), dataIndex: "component", width: 180, ellipsis: true, render: (v: string) => v || "—" },
     { title: t("menu.perms"), dataIndex: "perms", width: 180, ellipsis: true, render: (v: string) => v || "—" },
     { title: t("menu.orderNum"), dataIndex: "orderNum", width: 70 },
     {
-      title: t("menu.status"), dataIndex: "status", width: 70,
-      render: (s: string) => s === "0" ? <Tag color="success">{t("menu.normal")}</Tag> : <Tag color="error">{t("menu.disabled")}</Tag>,
+      title: t("menu.status"), dataIndex: "status", width: 90,
+      // 直接开关启用/停用；根目录（menuId=1）禁用——停用将导致所有用户侧栏为空
+      render: (s: string, row) => (
+        <Popconfirm
+          title={t(s === "0" ? "menu.confirmDisable" : "menu.confirmEnable", { name: row.menuName })}
+          onConfirm={() => void onToggleStatus(row, s === "0" ? "1" : "0")}
+          okButtonProps={s === "0" ? { danger: true } : undefined}
+          disabled={row.menuId === 1 || togglingId === row.menuId}
+        >
+          <Switch
+            size="small"
+            checked={s === "0"}
+            checkedChildren={t("menu.normal")}
+            unCheckedChildren={t("menu.disabled")}
+            loading={togglingId === row.menuId}
+            disabled={row.menuId === 1}
+          />
+        </Popconfirm>
+      ),
     },
     {
       title: t("common.actions"), key: "actions", width: 120, fixed: "right",
@@ -229,62 +270,89 @@ export function MenusPage() {
         cancelText={t("common.cancel")}
         destroyOnHidden
         centered
-        width={600}
+        width={720}
       >
         <Form form={form} layout="vertical" requiredMark>
-          <Form.Item name="parentId" label={t("menu.parentMenu")}>
-            <Select options={[
-              { value: 0, label: t("menu.root") },
-              ...items.filter((m) => m.menuType === "M" || m.menuType === "C")
-                .map((m) => ({ value: m.menuId, label: m.menuName })),
-            ]} />
-          </Form.Item>
-          <Form.Item name="menuType" label={t("menu.menuType")}>
-            <Radio.Group>
-              <Radio.Button value="M">{t("menu.type.dir")}</Radio.Button>
-              <Radio.Button value="C">{t("menu.type.menu")}</Radio.Button>
-              <Radio.Button value="F">{t("menu.type.button")}</Radio.Button>
-            </Radio.Group>
-          </Form.Item>
-          <Form.Item name="menuName" label={t("menu.menuName")} rules={[{ required: true }]}>
-            <Input autoFocus />
-          </Form.Item>
-          <Form.Item name="orderNum" label={t("menu.orderNum")}>
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="path" label={t("menu.path")}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="component" label={t("menu.component")}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="perms" label={t("menu.perms")}>
-            <Input placeholder="如 system:user:list" />
-          </Form.Item>
-          <Form.Item name="icon" label={t("menu.icon")}>
-            <Input placeholder="如 user, tree-table, #" />
-          </Form.Item>
-          <Form.Item name="query" label={t("menu.query")}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="routeName" label={t("menu.routeName")}>
-            <Input />
-          </Form.Item>
-          <Space>
-            <Form.Item name="isFrame" label={t("menu.isFrame")} valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="isCache" label={t("menu.isCache")} valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          </Space>
-          <Form.Item name="visible" label={t("menu.visible")}>
-            <Select options={[{ value: "0", label: t("menu.show") }, { value: "1", label: t("menu.hide") }]} />
-          </Form.Item>
-          <Form.Item name="status" label={t("menu.status")}>
-            <Select options={[{ value: "0", label: t("menu.normal") }, { value: "1", label: t("menu.disabled") }]} />
-          </Form.Item>
-          <Form.Item name="remark" label={t("menu.remark")}>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="parentId" label={t("menu.parentMenu")}>
+                <Select options={[
+                  { value: 0, label: t("menu.root") },
+                  ...items.filter((m) => m.menuType === "M" || m.menuType === "C")
+                    .map((m) => ({ value: m.menuId, label: m.menuName })),
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="menuType" label={t("menu.menuType")}>
+                <Radio.Group>
+                  <Radio.Button value="M">{t("menu.type.dir")}</Radio.Button>
+                  <Radio.Button value="C">{t("menu.type.menu")}</Radio.Button>
+                  <Radio.Button value="F">{t("menu.type.button")}</Radio.Button>
+                </Radio.Group>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="menuName" label={t("menu.menuName")} rules={[{ required: true }]}>
+                <Input autoFocus />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="orderNum" label={t("menu.orderNum")}>
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="path" label={t("menu.path")}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="component" label={t("menu.component")}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="perms" label={t("menu.perms")}>
+                <Input placeholder="如 system:user:list" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="icon" label={t("menu.icon")}>
+                <IconSelect
+                  placeholder={t("menu.iconPlaceholder")}
+                  searchPlaceholder={t("menu.iconSearchPlaceholder")}
+                  clearText={t("menu.iconClear")}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="query" label={t("menu.query")}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="routeName" label={t("menu.routeName")}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="isFrame" label={t("menu.isFrame")} valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="isCache" label={t("menu.isCache")} valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="visible" label={t("menu.visible")}>
+                <Select options={[{ value: "0", label: t("menu.show") }, { value: "1", label: t("menu.hide") }]} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="remark" label={t("menu.remark")} style={{ marginBottom: 0 }}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>

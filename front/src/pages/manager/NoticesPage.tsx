@@ -22,6 +22,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { indexColumn } from "@/components/indexColumn";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import { SysNoticeApi, type NoticeItem } from "@/api/client";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 
@@ -231,7 +232,7 @@ export function NoticesPage() {
         cancelText={t("common.cancel")}
         destroyOnHidden
         centered
-        width={600}
+        width={720}
       >
         <Form form={form} layout="vertical" requiredMark>
           <Form.Item name="noticeTitle" label={t("notice.title")} rules={[{ required: true }]}>
@@ -244,7 +245,7 @@ export function NoticesPage() {
             </Radio.Group>
           </Form.Item>
           <Form.Item name="noticeContent" label={t("notice.content")}>
-            <Input.TextArea rows={6} />
+            <RichTextEditor placeholder={t("notice.contentPlaceholder")} />
           </Form.Item>
           <Form.Item name="status" label={t("notice.status")}>
             <Select options={[

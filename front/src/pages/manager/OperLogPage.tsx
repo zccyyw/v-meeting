@@ -24,10 +24,9 @@ const businessTypeMap: Record<number, { color: string; labelKey: string }> = {
   1: { color: "success", labelKey: "operlog.businessAdd" },
   2: { color: "blue", labelKey: "operlog.businessUpdate" },
   3: { color: "error", labelKey: "operlog.businessDelete" },
-  4: { color: "warning", labelKey: "operlog.businessExport" },
-  5: { color: "orange", labelKey: "operlog.businessImport" },
-  6: { color: "purple", labelKey: "operlog.businessLogin" },
-  7: { color: "magenta", labelKey: "operlog.businessLogout" },
+  4: { color: "warning", labelKey: "operlog.businessGrant" },
+  5: { color: "orange", labelKey: "operlog.businessExport" },
+  6: { color: "purple", labelKey: "operlog.businessImport" },
 };
 
 export function OperLogPage() {
@@ -42,7 +41,7 @@ const { token } = theme.useToken();
 
   const [searchTitle] = useState("");
   const [searchUser] = useState("");
-  const [searchType, setSearchType] = useState("");
+  const [searchBizType, setSearchBizType] = useState<number | undefined>(undefined);
   const [searchStatus, setSearchStatus] = useState<number | undefined>(undefined);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -54,7 +53,7 @@ const { token } = theme.useToken();
       const res = await SysOperLogApi.list({
         title: searchTitle || undefined,
         operUserName: searchUser || undefined,
-        logType: searchType || undefined,
+        businessType: searchBizType,
         status: searchStatus,
         page,
         pageSize,
@@ -66,7 +65,7 @@ const { token } = theme.useToken();
     } finally {
       setLoading(false);
     }
-  }, [searchTitle, searchUser, searchType, searchStatus, page, pageSize, t, message]);
+  }, [searchTitle, searchUser, searchBizType, searchStatus, page, pageSize, t, message]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -134,13 +133,18 @@ const { token } = theme.useToken();
         <Space>
           <Select
             allowClear
-            placeholder={t("operlog.logType")}
-            value={searchType || undefined}
-            onChange={(v) => setSearchType(v ?? "")}
-            style={{ width: 120 }}
+            placeholder={t("operlog.businessType")}
+            value={searchBizType}
+            onChange={(v) => setSearchBizType(v ?? undefined)}
+            style={{ width: 110 }}
             options={[
-              { value: "operation", label: t("operlog.logTypeOperation") },
-              { value: "login", label: t("operlog.logTypeLogin") },
+              { value: 0, label: t("operlog.businessOther") },
+              { value: 1, label: t("operlog.businessAdd") },
+              { value: 2, label: t("operlog.businessUpdate") },
+              { value: 3, label: t("operlog.businessDelete") },
+              { value: 4, label: t("operlog.businessGrant") },
+              { value: 5, label: t("operlog.businessExport") },
+              { value: 6, label: t("operlog.businessImport") },
             ]}
           />
           <Select

@@ -31,55 +31,40 @@ import {
   MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
-import { clearSession, getDisplayName, getRoles } from "@/auth/session";
+import { clearSession, getDisplayName } from "@/auth/session";
 import { ThemeToggle } from "@/theme/ThemeToggle";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
-import { api } from "@/api/client";
+import { api, SysMenuApi } from "@/api/client";
+import { getIcon } from "@/components/iconRegistry";
 const { Header, Sider, Content } = Layout;
 
 /**
- * 导航项定义：每项关联所需角色或权限。
- * - admin（系统管理员（admin））可见全部
- * - sys_admin: 用户管理、部门管理、参数设置
- * - auth_admin: 用户审批、会议审批、登录日志
- * - audit_admin: 操作日志
+ * 侧栏图标映射：sys_menu 未存图标字段，按菜单 path 前端配置。
+ * 后台新增菜单若未在此映射，则不显示图标（不影响功能）。
  */
-const navItems = [
-  { key: "/manager/user", icon: <TeamOutlined />, labelKey: "nav.users",
-    roles: ["admin", "sys_admin"] },
-  { key: "/manager/role", icon: <ApartmentOutlined />, labelKey: "nav.roles",
-    roles: ["admin"] },
-  { key: "/manager/menu", icon: <AppstoreOutlined />, labelKey: "nav.menus",
-    roles: ["admin"] },
-  { key: "/manager/dept", icon: <BarsOutlined />, labelKey: "nav.depts",
-    roles: ["admin", "sys_admin"] },
-  { key: "/manager/config", icon: <SettingOutlined />, labelKey: "nav.configs",
-    roles: ["admin", "sys_admin"] },
-  { key: "/manager/notice", icon: <BellOutlined />, labelKey: "nav.notices",
-    roles: ["admin"] },
-  { key: "/manager/operlog", icon: <FileTextOutlined />, labelKey: "nav.logs",
-    roles: ["admin", "auth_admin", "audit_admin"] },
-  { key: "/manager/meeting-approval", icon: <ScheduleOutlined />, labelKey: "nav.meetingApproval",
-    roles: ["admin", "auth_admin"] },
-  { key: "/manager/meeting-monitor", icon: <MonitorOutlined />, labelKey: "nav.meetingMonitor",
-    roles: ["admin", "auth_admin", "audit_admin"] },
-  { key: "/manager/user-approval", icon: <AuditOutlined />, labelKey: "nav.userApproval",
-    roles: ["admin", "auth_admin"] },
-];
+const NAV_ICON_MAP: Record<string, React.ReactNode> = {
+  user: <TeamOutlined />,
+  role: <ApartmentOutlined />,
+  menu: <AppstoreOutlined />,
+  dept: <BarsOutlined />,
+  config: <SettingOutlined />,
+  notice: <BellOutlined />,
+  log: <FileTextOutlined />,
+  operlog: <FileTextOutlined />,
+  approval: <AuditOutlined />,
+  "meeting-approval": <ScheduleOutlined />,
+  "user-approval": <AuditOutlined />,
+  "meeting-monitor": <MonitorOutlined />,
+};
 
-/**
- * 根据用户角色过滤可见的导航项。
- * 如果用户有 admin 角色或对应的权限标识，则可见。
- */
-function filterNavItems(): typeof navItems {
-  const roles = getRoles();
-  // 系统管理员（admin）可见全部
-  if (roles.includes("admin")) return navItems;
-  return navItems.filter((item) =>
-    item.roles.some((r) => roles.includes(r))
-  );
-}
+type NavMenuNode = {
+  menuId: number;
+  menuName: string;
+  path: string;
+  menuType: "M" | "C" | "F";
+  children?: NavMenuNode[];
+};
 
 function ManagerShellInner() {
   const { t } = useTranslation();
@@ -98,6 +83,18 @@ function ManagerShellInner() {
     });
   const [pwdOpen, setPwdOpen] = useState(false);
   const displayName = getDisplayName();
+
+  // ── 侧栏菜单：后台「菜单管理」动态加载（两级：目录 → 页面）──
+  const [navMenus, setNavMenus] = useState<NavMenuNode[]>([]);
+  useEffect(() => {
+    SysMenuApi.routes()
+      .then((res) => {
+        // 根目录「系统管理」(menuId=1) 不作为侧栏一级展示，由其子级构成
+        const root = res.tree.find((n) => n.menuId === 1);
+        setNavMenus((root?.children ?? res.tree ?? []) as NavMenuNode[]);
+      })
+      .catch(() => setNavMenus([])); // 失败降级为空菜单（路由仍可直达）
+  }, []);
 
   // ── 空闲超时（需求 6.2：页面停留 10 分钟自动退出，覆盖管理后台）──
   const [idleConfig, setIdleConfig] = useState({ timeoutSec: 600, warningSec: 60 });
@@ -122,22 +119,46 @@ function ManagerShellInner() {
     },
   });
 
-  // 当前选中的菜单 key
-  const visibleNavItems = filterNavItems();
-  const selectedKey = visibleNavItems.find(
-    (item) => location.pathname.startsWith(item.key),
-  )?.key ?? visibleNavItems[0]?.key ?? "/manager/user";
+  // 当前选中的菜单 key：先精确匹配，再按最长前缀兜底（避免 /manager/user 误配 user-approval）
+  const flatPages = navMenus.flatMap((n) => {
+    if (n.menuType === "C") return [{ key: `/manager/${n.path}`, name: n.menuName }];
+    return (n.children ?? [])
+      .filter((c) => c.menuType === "C")
+      .map((c) => ({ key: `/manager/${c.path}`, name: c.menuName }));
+  });
+  const selectedKey =
+    flatPages.find((p) => p.key === location.pathname)?.key ??
+    flatPages
+      .filter((p) => location.pathname.startsWith(p.key))
+      .sort((a, b) => b.key.length - a.key.length)[0]?.key ??
+    flatPages[0]?.key ??
+    "/manager/user";
 
-  // 菜单项
-  const menuItems: MenuProps["items"] = visibleNavItems.map((item) => ({
-    key: item.key,
-    icon: item.icon,
-    label: (
-      <NavLink to={item.key}>
-        {t(item.labelKey)}
-      </NavLink>
-    ),
-  }));
+  // 菜单项：C=一级项；M=可展开二级组（组内 C 为子菜单）
+  // 图标优先取后台配置的 sys_menu.icon（注册表解析），其次按 path 的前端兜底映射
+  const menuItems: MenuProps["items"] = navMenus.map((node) => {
+    const key = `/manager/${node.path}`;
+    const icon = getIcon(node.icon) ?? NAV_ICON_MAP[node.path];
+    if (node.menuType === "M") {
+      const children = (node.children ?? [])
+        .filter((c) => c.menuType === "C")
+        .map((c) => {
+          const childKey = `/manager/${c.path}`;
+          return {
+            key: childKey,
+            icon: getIcon(c.icon) ?? NAV_ICON_MAP[c.path],
+            label: <NavLink to={childKey}>{c.menuName}</NavLink>,
+          };
+        });
+      if (children.length === 0) return null;
+      return { key, icon, label: node.menuName, children };
+    }
+    return {
+      key,
+      icon,
+      label: <NavLink to={key}>{node.menuName}</NavLink>,
+    };
+  }).filter(Boolean) as MenuProps["items"];
 
   function onLogout() {
     modal.confirm({
@@ -277,6 +298,9 @@ function ManagerShellInner() {
           <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
+            defaultOpenKeys={navMenus
+              .filter((n) => n.menuType === "M")
+              .map((n) => `/manager/${n.path}`)}
             items={menuItems}
             style={{ flex: 1, borderRight: 0, background: "transparent", overflow: "auto" }}
           />

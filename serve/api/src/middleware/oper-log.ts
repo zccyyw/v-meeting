@@ -44,6 +44,25 @@ export async function recordLoginLog(
 }
 
 /**
+ * 登出日志记录（business_type=7，log_type='login'，与登录日志同属登录日志页）
+ */
+export async function recordLogoutLog(
+  db: Db,
+  username: string,
+  ip: string,
+  success: boolean = true,
+  errorMsg: string = "",
+): Promise<void> {
+  try {
+    await db.query(
+      `INSERT INTO sys_oper_log (title, log_type, business_type, method, request_method, oper_url, oper_ip, oper_param, json_result, status, error_msg, oper_user_name, oper_time, cost_time)
+       VALUES ('登出日志', 'login', 7, 'POST /auth/logout', 'POST', '/auth/logout', ?, ?, ?, ?, ?, ?, ${nowSql(db)}, 0)`,
+      [ip, JSON.stringify({ username }), JSON.stringify({ success }), success ? 0 : 1, errorMsg, username],
+    );
+  } catch { /* ignore */ }
+}
+
+/**
  * 批量注册操作日志钩子
  * 为所有 /sys- 开头的写操作路由自动记录日志
  */
@@ -53,19 +72,26 @@ export function registerOperLogHook(app: FastifyInstance, db: Db, redis: Redis) 
     // 只记录 sys- 路径下的写操作
     if (!url.startsWith("/sys-") && !url.startsWith("/api/sys-")) return;
     if (req.method === "GET") return;
+    // CORS 预检请求不携带业务语义，且不允许带自定义头（x-session-id），
+    // 记录会产生 oper_user_name=anonymous、businessType=其他 的垃圾数据
+    if (req.method === "OPTIONS") return;
 
-    // 确定模块标题
+    // 确定模块标题（注意：/sys-user-approval 必须在 /sys-user 之前判断）
     let title = "系统管理";
-    if (url.includes("/sys-user")) title = "用户管理";
+    if (url.includes("/sys-user-approval")) title = "用户审批";
+    else if (url.includes("/sys-user")) title = "用户管理";
     else if (url.includes("/sys-role")) title = "角色管理";
     else if (url.includes("/sys-menu")) title = "菜单管理";
     else if (url.includes("/sys-dept")) title = "部门管理";
     else if (url.includes("/sys-config")) title = "参数设置";
     else if (url.includes("/sys-notice")) title = "通知公告";
+    else if (url.includes("/sys-operlog")) title = "操作日志";
 
-    // 确定业务类型
+    // 确定业务类型（枚举对齐若依：1新增 2修改 3删除 4授权 5导出 6导入）
     let businessType = 0;
-    if (req.method === "POST") businessType = 1;
+    if (url.includes("/export")) businessType = 5;
+    else if (url.includes("/import")) businessType = 6;
+    else if (req.method === "POST") businessType = 1;
     else if (req.method === "PATCH" || req.method === "PUT") businessType = 2;
     else if (req.method === "DELETE") businessType = 3;
 

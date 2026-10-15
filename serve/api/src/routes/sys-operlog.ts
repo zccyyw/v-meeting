@@ -56,12 +56,14 @@ function limitClause(db: Db, page: number, pageSize: number): string {
 
 /**
  * 根据用户角色构建日志查询的 WHERE 条件（三员分立）。
- * - 审计管理员：除自己外所有日志
- * - 授权管理员：仅登录日志
- * - 系统管理员：仅操作日志
- * - 系统管理员（admin）：全部日志
+ * 本路由固定只查操作日志（log_type='operation'，登录日志已拆分至 /sys-loginlog），
+ * 因此不再需要按 log_type 分流：
+ * - 审计管理员：除自己外所有操作日志
+ * - 系统管理员：所有操作日志
+ * - 系统管理员（admin）：全部
  * - 其他角色：即使被分配 system:operlog:list 权限码，也仅能查看自己的日志
  *   （等保语义：个人可查本人操作记录，不可见他人）
+ * 授权管理员不再放行（登录日志为其专属职责，见 sys-loginlog.ts）。
  */
 function buildLogScope(user: { roles: string[]; username: string }): string {
   const self = `'${user.username.replace(/'/g, "''")}'`;
@@ -69,11 +71,8 @@ function buildLogScope(user: { roles: string[]; username: string }): string {
   if (user.roles.includes("audit_admin")) {
     return ` AND oper_user_name != ${self}`;
   }
-  if (user.roles.includes("auth_admin")) {
-    return ` AND log_type = 'login'`;
-  }
   if (user.roles.includes("sys_admin")) {
-    return ` AND log_type = 'operation'`;
+    return ""; // 系统管理员：全部操作日志
   }
   return ` AND oper_user_name = ${self}`; // 仅本人日志
 }
@@ -87,7 +86,6 @@ export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     if (
       !user.roles.includes("admin") &&
       !user.roles.includes("audit_admin") &&
-      !user.roles.includes("auth_admin") &&
       !user.roles.includes("sys_admin") &&
       !user.permissions.includes("system:operlog:list")
     )
@@ -95,7 +93,7 @@ export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) 
 
     const q = req.query as {
       title?: string;
-      logType?: string;
+      businessType?: string;
       operUserName?: string;
       status?: string;
       operObject?: string;
@@ -105,10 +103,12 @@ export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const page = Number(q.page ?? 1);
     const pageSize = Number(q.pageSize ?? 20);
 
-    let where = `WHERE 1=1${buildLogScope(user)}`;
+    // 固定只查操作日志（登录/登出日志见 /sys-loginlog）
+    let where = `WHERE log_type = 'operation'`;
+    where += buildLogScope(user);
     const params: unknown[] = [];
     if (q.title) { where += ` AND title LIKE ?`; params.push(`%${q.title}%`); }
-    if (q.logType) { where += ` AND log_type = ?`; params.push(q.logType); }
+    if (q.businessType !== undefined && q.businessType !== "") { where += ` AND business_type = ?`; params.push(Number(q.businessType)); }
     if (q.operUserName) { where += ` AND oper_user_name LIKE ?`; params.push(`%${q.operUserName}%`); }
     if (q.status !== undefined && q.status !== "") { where += ` AND status = ?`; params.push(Number(q.status)); }
     if (q.operObject) { where += ` AND oper_object LIKE ?`; params.push(`%${q.operObject}%`); }
@@ -132,14 +132,14 @@ export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     if (
       !user.roles.includes("admin") &&
       !user.roles.includes("audit_admin") &&
-      !user.roles.includes("auth_admin") &&
       !user.roles.includes("sys_admin") &&
       !user.permissions.includes("system:operlog:query")
     )
       return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);
-    const [rows] = await db.query(`SELECT * FROM sys_oper_log WHERE oper_id = ? LIMIT 1`, [id]);
+    // 固定只允许查看操作日志详情（登录日志走 /sys-loginlog/:id）
+    const [rows] = await db.query(`SELECT * FROM sys_oper_log WHERE oper_id = ? AND log_type = 'operation' LIMIT 1`, [id]);
     const row = (rows as OperLogRow[])[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
 
@@ -172,15 +172,16 @@ export async function operLogRoutes(app: FastifyInstance, db: Db, redis: Redis) 
 
     const q = req.query as {
       title?: string;
-      logType?: string;
+      businessType?: string;
       operUserName?: string;
       status?: string;
     };
 
-    let where = `WHERE 1=1${buildLogScope(user)}`;
+    let where = `WHERE log_type = 'operation'`;
+    where += buildLogScope(user);
     const params: unknown[] = [];
     if (q.title) { where += ` AND title LIKE ?`; params.push(`%${q.title}%`); }
-    if (q.logType) { where += ` AND log_type = ?`; params.push(q.logType); }
+    if (q.businessType !== undefined && q.businessType !== "") { where += ` AND business_type = ?`; params.push(Number(q.businessType)); }
     if (q.operUserName) { where += ` AND oper_user_name LIKE ?`; params.push(`%${q.operUserName}%`); }
     if (q.status !== undefined && q.status !== "") { where += ` AND status = ?`; params.push(Number(q.status)); }
 

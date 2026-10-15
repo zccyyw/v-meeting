@@ -4,7 +4,7 @@ import type { Db } from "../db.js";
 import type { Redis } from "ioredis";
 import { createSession, hashPassword, verifyPassword } from "../auth.js";
 import { loadSessionUser } from "../session-user.js";
-import { recordLoginLog } from "../middleware/oper-log.js";
+import { recordLoginLog, recordLogoutLog } from "../middleware/oper-log.js";
 import { nowSql, hasSysUser } from "../sql-utils.js";
 import { getConfigInt } from "../config-cache.js";
 import { countOnlineUsers } from "../redis.js";
@@ -302,10 +302,17 @@ export async function authRoutes(app: FastifyInstance, db: Db, redis: Redis) {
   // 登出：删除服务端会话，立即释放“在线人数”名额（配合 sys.online.maxUsers）
   app.post("/auth/logout", async (req, reply) => {
     const sessionId = (req.headers["x-session-id"] as string) || "";
+    // 删除会话前先取用户名，用于登出日志
+    let username = "unknown";
+    try {
+      const user = await loadSessionUser(db, redis, sessionId);
+      if (user) username = user.username;
+    } catch { /* ignore */ }
     if (sessionId) {
       await redis.del(`session:${sessionId}`);
       await redis.del(`session_force:${sessionId}`);
     }
+    void recordLogoutLog(db, username, req.ip, true);
     return { ok: true };
   });
 }

@@ -593,7 +593,9 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const sessionId = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sessionId);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    if (!isManagerRole(user)) return reply.code(403).send({ error: "forbidden" });
+    // 兼容式接入菜单权限码：勾选「会议监控」菜单的角色亦可访问（存量管理角色不受影响）
+    if (!isManagerRole(user) && !user.permissions.includes("meeting:monitor:list"))
+      return reply.code(403).send({ error: "forbidden" });
 
     try {
       const [rows] = await db.query(
@@ -630,7 +632,8 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const sessionId = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sessionId);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    if (!isManagerRole(user)) return reply.code(403).send({ error: "forbidden" });
+    if (!isManagerRole(user) && !user.permissions.includes("meeting:monitor:list"))
+      return reply.code(403).send({ error: "forbidden" });
 
     try {
       const [rows] = await db.query(

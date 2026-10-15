@@ -96,8 +96,10 @@ export async function userApprovalRoutes(app: FastifyInstance, db: Db, redis: Re
     const sid = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    // 授权管理员看待审批的，系统管理员看自己提交的
-    const isApprover = isApproverRole(user);
+    // 授权管理员看待审批的，系统管理员看自己提交的；
+    // 兼容式接入菜单权限码：勾选「用户审批」的角色视同审批人（存量三员角色不受影响）
+    const isApprover =
+      isApproverRole(user) || user.permissions.includes("system:user-approval:list");
 
     const q = req.query as { status?: string; page?: string; pageSize?: string };
     const page = Number(q.page ?? 1);
@@ -154,8 +156,9 @@ export async function userApprovalRoutes(app: FastifyInstance, db: Db, redis: Re
     const sid = req.headers["x-session-id"] as string | undefined;
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    // 仅授权管理员和系统管理员（admin）可审批
-    if (!isApproverRole(user)) return reply.code(403).send({ error: "forbidden" });
+    // 仅授权管理员和系统管理员（admin）可审批；勾选「用户审批」菜单的角色亦可
+    if (!isApproverRole(user) && !user.permissions.includes("system:user-approval:list"))
+      return reply.code(403).send({ error: "forbidden" });
 
     const id = Number((req.params as { id: string }).id);
     const body = ApproveBody.parse(req.body ?? {});

@@ -194,7 +194,31 @@
     "remark": "Remark",
     "create": "Create Notice",
     "edit": "Edit Notice",
-    "confirmDelete": "Delete this notice?"
+    "confirmDelete": "Delete this notice?",
+    "contentPlaceholder": "Enter notice content"
+  },
+  "richEditor": {
+    "placeholder": "Enter content...",
+    "body": "Body",
+    "bold": "Bold",
+    "italic": "Italic",
+    "underline": "Underline",
+    "strike": "Strikethrough",
+    "textColor": "Text Color",
+    "bgColor": "Background Color",
+    "orderedList": "Ordered List",
+    "bulletList": "Bullet List",
+    "alignLeft": "Align Left",
+    "alignCenter": "Align Center",
+    "alignRight": "Align Right",
+    "blockquote": "Blockquote",
+    "codeBlock": "Code Block",
+    "setLink": "Set Link",
+    "linkUrl": "Link URL",
+    "removeLink": "Remove Link",
+    "clearFormat": "Clear Formatting",
+    "undo": "Undo",
+    "redo": "Redo"
   },
   "operlog": {
     "pageTitle": "Operation Log",
@@ -206,6 +230,7 @@
     "businessDelete": "Delete",
     "businessExport": "Export",
     "businessImport": "Import",
+    "businessGrant": "Grant",
     "businessLogin": "Login",
     "businessLogout": "Logout",
     "method": "Method",
@@ -227,6 +252,33 @@
     "clean": "Clean All",
     "confirmDelete": "Delete this log?",
     "confirmClean": "Clear all operation logs? This cannot be undone."
+  },
+  "loginlog": {
+    "pageTitle": "Login Logs",
+    "action": "Action",
+    "actionLogin": "Login",
+    "actionLogout": "Logout",
+    "confirmClean": "Clear all login logs? This cannot be undone."
+  },
+  "meetinglog": {
+    "pageTitle": "Meeting Logs",
+    "title": "Meeting Title",
+    "type": "Meeting Type",
+    "typeFast": "Quick Meeting",
+    "typeReserved": "Scheduled Meeting",
+    "meetingCode": "Meeting Code",
+    "hostName": "Host",
+    "participantCount": "Participants",
+    "personUnit": "",
+    "duration": "Duration",
+    "unitHour": "h ",
+    "unitMinute": "m ",
+    "unitSecond": "s",
+    "startTime": "Start Time",
+    "endTime": "End Time",
+    "createTime": "Logged At",
+    "detailTitle": "Meeting Log Detail",
+    "confirmClean": "Clear all meeting logs? This cannot be undone."
   },
   "meeting": {
     "title": "Meeting",
@@ -418,7 +470,11 @@
     "create": "Create Dept",
     "edit": "Edit Dept",
     "addChild": "Add SubDept",
-    "confirmDelete": "Delete department \"{{name}}\"?"
+    "confirmDelete": "Delete department \"{{name}}\"?",
+    "confirmDisable": "Disable \"{{name}}\"? Takes effect immediately.",
+    "confirmEnable": "Enable \"{{name}}\"?",
+    "enableSuccess": "Enabled",
+    "disableSuccess": "Disabled"
   },
   "role": {
     "title": "Roles",
@@ -438,7 +494,11 @@
     "menuPermissions": "Menu Permissions",
     "create": "Create Role",
     "edit": "Edit Role",
-    "confirmDelete": "Delete role \"{{name}}\"?"
+    "confirmDelete": "Delete role \"{{name}}\"?",
+    "confirmDisable": "Disable role \"{{name}}\"? Users with this role will lose its permissions.",
+    "confirmEnable": "Enable role \"{{name}}\"?",
+    "enableSuccess": "Role enabled",
+    "disableSuccess": "Role disabled"
   },
   "menu": {
     "title": "Menus",
@@ -471,7 +531,14 @@
     "create": "Create Menu",
     "edit": "Edit Menu",
     "addChild": "Add SubMenu",
-    "confirmDelete": "Delete menu \"{{name}}\"?"
+    "confirmDelete": "Delete menu \"{{name}}\"?",
+    "confirmDisable": "Disable \"{{name}}\"? Takes effect immediately.",
+    "confirmEnable": "Enable \"{{name}}\"?",
+    "enableSuccess": "Enabled",
+    "disableSuccess": "Disabled",
+    "iconPlaceholder": "Click to select an icon",
+    "iconSearchPlaceholder": "Search icons",
+    "iconClear": "Clear icon"
   },
   "pwa": {
     "install": "Install App",

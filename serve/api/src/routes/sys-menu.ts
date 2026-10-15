@@ -167,6 +167,10 @@ export async function menuRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     const body = UpdateMenuBody.parse(req.body ?? {});
     if (Object.keys(body).length === 0) return reply.code(400).send({ error: "empty_patch" });
 
+    // 根目录（menu_id=1）不允许停用：停用会导致所有用户（含 admin）菜单树缺失、侧栏为空
+    if (id === 1 && body.status === "1")
+      return reply.code(403).send({ error: "cannot_disable_root" });
+
     const sets: string[] = [];
     const params: unknown[] = [];
     if (body.parentId !== undefined) { sets.push("parent_id = ?"); params.push(body.parentId); }
@@ -241,7 +245,35 @@ export async function menuRoutes(app: FastifyInstance, db: Db, redis: Redis) {
     }
 
     const [rows] = await db.query(sql, params);
-    const items = (rows as MenuRow[]).map(mapRow);
+    let items = (rows as MenuRow[]).map(mapRow);
+
+    // 非 admin：补全勾选节点的祖先目录链。若仅勾选了子菜单而未勾其父目录
+    // （如直接操作 sys_role_menu 或父子取消关联），树会缺失中间层导致侧栏渲染不出。
+    if (!user.roles.includes("admin") && items.length > 0) {
+      const needAncestors = new Set<number>();
+      for (const it of items) {
+        let pid = it.parentId;
+        while (pid !== 0 && !needAncestors.has(pid) && !items.some((x) => x.menuId === pid)) {
+          needAncestors.add(pid);
+          const [pRows] = await db.query(
+            `SELECT parent_id FROM sys_menu WHERE menu_id = ? LIMIT 1`,
+            [pid],
+          );
+          const p = (pRows as { parent_id: number }[])[0];
+          if (!p) break;
+          pid = Number(p.parent_id);
+        }
+      }
+      if (needAncestors.size > 0) {
+        const ids = [...needAncestors];
+        const [aRows] = await db.query(
+          `SELECT * FROM sys_menu WHERE menu_id IN (${ids.map(() => "?").join(",")}) AND status = '0'`,
+          ids,
+        );
+        items = items.concat((aRows as MenuRow[]).map(mapRow));
+      }
+    }
+
     return { tree: buildTree(items) };
   });
 }

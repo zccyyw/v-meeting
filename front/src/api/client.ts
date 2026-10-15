@@ -531,10 +531,10 @@ export type OperLogItem = {
 };
 
 export const SysOperLogApi = {
-  list: (params?: { title?: string; logType?: string; operUserName?: string; status?: number; page?: number; pageSize?: number }) => {
+  list: (params?: { title?: string; businessType?: number; operUserName?: string; status?: number; page?: number; pageSize?: number }) => {
     const sp = new URLSearchParams();
     if (params?.title) sp.set("title", params.title);
-    if (params?.logType) sp.set("logType", params.logType);
+    if (params?.businessType !== undefined) sp.set("businessType", String(params.businessType));
     if (params?.operUserName) sp.set("operUserName", params.operUserName);
     if (params?.status !== undefined) sp.set("status", String(params.status));
     sp.set("page", String(params?.page ?? 1));
@@ -545,6 +545,103 @@ export const SysOperLogApi = {
   remove: (id: number) => api<void>(`/sys-operlog/${id}`, { method: "DELETE" }),
   clean: () => api<void>(`/sys-operlog/clean`, { method: "DELETE" }),
   exportUrl: () => `${API_BASE}/sys-operlog/export`,
+};
+
+// ── 登录日志 API ──
+
+export type LoginLogItem = {
+  operId: number;
+  title: string;
+  businessType: number;
+  method: string;
+  requestMethod: string;
+  operUrl: string;
+  operIp: string;
+  operParam: string;
+  jsonResult: string;
+  status: number;
+  errorMsg: string;
+  operUserName: string;
+  operTime: string;
+  costTime: number;
+};
+
+export const SysLoginLogApi = {
+  list: (params?: { operUserName?: string; businessType?: number; status?: number; operIp?: string; page?: number; pageSize?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.operUserName) sp.set("operUserName", params.operUserName);
+    if (params?.businessType !== undefined) sp.set("businessType", String(params.businessType));
+    if (params?.status !== undefined) sp.set("status", String(params.status));
+    if (params?.operIp) sp.set("operIp", params.operIp);
+    sp.set("page", String(params?.page ?? 1));
+    sp.set("pageSize", String(params?.pageSize ?? 20));
+    return api<{ items: LoginLogItem[]; total: number; page: number; pageSize: number }>(`/sys-loginlog/list?${sp}`);
+  },
+  get: (id: number) => api<LoginLogItem>(`/sys-loginlog/${id}`),
+  clean: () => api<void>(`/sys-loginlog/clean`, { method: "DELETE" }),
+  exportCsv: async (
+    params?: { operUserName?: string; businessType?: number; status?: number; operIp?: string },
+    fileName: string = `loginlog-${Date.now()}.csv`,
+  ) => {
+    const sp = new URLSearchParams();
+    if (params?.operUserName) sp.set("operUserName", params.operUserName);
+    if (params?.businessType !== undefined) sp.set("businessType", String(params.businessType));
+    if (params?.status !== undefined) sp.set("status", String(params.status));
+    if (params?.operIp) sp.set("operIp", params.operIp);
+    const headers = new Headers();
+    const sid = getSessionId();
+    if (sid) headers.set("x-session-id", sid);
+    const res = await fetch(`${API_BASE}/sys-loginlog/export?${sp}`, { headers });
+    if (!res.ok) await throwApiError(res);
+    downloadBlob(await res.blob(), fileName);
+  },
+};
+
+// ── 会议日志 API ──
+
+export type MeetingLogItem = {
+  logId: number;
+  meetingId: number;
+  meetingCode: string;
+  title: string;
+  meetingType: "1" | "2";
+  hostName: string;
+  startTime: string;
+  endTime: string;
+  durationSec: number;
+  participantCount: number;
+  createTime: string;
+};
+
+export const SysMeetingLogApi = {
+  list: (params?: { title?: string; meetingCode?: string; meetingType?: string; hostName?: string; page?: number; pageSize?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.title) sp.set("title", params.title);
+    if (params?.meetingCode) sp.set("meetingCode", params.meetingCode);
+    if (params?.meetingType) sp.set("meetingType", params.meetingType);
+    if (params?.hostName) sp.set("hostName", params.hostName);
+    sp.set("page", String(params?.page ?? 1));
+    sp.set("pageSize", String(params?.pageSize ?? 20));
+    return api<{ items: MeetingLogItem[]; total: number; page: number; pageSize: number }>(`/sys-meetinglog/list?${sp}`);
+  },
+  get: (id: number) => api<MeetingLogItem>(`/sys-meetinglog/${id}`),
+  clean: () => api<void>(`/sys-meetinglog/clean`, { method: "DELETE" }),
+  exportCsv: async (
+    params?: { title?: string; meetingCode?: string; meetingType?: string; hostName?: string },
+    fileName: string = `meetinglog-${Date.now()}.csv`,
+  ) => {
+    const sp = new URLSearchParams();
+    if (params?.title) sp.set("title", params.title);
+    if (params?.meetingCode) sp.set("meetingCode", params.meetingCode);
+    if (params?.meetingType) sp.set("meetingType", params.meetingType);
+    if (params?.hostName) sp.set("hostName", params.hostName);
+    const headers = new Headers();
+    const sid = getSessionId();
+    if (sid) headers.set("x-session-id", sid);
+    const res = await fetch(`${API_BASE}/sys-meetinglog/export?${sp}`, { headers });
+    if (!res.ok) await throwApiError(res);
+    downloadBlob(await res.blob(), fileName);
+  },
 };
 
 // ── 会议申请审批 API ──

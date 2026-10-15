@@ -381,8 +381,71 @@ export function createSignalHandler(db: Db) {
         `UPDATE meetings SET status = 'ended', ended_at = ${nowSql(db)} WHERE id = ? AND status = 'live'`,
         [meetingId]
       );
+      void writeMeetingLog(meetingId);
     } catch (err) {
       console.error("auto end meeting failed", err);
+    }
+  }
+
+  /**
+   * 会议结束 → 落一条开会日志（sys_meeting_log，同一会议幂等只落一条）。
+   * - meeting_type：创建时带 scheduled_at 为 '2' 预约会议，否则 '1' 快速会议；
+   * - start_time：最早参会记录时间（invitations.joined_at），无参会者退化为 created_at；
+   * - participant_count：按邀请记录 status='attended' 统计（guest 不计入）；
+   * - duration_sec：end_time - start_time，写入时算好避免查询时跨库时间函数差异。
+   */
+  async function writeMeetingLog(meetingId: string) {
+    try {
+      const [dupe] = await db.query(
+        `SELECT 1 AS ok FROM sys_meeting_log WHERE meeting_id = ? LIMIT 1`,
+        [meetingId]
+      );
+      if ((dupe as unknown[]).length > 0) return;
+      const [rows] = await db.query(
+        `SELECT m.code, m.title, m.scheduled_at, m.created_at, m.ended_at, u.user_name AS host_name
+         FROM meetings m LEFT JOIN sys_user u ON u.user_id = m.host_user_id
+         WHERE m.id = ? LIMIT 1`,
+        [meetingId]
+      );
+      const m = (rows as Record<string, unknown>[])[0];
+      if (!m) return;
+      const [invRows] = await db.query(
+        `SELECT COUNT(*) AS cnt, MIN(joined_at) AS first_joined
+         FROM meeting_invitations WHERE meeting_id = ? AND status = 'attended'`,
+        [meetingId]
+      );
+      const inv = (invRows as { cnt: number | string; first_joined: unknown }[])[0];
+      // 驱动可能返回 Date（mysql/pg）或字符串（sqlite），统一转 "YYYY-MM-DD HH:MM:SS"
+      const norm = (v: unknown): string | null => {
+        if (v == null) return null;
+        if (v instanceof Date) return v.toISOString().slice(0, 19).replace("T", " ");
+        return String(v);
+      };
+      const startTime = norm(inv?.first_joined) ?? norm(m.created_at);
+      const endTime = norm(m.ended_at);
+      const startMs = startTime ? new Date(startTime.replace(" ", "T")).getTime() : NaN;
+      const endMs = endTime ? new Date(endTime.replace(" ", "T")).getTime() : Date.now();
+      const durationSec =
+        Number.isFinite(startMs) && Number.isFinite(endMs)
+          ? Math.max(0, Math.floor((endMs - startMs) / 1000))
+          : 0;
+      await db.query(
+        `INSERT INTO sys_meeting_log (meeting_id, meeting_code, title, meeting_type, host_name, start_time, end_time, duration_sec, participant_count, create_time)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${nowSql(db)})`,
+        [
+          meetingId,
+          m.code ?? "",
+          m.title ?? "",
+          m.scheduled_at ? "2" : "1",
+          m.host_name ?? "",
+          startTime,
+          endTime,
+          durationSec,
+          Number(inv?.cnt) || 0,
+        ]
+      );
+    } catch (err) {
+      console.error("write meeting log failed", err);
     }
   }
 
@@ -452,6 +515,7 @@ export function createSignalHandler(db: Db) {
         `UPDATE meetings SET status = 'ended', ended_at = ${nowSql(db)} WHERE id = ?`,
         [meetingId]
       );
+      void writeMeetingLog(meetingId);
     } catch (err) {
       console.error("endMeeting db update failed", err);
     }
@@ -584,6 +648,7 @@ export function createSignalHandler(db: Db) {
             `UPDATE meetings SET status = 'ended', ended_at = ${nowSql(db)} WHERE id = ? AND status = 'live'`,
             [meetingId]
           );
+          void writeMeetingLog(meetingId);
           console.warn(`[rtc] stale meeting ${meetingId} auto ended`);
         } catch (err) {
           console.error("stale meeting sweep failed", err);
