@@ -217,6 +217,7 @@
     "linkUrl": "链接地址",
     "removeLink": "移除链接",
     "clearFormat": "清除格式",
+    "colorPresets": "常用颜色",
     "undo": "撤销",
     "redo": "重做"
   },

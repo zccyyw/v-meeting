@@ -31,7 +31,10 @@ import { assertProductionCryptoKey } from "./crypto-guard.js";
 // 生产环境必须显式配置密码传输加密密钥（缺失/占位值时拒绝启动，详见 crypto-guard.ts）
 assertProductionCryptoKey();
 
-const app = Fastify({ logger: true });
+// forceCloseConnections：docker stop 时 Fastify 的 app.close() 会等待 keep-alive
+// 空闲连接（浏览器/健康检查留下的）直到宽限超时，实测卡满 stop_grace_period 30s；
+// 开启后 close 前先断开空闲连接，停机从 30s 降到 <2s。
+const app = Fastify({ logger: true, forceCloseConnections: true });
 const db = await createPool();
 const redis = createRedis();
 

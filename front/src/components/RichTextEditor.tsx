@@ -24,13 +24,9 @@ import TextAlign from "@tiptap/extension-text-align";
 import Placeholder from "@tiptap/extension-placeholder";
 import { BackgroundColor, Color, TextStyle } from "@tiptap/extension-text-style";
 
-const COLOR_PRESETS = [
-  {
-    colors: [
-      "#f5222d", "#fa541c", "#fa8c16", "#fadb14", "#52c41a", "#13c2c2",
-      "#1677ff", "#2f54eb", "#722ed1", "#000000", "#595959", "#8c8c8c",
-    ],
-  },
+const COLOR_PALETTE = [
+  "#f5222d", "#fa541c", "#fa8c16", "#fadb14", "#52c41a", "#13c2c2",
+  "#1677ff", "#2f54eb", "#722ed1", "#000000", "#595959", "#8c8c8c",
 ];
 
 type RichTextEditorProps = {
@@ -85,6 +81,7 @@ function Toolbar({ editor }: { editor: Editor }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const chain = () => editor.chain().focus();
+  const colorPresets = [{ label: t("richEditor.colorPresets"), colors: COLOR_PALETTE }];
 
   return (
     <div className="rich-editor-toolbar">
@@ -114,7 +111,7 @@ function Toolbar({ editor }: { editor: Editor }) {
         <ColorPicker
           size="small"
           defaultValue="#000000"
-          presets={COLOR_PRESETS}
+          presets={colorPresets}
           onChange={(c) => chain().setColor(c.toHexString()).run()}
         />
       </Tooltip>
@@ -122,7 +119,7 @@ function Toolbar({ editor }: { editor: Editor }) {
         <ColorPicker
           size="small"
           defaultValue="#ffffff"
-          presets={COLOR_PRESETS}
+          presets={colorPresets}
           onChange={(c) => chain().setBackgroundColor(c.toHexString()).run()}
         />
       </Tooltip>

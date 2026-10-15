@@ -9,7 +9,8 @@ COPY front/package.json ./front/
 COPY client/package.json ./client/
 # 可选 npm 镜像源：--build-arg NPM_REGISTRY=https://registry.npmmirror.com（默认空=官方源，CI 行为不变）
 ARG NPM_REGISTRY=""
-RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
  && npm ci -w @meeting/shared -w @meeting/front
 
 COPY serve/shared ./serve/shared
@@ -28,7 +29,8 @@ ENV VITE_PWA_ENABLED=$VITE_PWA_ENABLED
 
 RUN npm run build -w @meeting/shared && npm run build -w @meeting/front
 
-FROM nginx:alpine
+# 钉 stable 分支：nginx:alpine 浮动 tag 跟 mainline（本 dev 实际构建出过 1.31.7）
+FROM nginx:1.28-alpine
 COPY front/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/front/dist /usr/share/nginx/html
 # 运行时品牌注入：容器启动时把环境变量 VITE_APP_NAME（来自 .env → compose environment）

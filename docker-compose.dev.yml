@@ -24,6 +24,9 @@ services:
       args:
         # 本地开发构建走国内 npm 镜像（CI 用基础文件的 build，不受影响）
         NPM_REGISTRY: https://registry.npmmirror.com
+    environment:
+      # dev 兜底：优雅停机异常时 8s 强退（生产默认 30s，保障录制上传等在途请求）
+      SHUTDOWN_TIMEOUT_MS: 8000
     ports:
       - "8080:8080"
 
@@ -31,12 +34,16 @@ services:
     build:
       args:
         NPM_REGISTRY: https://registry.npmmirror.com
+        # pip（mediasoup venv）走国内源：默认 pypi.org 在国内常读超时（CI 默认值不变）
+        PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
     ports:
       - "8082:8082"
       # Docker Desktop 29.x 升级后宿主机→容器 UDP 转发失效（TCP 正常），
       # 本地联调额外发布 TCP 媒体段：浏览器 ICE 会在 UDP 不通时自动回落到
       # TCP 候选（mediasoup enableTcp 已开启）。UDP 恢复后可移除。
-      - "40000-41000:40000-41000/tcp"
+      # 端口段跟随 .env 的 RTC_MIN_PORT/RTC_MAX_PORT（此前硬编码 1000 个，
+      # 是 Docker Desktop 上 realtime 容器启停分钟级缓慢的主因）
+      - "${RTC_MIN_PORT:-40000}-${RTC_MAX_PORT:-41000}:${RTC_MIN_PORT:-40000}-${RTC_MAX_PORT:-41000}/tcp"
 
   web:
     build:

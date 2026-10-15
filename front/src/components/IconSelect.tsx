@@ -69,7 +69,7 @@ export function IconSelect({
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "#f5f5f5")}
                   onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = resolved === name ? "#e6f4ff" : undefined)
+                    (e.currentTarget.style.background = resolved === name ? "#e6f4ff" : "")
                   }
                 >
                   {getIcon(name)}

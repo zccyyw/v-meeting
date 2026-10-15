@@ -1,4 +1,6 @@
-FROM node:22-bookworm AS deps
+# deps 与 runtime 同用 slim：Dockerfile 自行 apt 安装 python/build 工具，
+# 无需 full 镜像（已实测），且少维护一个基础镜像、避开 full tag 的拉取问题
+FROM node:22.23-bookworm-slim AS deps
 WORKDIR /app
 # mediasoup worker 获取策略：
 #   默认优先下载官方预编译二进制（秒级；x64/arm64 均有 kernel6 发布产物）；
@@ -9,9 +11,13 @@ WORKDIR /app
 # 另：低内核（kernel<6，如 CentOS 7）无对应预编译产物，也会自动回退本地编译。
 # 默认官方 PyPI：CI（境外 runner）可直接访问；国内网络按上面方式覆盖。
 ARG PIP_INDEX_URL=https://pypi.org/simple
-ARG GHPROXY=https://gh-proxy.com
+# 默认走 ghfast.top：gh-proxy.com 已实测 403（2026-10）。CI 不受影响——
+# workflow 与 pack-docker.mjs 均显式传参覆盖此默认值
+ARG GHPROXY=https://ghfast.top
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
-RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
   && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update \
   && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends \
     ca-certificates \
@@ -20,8 +26,7 @@ RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sourc
     python3-setuptools \
     python3-venv \
     build-essential \
-    cmake \
-  && rm -rf /var/lib/apt/lists/*
+    cmake
 
 # Debian 12 (bookworm) Python 受 PEP 668 externally-managed 限制：
 # 系统 python3 禁止裸 pip install，mediasoup postinstall 内的
@@ -30,7 +35,8 @@ RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sourc
 # 注意：必须显式 -i ${PIP_INDEX_URL}，否则 pip 升级固定走 pypi 官方源，
 # 国内服务器从 files.pythonhosted.org 下载 wheel 会读超时；
 # 升级失败不中断构建（venv 自带 pip 仍可用于后续安装 invoke）。
-RUN python3 -m venv /opt/mediasoup-venv \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python3 -m venv /opt/mediasoup-venv \
   && /opt/mediasoup-venv/bin/python -m pip install --no-input \
        --retries 10 --timeout 120 -i ${PIP_INDEX_URL} --upgrade pip \
   || echo "[warn] pip upgrade failed, keep venv bundled pip"
@@ -44,7 +50,8 @@ COPY front/package.json ./front/
 COPY client/package.json ./client/
 # 可选 npm 镜像源：--build-arg NPM_REGISTRY=https://registry.npmmirror.com（默认空=官方源，CI 行为不变）
 ARG NPM_REGISTRY=""
-RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
  && npm ci --ignore-scripts -w @meeting/shared -w @meeting/db -w @meeting/realtime
 
 # Patch mediasoup's meson wrap files to use gh-proxy mirror, then build worker.
@@ -55,7 +62,8 @@ ENV PYTHON=/opt/mediasoup-venv/bin/python
 # 自动回退路径。国内网络无法访问 GitHub Releases 时显式开启本地编译：
 #   --build-arg SKIP_WORKER_PREBUILT=true
 ARG SKIP_WORKER_PREBUILT=false
-RUN node ./patch-mediasoup-wrap.cjs ${GHPROXY} \
+RUN --mount=type=cache,target=/root/.cache/node-gyp,sharing=locked \
+    node ./patch-mediasoup-wrap.cjs ${GHPROXY} \
   && cd node_modules/mediasoup \
   && if [ "${SKIP_WORKER_PREBUILT}" = "true" ]; then \
        echo "→ local mediasoup-worker build requested"; \
@@ -65,7 +73,10 @@ RUN node ./patch-mediasoup-wrap.cjs ${GHPROXY} \
        unset MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD; \
      fi \
   && node npm-scripts.mjs postinstall \
-  && cd /app && npm rebuild better-sqlite3
+  && cd /app && npm rebuild better-sqlite3 \
+  && rm -rf node_modules/better-sqlite3/build/Release/obj node_modules/better-sqlite3/build/Release/obj.target \
+            node_modules/better-sqlite3/build/Release/sqlite3.a node_modules/better-sqlite3/build/Release/test_extension.node \
+            node_modules/better-sqlite3/build/Release/deps
 
 COPY serve/shared ./serve/shared
 COPY serve/db ./serve/db
@@ -74,7 +85,7 @@ RUN npm run build -w @meeting/shared \
   && npm run build -w @meeting/db \
   && npm run build -w @meeting/realtime
 
-FROM node:22-bookworm-slim
+FROM node:22.23-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=deps /app /app

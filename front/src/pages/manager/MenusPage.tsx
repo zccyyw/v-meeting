@@ -19,7 +19,7 @@ import {
   Typography,
 } from "antd";
 import { IconSelect } from "@/components/IconSelect";
-import { getIcon, resolveIconName } from "@/components/iconRegistry";
+import { getIcon } from "@/components/iconRegistry";
 import {
   PlusOutlined,
   EditOutlined,

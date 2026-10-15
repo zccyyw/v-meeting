@@ -62,6 +62,7 @@ type NavMenuNode = {
   menuId: number;
   menuName: string;
   path: string;
+  icon?: string;
   menuType: "M" | "C" | "F";
   children?: NavMenuNode[];
 };
