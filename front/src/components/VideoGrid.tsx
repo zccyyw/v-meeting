@@ -61,6 +61,10 @@ type Props = {
   immersive?: boolean;
   /** 主持人控制的"成员轮播侧栏对参会者可见"（主持人端始终可见） */
   sideListVisible?: boolean;
+  /** 本地布局子型：default 右侧列/面板、top 顶部横排、float 悬浮面板（仅自己生效） */
+  sideVariant?: "default" | "top" | "float";
+  /** "仅显示正在说话的人"：最近 3s 有电平活动的成员集合；null=不过滤 */
+  onlySpeakers?: Set<string> | null;
 };
 
 function hasActiveCamera(stream: MediaStream | null | undefined): boolean {
@@ -116,7 +120,7 @@ export function DraggableSideList({
    * embed：嵌入右侧列（演讲布局，可拖动/收起）；
    * panel：固定右侧悬浮面板（培训布局，默认收起、不可拖动）。
    */
-  variant?: "embed" | "panel";
+  variant?: "embed" | "panel" | "float";
 }) {
   // —— 成员画面自动轮播（图片轮播式）：内容超出容器时每隔"轮换间隔"平滑滚动
   // 一屏循环展示；用户滚轮/触摸/悬停时暂停，交互停止 10 秒后自动恢复 ——
@@ -166,16 +170,18 @@ export function DraggableSideList({
 
   const { t } = useTranslation();
   const isPanel = variant === "panel";
-  const [floating, setFloating] = useState(false);
+  const isFloat = variant === "float";
+  const [floating, setFloating] = useState(isFloat);
+  // float 子型默认浮起
   // 培训悬浮面板默认收起
-  const [collapsed, setCollapsed] = useState(isPanel);
+  const [collapsed, setCollapsed] = useState(variant === "panel");
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
-    if (isPanel) return; // 固定右侧，不支持拖动
+    if (variant === "panel") return; // 固定右侧，不支持拖动（float 可拖）
     // Only start drag on the header area (the drag handle)
     const target = e.target as HTMLElement;
     if (!target.classList.contains("video-sidelist-drag-handle")) return;
@@ -654,6 +660,8 @@ export function VideoGrid({
   rotationIntervalMs,
   immersive = false,
   sideListVisible = true,
+  sideVariant = "default",
+  onlySpeakers = null,
 }: Props) {
   const { t } = useTranslation();
   const handTitle = t("meeting.hand");
@@ -881,6 +889,10 @@ export function VideoGrid({
   // 右侧成员显示全部人员（含主持人/自己），仅排除共享画面 tile；
   // 点击不同成员（含主持人）即可切换主画面
   const stripTiles = useSideLayout ? tiles.filter((t) => !t.isScreen) : tiles;
+    // “仅显示正在说话的人”：本地 tile 的 peerId 映射为 "local"（与电平检测的 key 空间一致）
+    const shownStripTiles = onlySpeakers
+      ? stripTiles.filter((t) => onlySpeakers.has(t.peerId === localPeerId ? "local" : t.peerId))
+      : stripTiles;
   const isHostSelf = localPeerId != null && localPeerId === hostPeerId;
   const showSideList =
     useSideLayout &&
@@ -893,7 +905,7 @@ export function VideoGrid({
       <>
         {remoteAudio}
         {screenAudio}
-        <div className={`video-grid ${isTraining ? "video-grid--training" : "video-grid--side"}`}>
+        <div className={`video-grid ${isTraining ? "video-grid--training" : "video-grid--side"}${sideVariant === "top" ? " video-grid--top" : ""}`}>
           <div className="video-side-main">
             <VideoTile
               stream={focusTile.stream}
@@ -908,14 +920,37 @@ export function VideoGrid({
               micMuted={focusTile.micMuted}
             />
           </div>
-          {showSideList && (
+          {showSideList && sideVariant === "top" && (
+            <div className="video-toplist" role="list">
+              {shownStripTiles.map((tile) => (
+                <div key={tile.key} className="video-toplist-item" role="listitem">
+                  <VideoTile
+                    stream={tile.stream}
+                    label={tile.label}
+                    muted={tile.muted}
+                    handRaised={tile.handRaised}
+                    handTitle={handTitle}
+                    showAvatar={!tile.isScreen && tile.forceAvatar}
+                    micMuted={tile.micMuted}
+                    localSelfScreen={tile.localSelfScreen}
+                  />
+                  {focusEnabled && (
+                    <button type="button" className="video-toplist-focus" onClick={() => onFocusPeer?.(tile.peerId)}>
+                      {focusPeerId === tile.peerId ? "✓" : "切"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {showSideList && sideVariant !== "top" && (
             <DraggableSideList
-              tiles={stripTiles}
+              tiles={shownStripTiles}
               focusEnabled={focusEnabled}
               focusedPeerId={explicitFocus ? focusPeerId : null}
               handTitle={handTitle}
               onFocusPeer={onFocusPeer}
-              variant={isTraining ? "panel" : "embed"}
+              variant={sideVariant === "float" ? "float" : isTraining ? "panel" : "embed"}
               rttByPeer={peerRtt}
               rotationEnabled={rotationEnabled}
               rotationIntervalMs={rotationIntervalMs}

@@ -74,15 +74,26 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     enabled: z.boolean(),
   }),
   z.object({
-    /** 主持人开关沉浸模式（主画面全屏 + 浮层控件），可同时同步投屏显示模式 */
-    type: z.literal("setImmersive"),
-    immersive: z.boolean(),
-    screenFit: z.enum(["cover", "contain"]).optional(),
-  }),
-  z.object({
     /** 主持人控制"成员轮播侧栏"是否对其他参会者可见 */
     type: z.literal("setSideListVisible"),
     visible: z.boolean(),
+  }),
+  /** 主持人锁定会议：锁定后禁止新成员加入（含等候室请求） */
+  z.object({ type: z.literal("setLocked"), locked: z.boolean() }),
+  /** 主持人开关"全员隐藏会议号"（主持人详情面板仍可查看） */
+  z.object({ type: z.literal("setHideCode"), hide: z.boolean() }),
+  /** 主持人开关自由聊天：关闭后成员不能发送聊天消息与弹幕 */
+  z.object({ type: z.literal("setChatAllowed"), allowed: z.boolean() }),
+  /** 主持人开关"允许成员自我解除静音" */
+  z.object({ type: z.literal("setSelfUnmuteAllowed"), allowed: z.boolean() }),
+  /** 主持人开关"允许成员举手" */
+  z.object({ type: z.literal("setRaiseHandAllowed"), allowed: z.boolean() }),
+  /** 主持人开关"允许成员表情回应" */
+  z.object({ type: z.literal("setReactionAllowed"), allowed: z.boolean() }),
+  /** 成员发表情反应（reactionAllowed 时可用） */
+  z.object({
+    type: z.literal("setReaction"),
+    emoji: z.string().min(1).max(16),
   }),
   z.object({
     type: z.literal("produce"),
@@ -138,10 +149,15 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     // 主持人控制的"成员画面轮换"开关状态：后入会者直接同步
     rotationEnabled: z.boolean().optional(),
     // 沉浸模式（主画面全屏 + 浮层控件）与投屏显示模式：后入会者直接同步
-    immersive: z.boolean().optional(),
-    screenFit: z.enum(["cover", "contain"]).optional(),
     // 主持人控制的"成员轮播侧栏对参会者可见"开关：后入会者直接同步
     sideListVisible: z.boolean().optional(),
+    // 以下为主持人控制的房间控制项：后入会者直接同步
+    locked: z.boolean().optional(),
+    hideCode: z.boolean().optional(),
+    chatAllowed: z.boolean().optional(),
+    selfUnmuteAllowed: z.boolean().optional(),
+    raiseHandAllowed: z.boolean().optional(),
+    reactionAllowed: z.boolean().optional(),
     peers: z.array(
       z.object({
         peerId: z.string(),
@@ -231,16 +247,22 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("rotationChanged"),
     enabled: z.boolean(),
   }),
-  z.object({
-    /** 主持人切换沉浸模式后广播全员（附带投屏显示模式） */
-    type: z.literal("immersiveChanged"),
-    immersive: z.boolean(),
-    screenFit: z.enum(["cover", "contain"]),
-  }),
+
   z.object({
     /** 主持人切换"成员轮播侧栏可见性"后广播全员 */
     type: z.literal("sideListVisibleChanged"),
     visible: z.boolean(),
+  }),
+  z.object({ type: z.literal("lockedChanged"), locked: z.boolean() }),
+  z.object({ type: z.literal("hideCodeChanged"), hide: z.boolean() }),
+  z.object({ type: z.literal("chatAllowedChanged"), allowed: z.boolean() }),
+  z.object({ type: z.literal("selfUnmuteAllowedChanged"), allowed: z.boolean() }),
+  z.object({ type: z.literal("raiseHandAllowedChanged"), allowed: z.boolean() }),
+  z.object({ type: z.literal("reactionAllowedChanged"), allowed: z.boolean() }),
+  z.object({
+    type: z.literal("reaction"),
+    peerId: z.string(),
+    emoji: z.string().min(1).max(16),
   }),
   z.object({
     /** 服务端观测到 WebRTC transport ICE/DTLS 异常时通知客户端给出可见提示 */

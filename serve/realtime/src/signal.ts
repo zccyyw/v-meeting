@@ -50,12 +50,20 @@ type RoomState = {
   networkRttDirty: boolean;
   /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
   rotationEnabled: boolean;
-  /** 主持人控制的沉浸模式（主画面全屏 + 浮层控件），全员同步 */
-  immersive: boolean;
-  /** 沉浸模式下投屏显示模式：cover 铺满（可能裁切）/ contain 完整（保留黑边） */
-  screenFit: "cover" | "contain";
   /** 主持人控制的"成员轮播侧栏对参会者可见"开关（主持人端始终可见） */
   sideListVisible: boolean;
+  /** 主持人锁定会议：锁定后禁止新成员加入 */
+  locked: boolean;
+  /** 主持人开关：全员隐藏会议号 */
+  hideCode: boolean;
+  /** 主持人开关自由聊天：关闭后成员不能发聊天与弹幕 */
+  chatAllowed: boolean;
+  /** 主持人开关：允许成员自我解除静音 */
+  selfUnmuteAllowed: boolean;
+  /** 主持人开关：允许成员举手 */
+  raiseHandAllowed: boolean;
+  /** 主持人开关：允许成员表情回应 */
+  reactionAllowed: boolean;
 };
 
 function peerId() {
@@ -273,9 +281,13 @@ export function createSignalHandler(db: Db) {
           // 成员画面轮播默认开启（对齐"成员过多时自动轮播"的产品预期），
           // 主持人可在设置面板随时关闭；后入会者随 joined 同步该状态
           rotationEnabled: true,
-          immersive: false,
-          screenFit: "contain",
           sideListVisible: true,
+          locked: false,
+          hideCode: false,
+          chatAllowed: true,
+          selfUnmuteAllowed: true,
+          raiseHandAllowed: true,
+          reactionAllowed: true,
         };
         rooms.set(meetingId, state);
         return state;
@@ -718,8 +730,6 @@ export function createSignalHandler(db: Db) {
       layout: state.room.layout,
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
-      immersive: state.immersive,
-      screenFit: state.screenFit,
       sideListVisible: state.sideListVisible,
       allowShare: state.room.allowShareDefault,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
@@ -840,6 +850,11 @@ export function createSignalHandler(db: Db) {
       send(ws, { type: "error", message: "meeting_ended" });
       return;
     }
+    // 锁定会议：主持人可进入，其他成员一律拒绝（含等候室请求）
+    if (state.locked && auth.role !== "host") {
+      send(ws, { type: "error", message: "meeting_locked" });
+      return;
+    }
     // 有人回来参会，取消待执行的"空置自动结束"
     cancelEmptyRoomTimer(auth.meetingId);
 
@@ -900,8 +915,6 @@ export function createSignalHandler(db: Db) {
       layout: state.room.layout,
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
-      immersive: state.immersive,
-      screenFit: state.screenFit,
       sideListVisible: state.sideListVisible,
       allowShare: state.room.allowShareDefault,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
@@ -1299,26 +1312,6 @@ export function createSignalHandler(db: Db) {
           break;
         }
 
-        case "setImmersive": {
-          const ctx = requireAdmitted(ws);
-          if (!ctx) return;
-          const peer = ctx.state.room.getPeer(ctx.media.peerId);
-          if (!peer || peer.role !== "host") {
-            send(ws, { type: "error", message: "forbidden" });
-            return;
-          }
-          ctx.state.immersive = message.immersive;
-          if (message.screenFit) {
-            ctx.state.screenFit = message.screenFit;
-          }
-          broadcastAdmitted(ctx.state, {
-            type: "immersiveChanged",
-            immersive: ctx.state.immersive,
-            screenFit: ctx.state.screenFit,
-          });
-          break;
-        }
-
         case "setSideListVisible": {
           const ctx = requireAdmitted(ws);
           if (!ctx) return;
@@ -1332,6 +1325,93 @@ export function createSignalHandler(db: Db) {
             type: "sideListVisibleChanged",
             visible: message.visible,
           });
+          break;
+        }
+        case "setLocked": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.locked = message.locked;
+          broadcastAdmitted(ctx.state, { type: "lockedChanged", locked: message.locked });
+          break;
+        }
+        case "setHideCode": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.hideCode = message.hide;
+          broadcastAdmitted(ctx.state, { type: "hideCodeChanged", hide: message.hide });
+          break;
+        }
+        case "setChatAllowed": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.chatAllowed = message.allowed;
+          broadcastAdmitted(ctx.state, { type: "chatAllowedChanged", allowed: message.allowed });
+          break;
+        }
+        case "setSelfUnmuteAllowed": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.selfUnmuteAllowed = message.allowed;
+          broadcastAdmitted(ctx.state, { type: "selfUnmuteAllowedChanged", allowed: message.allowed });
+          break;
+        }
+        case "setRaiseHandAllowed": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.raiseHandAllowed = message.allowed;
+          broadcastAdmitted(ctx.state, { type: "raiseHandAllowedChanged", allowed: message.allowed });
+          break;
+        }
+        case "setReactionAllowed": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.reactionAllowed = message.allowed;
+          broadcastAdmitted(ctx.state, { type: "reactionAllowedChanged", allowed: message.allowed });
+          break;
+        }
+        case "setReaction": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer) {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          if (peer.role !== "host" && !ctx.state.reactionAllowed) {
+            send(ws, { type: "error", message: "reaction_disabled" });
+            return;
+          }
+          broadcastAdmitted(ctx.state, { type: "reaction", peerId: ctx.media.peerId, emoji: message.emoji });
           break;
         }
 

@@ -7,6 +7,7 @@ type Props = {
   messages: ChatMessage[];
   selfPeerId: string | null;
   onSend: (text: string) => void;
+  disabled?: boolean;
   onClose: () => void;
 };
 
@@ -23,7 +24,7 @@ function formatTime(at: string): string {
   });
 }
 
-export function ChatPanel({ messages, selfPeerId, onSend, onClose }: Props) {
+export function ChatPanel({ messages, selfPeerId, onSend, onClose, disabled = false }: Props) {
   const { t } = useTranslation();
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -37,7 +38,7 @@ export function ChatPanel({ messages, selfPeerId, onSend, onClose }: Props) {
   function submit(e: FormEvent) {
     e.preventDefault();
     const value = text.trim();
-    if (!value) return;
+    if (!value || disabled) return;
     onSend(value);
     setText("");
   }
@@ -88,7 +89,7 @@ export function ChatPanel({ messages, selfPeerId, onSend, onClose }: Props) {
           placeholder={t("meeting.chatPlaceholder")}
           onChange={(e) => setText(e.target.value)}
         />
-        <button type="submit" disabled={!text.trim()}>
+        <button type="submit" disabled={disabled || !text.trim()}>
           {t("meeting.chatSend")}
         </button>
       </form>

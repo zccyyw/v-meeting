@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,18 +17,18 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { DanmuOverlay } from "@/components/DanmuOverlay";
 import { HostControls } from "@/components/HostControls";
 import { Modal } from "@/components/Modal";
-import { VideoGrid, type LayoutCols, type Tile } from "@/components/VideoGrid";
-import { ImmersiveStrip } from "@/components/ImmersiveStrip";
+import { VideoGrid, type LayoutCols } from "@/components/VideoGrid";
 import { WaitingRoom } from "@/components/WaitingRoom";
 import { InvitationPanel } from "@/components/InvitationPanel";
 import { FloatingPanel } from "@/components/FloatingPanel";
+import { useActiveSpeaker, type ActiveSpeakerSource } from "@/hooks/useActiveSpeaker";
 import { useIsNarrow } from "@/hooks/useIsNarrow";
 import { useRecorder } from "@/hooks/useRecorder";
 import { MediaRoom, type MediaRoomSnapshot, type MeetingLayout } from "@/media/room";
 import { SignalClient } from "@/signal/client";
 import { showMessage } from "@/ui/toast";
 import type { RecorderSource } from "@/media/recorder";
-import { App as AntApp, Dropdown } from "antd";
+import { App as AntApp, Dropdown, Popover } from "antd";
 
 function formatDuration(ms: number): string {
   const total = Math.floor(ms / 1000);
@@ -62,9 +62,13 @@ const emptySnapshot: MediaRoomSnapshot = {
   waitingRoomEnabled: false,
   peerRtt: {},
   rotationEnabled: false,
-  immersive: false,
-  screenFit: "contain",
   sideListVisible: true,
+  locked: false,
+  hideCode: false,
+  chatAllowed: true,
+  selfUnmuteAllowed: true,
+  raiseHandAllowed: true,
+  reactionAllowed: true,
   recordAllowed: false,
   chatMessages: [],
   error: null,
@@ -155,6 +159,32 @@ function MeetingPageInner() {
   const [invitations, setInvitations] = useState<InvitationItem[]>([]);
   const [allMuted, setAllMuted] = useState(false);
   const [unreadChat, setUnreadChat] = useState(0);
+
+  // —— 本地偏好（localStorage 持久化，仅自己生效） ——
+  const [showActiveSpeaker, setShowActiveSpeaker] = useState(
+    () => localStorage.getItem("meeting.showActiveSpeaker") !== "0",
+  );
+  const [showJoinDuration, setShowJoinDuration] = useState(
+    () => localStorage.getItem("meeting.showJoinDuration") === "1",
+  );
+  // 布局子型（本地偏好，仅自己生效）
+  const [sideListLayout, setSideListLayout] = useState<"default" | "top" | "float">(function (init) { return init === "top" || init === "float" ? init : "default"; }(localStorage.getItem("meeting.sideListLayout") || "default"));
+  const [onlyShowSpeakers, setOnlyShowSpeakers] = useState(
+    () => localStorage.getItem("meeting.onlyShowSpeakers") === "1",
+  );
+  // —— 正在讲话检测：本地电平判定 ——
+  const audioSources: ActiveSpeakerSource[] = [
+    { peerId: "local", stream: snap.localStream },
+    ...[...snap.remoteStreams].map(([pid, st]) => ({ peerId: pid, stream: st })),
+  ];
+  const audioSourcesKey =
+    audioSources.map((a) => a.peerId).join(",") + (snap.micEnabled ? "+self" : "") +
+    "|" + [...snap.remoteStreams].map(([pid, st]) => pid + ":" + String(st.getAudioTracks().length)).join(",");
+  const { activePeerId: activeSpeakerId, activeSpeakers } = useActiveSpeaker(audioSources, showActiveSpeaker, audioSourcesKey);
+  const activeSpeakerName =
+    activeSpeakerId === "local"
+      ? displayName
+      : snap.peers.find((p) => p.peerId === activeSpeakerId)?.displayName ?? null;
   const [danmuEnabled, setDanmuEnabled] = useState(false);
   const [layoutCols, setLayoutCols] = useState<LayoutCols>("auto");
   const [danmuItems, setDanmuItems] = useState<
@@ -162,34 +192,6 @@ function MeetingPageInner() {
   >([]);
   const danmuIdRef = useRef(0);
   const lastChatLenRef = useRef(0);
-  // 沉浸模式：状态来自房间广播（snap.immersive，主持人控制全员同步）；
-  // uiIdle 为本地行为——鼠标静止 3s 隐藏浮层控件，移动后恢复
-  const immersive = snap.immersive;
-  const [uiIdle, setUiIdle] = useState(false);
-  const uiIdleTimerRef = useRef<number | null>(null);
-  const pokeUi = useCallback(() => {
-    setUiIdle(false);
-    if (uiIdleTimerRef.current) window.clearTimeout(uiIdleTimerRef.current);
-    uiIdleTimerRef.current = window.setTimeout(() => setUiIdle(true), 3000);
-  }, []);
-  useEffect(() => {
-    if (!immersive) {
-      setUiIdle(false);
-      if (uiIdleTimerRef.current) window.clearTimeout(uiIdleTimerRef.current);
-      return;
-    }
-    pokeUi();
-    window.addEventListener("mousemove", pokeUi);
-    window.addEventListener("mousedown", pokeUi);
-    window.addEventListener("touchstart", pokeUi);
-    return () => {
-      window.removeEventListener("mousemove", pokeUi);
-      window.removeEventListener("mousedown", pokeUi);
-      window.removeEventListener("touchstart", pokeUi);
-      if (uiIdleTimerRef.current) window.clearTimeout(uiIdleTimerRef.current);
-    };
-  }, [immersive, pokeUi]);
-  const [shareElapsed, setShareElapsed] = useState(0);
   const lastRecordingPeersRef = useRef<Set<string>>(new Set());
   /** 已建立录制基线的入会会话（peerId）；重连会换 peerId，需要重新建立基线 */
   const recordingBaselinePeerRef = useRef<string | null>(null);
@@ -221,16 +223,6 @@ function MeetingPageInner() {
   }, [isNarrow, membersOpen, chatOpen, openOrder]);
 
 
-  // 共享时长计时（沉浸条显示）
-  useEffect(() => {
-    if (!snap.sharingScreen) {
-      setShareElapsed(0);
-      return;
-    }
-    const started = Date.now();
-    const t = window.setInterval(() => setShareElapsed(Date.now() - started), 1000);
-    return () => window.clearInterval(t);
-  }, [snap.sharingScreen]);
 
   // 监听他人录制状态变化 -> Toast + 聊天系统消息
   useEffect(() => {
@@ -487,33 +479,6 @@ function MeetingPageInner() {
     if (ok) await flashCopied();
   }
 
-  // 沉浸模式小窗数据：本地 + 远端摄像头（不含共享流，故不会画面嵌套）
-  const immersiveTiles: Tile[] = [
-    {
-      key: "local",
-      peerId: snap.peerId ?? "local",
-      stream: snap.localStream,
-      label: `${displayName}（${t("meeting.me")}）`,
-      muted: true,
-      micMuted: !snap.micEnabled,
-      handRaised: snap.handRaised,
-      forceAvatar: !snap.camEnabled,
-    },
-    ...[...snap.remoteStreams].map(([peerId, stream]) => {
-      const peer = snap.peers.find((p) => p.peerId === peerId);
-      return {
-        key: peerId,
-        peerId,
-        stream,
-        label: peer?.displayName ?? peerId.slice(0, 8),
-        muted: true,
-        micMuted: !(peer?.micEnabled ?? true),
-        handRaised: peer?.handRaised ?? false,
-        forceAvatar: !(peer?.camEnabled ?? false),
-      };
-    }),
-  ];
-
   if (!token) {
     return (
       <main className="page">
@@ -531,6 +496,48 @@ function MeetingPageInner() {
   const isHost = snap.role === "host";
   // 主持人始终可录制；普通参会者需主持人开启"开启录制"
   const canRecord = isHost || snap.recordAllowed;
+
+  // 参会时长计时
+
+  const [joinElapsed, setJoinElapsed] = useState(0);
+
+  useEffect(() => {
+
+    if (!inMeeting) { setJoinElapsed(0); return; }
+
+    const startedAt = Date.now();
+
+    const timer = window.setInterval(() => setJoinElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+
+    return () => window.clearInterval(timer);
+
+  }, [inMeeting]);
+  // —— 表情反应气泡 ——
+  const [reactions, setReactions] = useState<{ id: number; peerId: string; emoji: string }[]>([]);
+  const reactionIdRef = useRef(0);
+  const reactionTimerRef = useRef<Map<number, number>>(new Map());
+  useEffect(() => {
+    const room = roomRef.current;
+    if (!room || !inMeeting) return;
+    room.emitReaction = (peerId, emoji) => {
+      const id = ++reactionIdRef.current;
+      setReactions((prev) => [...prev, { id, peerId, emoji }]);
+      const timer = window.setTimeout(() => {
+        setReactions((prev) => prev.filter((r) => r.id !== id));
+        reactionTimerRef.current.delete(id);
+      }, 2600);
+      reactionTimerRef.current.set(id, timer);
+    };
+    return () => {
+      for (const timer of reactionTimerRef.current.values()) window.clearTimeout(timer);
+      reactionTimerRef.current.clear();
+      if (roomRef.current) roomRef.current.emitReaction = undefined;
+    };
+  }, [inMeeting]);
+  const reactionName = (peerId: string) =>
+    peerId === snap.peerId ? displayName : snap.peers.find((p) => p.peerId === peerId)?.displayName ?? null;
+
+
 
   const buildRecorderSources = (): RecorderSource[] => {
     const sources: RecorderSource[] = [];
@@ -613,7 +620,7 @@ function MeetingPageInner() {
       if (isNarrow) setMembersOpen(false);
     }
     setOpenOrder((o) => [...o.filter((k) => k !== key), key]);
-    // 重新打开即回到自动停靠（清除上次的“拖走”状态）
+    // 重新打开即回到自动停靠（清除上次的"拖走"状态）
     setDetached((s) => {
       if (!s.has(key)) return s;
       const next = new Set(s);
@@ -686,14 +693,49 @@ function MeetingPageInner() {
 
   return (
     <main className="meeting-page">
+      <div className="meeting-stage">
+        {inMeeting && showActiveSpeaker && activeSpeakerName && (
+          <div className="active-speaker" role="status">
+            <span className="active-speaker-dot" aria-hidden />
+            <span>{t("meeting.activeSpeaker")}:</span>
+            <strong>{activeSpeakerName}</strong>
+          </div>
+        )}
+        {reactions.length > 0 && (
+          <div className="reaction-overlay" aria-hidden>
+            {reactions.map((r) => (
+              <div key={r.id} className="reaction-bubble">
+                <span className="reaction-emoji-bubble">{r.emoji}</span>
+                <span className="reaction-name">{reactionName(r.peerId) ?? ""}</span>
+              </div>
+            ))}
+          </div>
+        )}
       <header className="meeting-header">
         <div className="meeting-header-info">
-          <h1>{meetingTitle}</h1>
+          <Popover
+            trigger={["click"]}
+            placement="bottomLeft"
+            content={(
+              <div className="meeting-detail-panel">
+                <div className="meeting-detail-row"><span>{t("meeting.detailTitle")}</span><strong>{meetingTitle}</strong></div>
+                <div className="meeting-detail-row"><span>{t("meeting.meetingCode")}</span><strong>{snap.hideCode ? "••••••" : meetingCode ? formatMeetingCode(meetingCode) : "—"}</strong></div>
+                <div className="meeting-detail-row"><span>{t("meeting.myRole")}</span><strong>{isHost ? t("meeting.roleHost") : t("meeting.roleParticipant")}</strong></div>
+                {showJoinDuration && inMeeting && (
+                  <div className="meeting-detail-row"><span>{t("meeting.joinDuration")}</span><strong>{formatDuration(joinElapsed)}</strong></div>
+                )}
+              </div>
+            )}
+          >
+            <button type="button" className="meeting-title-btn" title={t("meeting.detailTitle")}>
+              {meetingTitle}
+            </button>
+          </Popover>
           <p className="meeting-header-meta">
             {meetingCode ? (
               <span className="meeting-code-row">
                 <span className="meeting-code">
-                  {t("meeting.meetingCode")} {formatMeetingCode(meetingCode)}
+                  {t("meeting.meetingCode")}{snap.hideCode ? " ••••••" : ` ${formatMeetingCode(meetingCode)}`}
                 </span>
                 <button
                   type="button"
@@ -721,6 +763,17 @@ function MeetingPageInner() {
               </span>
             )}
             {roleLabel ? (
+              <>
+                <span>·</span>
+                <span>{roleLabel}</span>
+              </>
+            ) : null}
+            {showJoinDuration && inMeeting && (
+              <>
+                <span>·</span>
+                <span>{t("meeting.joinDuration")} {formatDuration(joinElapsed)}</span>
+              </>
+            )}            {roleLabel ? (
               <>
                 <span>·</span>
                 <span>{roleLabel}</span>
@@ -766,19 +819,42 @@ function MeetingPageInner() {
               </button>
             </Dropdown>
           )}
-
-          {inMeeting && isHost && (snap.sharingScreen || snap.layout !== "grid") && (
-            <button
-              type="button"
-              className={`meeting-header-btn${snap.immersive ? " is-active" : ""}`}
-              onClick={() => roomRef.current?.setImmersive(!snap.immersive, snap.screenFit)}
-              title={snap.immersive ? t("meeting.exitImmersive") : t("meeting.enterImmersive")}
+          {inMeeting && isHost && (
+            <Dropdown
+              trigger={["click"]}
+              menu={{
+                items: [
+                  { key: "lock", label: (snap.locked ? "\u2713 " : "") + t("meeting.toolLock") },
+                  { key: "hideCode", label: (snap.hideCode ? "\u2713 " : "") + t("meeting.toolHideCode") },
+                  { key: "freeChat", label: (snap.chatAllowed ? "\u2713 " : "") + t("meeting.toolFreeChat") },
+                  { key: "selfUnmute", label: (snap.selfUnmuteAllowed ? "\u2713 " : "") + t("meeting.toolSelfUnmute") },
+                  { key: "raiseHand", label: (snap.raiseHandAllowed ? "\u2713 " : "") + t("meeting.toolRaiseHand") },
+                  { key: "reaction", label: (snap.reactionAllowed ? "\u2713 " : "") + t("meeting.toolReaction") },
+                  { type: "divider" },
+                  { key: "waiting", label: (snap.waitingRoomEnabled ? "\u2713 " : "") + t("meeting.waitingRoomToggle") },
+                  { key: "record", label: (snap.recordAllowed ? "\u2713 " : "") + t("meeting.recordToggle") },
+                ],
+                onClick: ({ key }) => {
+                  switch (key) {
+                    case "lock": roomRef.current?.setLocked(!snap.locked); break;
+                    case "hideCode": roomRef.current?.setHideCode(!snap.hideCode); break;
+                    case "freeChat": roomRef.current?.setChatAllowed(!snap.chatAllowed); break;
+                    case "selfUnmute": roomRef.current?.setSelfUnmuteAllowed(!snap.selfUnmuteAllowed); break;
+                    case "raiseHand": roomRef.current?.setRaiseHandAllowed(!snap.raiseHandAllowed); break;
+                    case "reaction": roomRef.current?.setReactionAllowed(!snap.reactionAllowed); break;
+                    case "waiting": roomRef.current?.setWaitingRoom(!snap.waitingRoomEnabled); break;
+                    case "record": roomRef.current?.setRecordAllowed(!snap.recordAllowed); break;
+                  }
+                },
+              }}
             >
-              {snap.immersive
-                ? t("meeting.exitImmersive")
-                : t("meeting.enterImmersive")}
-            </button>
+              <button type="button" className="meeting-header-btn" title={t("meeting.hostTools")}>
+                {t("meeting.hostTools")}
+                <DownOutlined style={{ fontSize: 10, marginLeft: 6 }} aria-hidden />
+              </button>
+            </Dropdown>
           )}
+
 
           <div className="meeting-settings" ref={settingsRef}>
             <button
@@ -874,21 +950,7 @@ function MeetingPageInner() {
                     <option value={15000}>15s</option>
                     <option value={30000}>30s</option>
                   </select>
-                </label>
-                {isHost && (
-                  <label className="control-select">
-                    {t("meeting.screenFit")}
-                    <select
-                      value={snap.screenFit}
-                      onChange={(e) => {
-                        roomRef.current?.setImmersive(snap.immersive, e.target.value as "cover" | "contain");
-                      }}
-                    >
-                      <option value="contain">{t("meeting.screenFitContain")}</option>
-                      <option value="cover">{t("meeting.screenFitCover")}</option>
-                    </select>
                   </label>
-                )}
                 {isHost && (
                   <label className="checkbox danmu-toggle-row">
                     <input
@@ -899,6 +961,32 @@ function MeetingPageInner() {
                     {t("meeting.sideListVisible")}
                   </label>
                 )}
+                <label className="control-select">
+                  {t("meeting.sideListLayout")}
+                  <select
+                    value={sideListLayout}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSideListLayout(v === "top" ? "top" : v === "float" ? "float" : "default");
+                      localStorage.setItem("meeting.sideListLayout", v);
+                    }}
+                  >
+                    <option value="default">{t("meeting.sideListDefault")}</option>
+                    <option value="top">{t("meeting.sideListTop")}</option>
+                    <option value="float">{t("meeting.sideListFloat")}</option>
+                  </select>
+                </label>
+                <label className="checkbox danmu-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={onlyShowSpeakers}
+                    onChange={(e) => {
+                      setOnlyShowSpeakers(e.target.checked);
+                      localStorage.setItem("meeting.onlyShowSpeakers", e.target.checked ? "1" : "0");
+                    }}
+                  />
+                  {t("meeting.onlyShowSpeakers")}
+                </label>
                 <label className="control-select">
                   {t("meeting.layoutCols")}
                   <select
@@ -924,6 +1012,28 @@ function MeetingPageInner() {
                     }}
                   />
                   {t("meeting.danmuToggle")}
+                </label>
+                <label className="checkbox danmu-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={showActiveSpeaker}
+                    onChange={(e) => {
+                      setShowActiveSpeaker(e.target.checked);
+                      localStorage.setItem("meeting.showActiveSpeaker", e.target.checked ? "1" : "0");
+                    }}
+                  />
+                  {t("meeting.showActiveSpeaker")}
+                </label>
+                <label className="checkbox danmu-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={showJoinDuration}
+                    onChange={(e) => {
+                      setShowJoinDuration(e.target.checked);
+                      localStorage.setItem("meeting.showJoinDuration", e.target.checked ? "1" : "0");
+                    }}
+                  />
+                  {t("meeting.showJoinDuration")}
                 </label>
                 {isHost && (
                   <label className="checkbox danmu-toggle-row">
@@ -956,13 +1066,13 @@ function MeetingPageInner() {
       </header>
 
       <div
-        className={`meeting-stage${immersive ? " ui-immersive" : ""}${uiIdle ? " ui-idle" : ""}`}
-        style={{ "--screen-fit": immersive ? snap.screenFit : "contain" } as React.CSSProperties}
       >
         {/* 阻断级错误（红）：进不了会 / 人数超限等 */}
         {snap.error && snap.error !== "reconnect_failed" && (
           <p className="error">
-            {snap.error === "online_limit_reached"
+            {snap.error === "meeting_locked"
+              ? t("meeting.meetingLockedHint")
+              : snap.error === "online_limit_reached"
               ? t("meeting.onlineLimitReached")
               : snap.error}
           </p>
@@ -1074,17 +1184,6 @@ function MeetingPageInner() {
           onDeny={(id) => roomRef.current?.deny(id)}
         />
 
-        {inMeeting && immersive && (isHost || snap.sideListVisible) && (
-          <div className="meeting-immersive">
-            <ImmersiveStrip
-              tiles={immersiveTiles}
-              sharingLabel={`${t("meeting.sharing")} ${formatDuration(shareElapsed)}`}
-              onExit={() => roomRef.current?.setImmersive(false)}
-            />
-          </div>
-        )}
-        {inMeeting && (
-          <div className="meeting-main">
             <div className="meeting-videos">
               <VideoGrid
                 localStream={snap.localStream}
@@ -1102,8 +1201,9 @@ function MeetingPageInner() {
                 layout={snap.layout}
                 focusPeerId={snap.focusPeerId}
                 layoutCols={layoutCols}
-                immersive={immersive}
                 sideListVisible={isHost || snap.sideListVisible}
+                sideVariant={sideListLayout}
+                onlySpeakers={onlyShowSpeakers ? activeSpeakers : null}
                 hostPeerId={
                   isHost
                     ? snap.peerId
@@ -1201,7 +1301,6 @@ function MeetingPageInner() {
               </FloatingPanel>
             )}
           </div>
-        )}
       </div>
 
       {inMeeting && (
@@ -1209,6 +1308,9 @@ function MeetingPageInner() {
           micEnabled={snap.micEnabled}
           camEnabled={snap.camEnabled}
           handRaised={snap.handRaised}
+          handDisabled={!snap.raiseHandAllowed && !isHost}
+          onReaction={(emoji) => roomRef.current?.setReaction(emoji)}
+          reactionDisabled={!snap.reactionAllowed && !isHost}
           sharingScreen={snap.sharingScreen}
           canShare={snap.canShare}
           isHost={isHost}
@@ -1216,8 +1318,19 @@ function MeetingPageInner() {
           chatOpen={chatOpen}
           unreadChat={unreadChat}
           onToggleMic={() => {
+
+            if (!snap.micEnabled && !snap.selfUnmuteAllowed && !isHost) {
+
+              showMessage(t("meeting.selfUnmuteDisabled"));
+
+              return;
+
+            }
+
             void roomRef.current
+
                       ?.setMicEnabled(!snap.micEnabled)
+
                       .catch((err) => console.warn("[rtc] toggle mic failed:", err));
           }}
           onToggleCam={() => {

@@ -60,12 +60,19 @@ export type MediaRoomSnapshot = {
   peerRtt: Record<string, number>;
   /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
   rotationEnabled: boolean;
-  /** 主持人控制的沉浸模式（主画面全屏 + 浮层控件），全员同步 */
-  immersive: boolean;
-  /** 沉浸模式下投屏显示模式：cover 铺满 / contain 完整（默认） */
-  screenFit: "cover" | "contain";
   /** 主持人控制的"成员轮播侧栏对参会者可见"开关（主持人端始终可见） */
-  sideListVisible: boolean;
+  sideListVisible: boolean;  /** 主持人锁定会议：锁定后禁止新成员加入 */
+  locked: boolean;
+  /** 主持人开关：全员隐藏会议号 */
+  hideCode: boolean;
+  /** 主持人开关自由聊天：关闭后成员不能发聊天与弹幕 */
+  chatAllowed: boolean;
+  /** 主持人开关：允许成员自我解除静音 */
+  selfUnmuteAllowed: boolean;
+  /** 主持人开关：允许成员举手 */
+  raiseHandAllowed: boolean;
+  /** 主持人开关：允许成员表情回应 */
+  reactionAllowed: boolean;
   focusPeerId: string | null;
   sharingScreen: boolean;
   canShare: boolean;
@@ -160,9 +167,15 @@ export class MediaRoom {
   private layout: MeetingLayout = "grid";
   private peerRtt = new Map<string, number>();
   private rotationEnabled = false;
-  private immersive = false;
-  private screenFit: "cover" | "contain" = "contain";
   private sideListVisible = true;
+  private locked = false;
+  private hideCode = false;
+  private chatAllowed = true;
+  private selfUnmuteAllowed = true;
+  private raiseHandAllowed = true;
+  private reactionAllowed = true;
+  /** 表情反应瞬时事件回调（UI 层设置，用于气泡飘屏） */
+  emitReaction?: (peerId: string, emoji: string) => void;
   private rttTimer: ReturnType<typeof setInterval> | null = null;
   private focusPeerId: string | null = null;
   private screenFocusPeerId: string | null = null;
@@ -221,9 +234,12 @@ export class MediaRoom {
       layout: this.layout,
       peerRtt: Object.fromEntries(this.peerRtt),
       rotationEnabled: this.rotationEnabled,
-      immersive: this.immersive,
-      screenFit: this.screenFit,
-      sideListVisible: this.sideListVisible,
+      sideListVisible: this.sideListVisible,      locked: this.locked,
+      hideCode: this.hideCode,
+      chatAllowed: this.chatAllowed,
+      selfUnmuteAllowed: this.selfUnmuteAllowed,
+      raiseHandAllowed: this.raiseHandAllowed,
+      reactionAllowed: this.reactionAllowed,
       focusPeerId: this.screenFocusPeerId ?? this.focusPeerId,
       sharingScreen: this.sharingScreen,
       canShare: this.canShare,
@@ -340,17 +356,6 @@ export class MediaRoom {
       this.emit();
     }
   }
-
-  /** 主持人开关沉浸模式（服务端校验 host 并广播全员；可同步投屏显示模式） */
-  setImmersive(immersive: boolean, screenFit?: "cover" | "contain"): void {
-    this.signal.send({ type: "setImmersive", immersive, screenFit });
-    if (this.immersive !== immersive || (screenFit && this.screenFit !== screenFit)) {
-      this.immersive = immersive;
-      if (screenFit) this.screenFit = screenFit;
-      this.emit();
-    }
-  }
-
   /** 主持人控制"成员轮播侧栏"对参会者的可见性（主持人端始终可见） */
   setSideListVisible(visible: boolean): void {
     this.signal.send({ type: "setSideListVisible", visible });
@@ -358,6 +363,51 @@ export class MediaRoom {
       this.sideListVisible = visible;
       this.emit();
     }
+  }  setLocked(locked: boolean): void {
+    this.signal.send({ type: "setLocked", locked });
+    if (this.locked !== locked) {
+      this.locked = locked;
+      this.emit();
+    }
+  }
+  setHideCode(hide: boolean): void {
+    this.signal.send({ type: "setHideCode", hide });
+    if (this.hideCode !== hide) {
+      this.hideCode = hide;
+      this.emit();
+    }
+  }
+  setChatAllowed(allowed: boolean): void {
+    this.signal.send({ type: "setChatAllowed", allowed });
+    if (this.chatAllowed !== allowed) {
+      this.chatAllowed = allowed;
+      this.emit();
+    }
+  }
+  setSelfUnmuteAllowed(allowed: boolean): void {
+    this.signal.send({ type: "setSelfUnmuteAllowed", allowed });
+    if (this.selfUnmuteAllowed !== allowed) {
+      this.selfUnmuteAllowed = allowed;
+      this.emit();
+    }
+  }
+  setRaiseHandAllowed(allowed: boolean): void {
+    this.signal.send({ type: "setRaiseHandAllowed", allowed });
+    if (this.raiseHandAllowed !== allowed) {
+      this.raiseHandAllowed = allowed;
+      this.emit();
+    }
+  }
+  setReactionAllowed(allowed: boolean): void {
+    this.signal.send({ type: "setReactionAllowed", allowed });
+    if (this.reactionAllowed !== allowed) {
+      this.reactionAllowed = allowed;
+      this.emit();
+    }
+  }
+  /** 发表情反应（瞬时广播，不进快照） */
+  setReaction(emoji: string): void {
+    this.signal.send({ type: "setReaction", emoji });
   }
 
   /**
@@ -1017,14 +1067,36 @@ export class MediaRoom {
         this.rotationEnabled = msg.enabled;
         break;
 
-      case "immersiveChanged":
-        this.immersive = msg.immersive;
-        this.screenFit = msg.screenFit;
-        break;
-
       case "sideListVisibleChanged":
         this.sideListVisible = msg.visible;
-        break;
+        break;      case "lockedChanged":
+      this.locked = msg.locked;
+      break;
+
+      case "hideCodeChanged":
+      this.hideCode = msg.hide;
+      break;
+
+      case "chatAllowedChanged":
+      this.chatAllowed = msg.allowed;
+      break;
+
+      case "selfUnmuteAllowedChanged":
+      this.selfUnmuteAllowed = msg.allowed;
+      break;
+
+      case "raiseHandAllowedChanged":
+      this.raiseHandAllowed = msg.allowed;
+      break;
+
+      case "reactionAllowedChanged":
+      this.reactionAllowed = msg.allowed;
+      break;
+
+      case "reaction":
+      // 表情反应气泡由 UI 层消费（emit 后快照不含瞬时消息）；此处仅透传事件
+      this.emitReaction?.(msg.peerId, msg.emoji);
+      break;
         this.emit();
         break;
 
@@ -1213,12 +1285,6 @@ export class MediaRoom {
     }
     if (msg.rotationEnabled !== undefined) {
       this.rotationEnabled = msg.rotationEnabled;
-    }
-    if (msg.immersive !== undefined) {
-      this.immersive = msg.immersive;
-    }
-    if (msg.screenFit !== undefined) {
-      this.screenFit = msg.screenFit;
     }
     if (msg.sideListVisible !== undefined) {
       this.sideListVisible = msg.sideListVisible;
