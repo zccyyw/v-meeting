@@ -255,6 +255,126 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     }
   });
 
+  // ── 历史会议（我主持的 + 我参加过的，已结束）──
+  const historyVisible = (uid: number) =>
+    `m.status = 'ended' AND (m.host_user_id = ${uid} OR EXISTS(
+      SELECT 1 FROM meeting_invitations i
+      WHERE i.meeting_id = m.id AND i.user_id = ${uid} AND i.status = 'attended'
+    ))`;
+
+  app.get("/meetings/my-history", async (req, reply) => {
+    const sessionId = req.headers["x-session-id"] as string | undefined;
+    const user = await loadSessionUser(db, redis, sessionId);
+    if (!user) return reply.code(401).send({ error: "unauthorized" });
+    const uid = Number(user.id);
+    const q = req.query as { page?: string; pageSize?: string };
+    const page = Math.max(1, Number(q.page ?? 1));
+    const pageSize = Math.min(Math.max(1, Number(q.pageSize ?? 20)), 50);
+    const vis = historyVisible(uid);
+
+    const [countRows] = await db.query(`SELECT COUNT(*) AS total FROM meetings m WHERE ${vis}`);
+    const total = Number((countRows as { total: number | string }[])[0].total);
+
+    const offset = (page - 1) * pageSize;
+    const [rows] = await db.query(
+      `SELECT m.id, m.code, m.title, m.host_user_id, m.scheduled_at, m.created_at, m.ended_at,
+              u.user_name AS host_name,
+              (SELECT COUNT(*) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') AS participants,
+              (SELECT MIN(ii.joined_at) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') AS first_joined
+       FROM meetings m
+       LEFT JOIN sys_user u ON u.user_id = m.host_user_id
+       WHERE ${vis}
+       ORDER BY m.ended_at DESC
+       LIMIT ${pageSize} OFFSET ${offset}`,
+    );
+    const norm = (v: unknown): string | null => {
+      if (v == null) return null;
+      if (v instanceof Date) return v.toISOString().slice(0, 19).replace("T", " ");
+      return String(v);
+    };
+    const items = (rows as Record<string, unknown>[]).map((r) => {
+      const startTime = norm(r.first_joined) ?? norm(r.created_at) ?? "";
+      const endTime = norm(r.ended_at) ?? "";
+      const startMs = startTime ? new Date(startTime.replace(" ", "T")).getTime() : NaN;
+      const endMs = endTime ? new Date(endTime.replace(" ", "T")).getTime() : NaN;
+      return {
+        meetingId: Number(r.id),
+        code: String(r.code ?? ""),
+        title: String(r.title ?? ""),
+        hostName: String(r.host_name ?? ""),
+        meetingType: r.scheduled_at ? "2" : "1",
+        startTime,
+        endTime,
+        durationSec:
+          Number.isFinite(startMs) && Number.isFinite(endMs)
+            ? Math.max(0, Math.floor((endMs - startMs) / 1000))
+            : 0,
+        participantCount: Number(r.participants) || 0,
+        myRole: Number(r.host_user_id) === uid ? "host" : "participant",
+      };
+    });
+    return { items, total, page, pageSize };
+  });
+
+  app.get("/meetings/my-history/:id", async (req, reply) => {
+    const sessionId = req.headers["x-session-id"] as string | undefined;
+    const user = await loadSessionUser(db, redis, sessionId);
+    if (!user) return reply.code(401).send({ error: "unauthorized" });
+    const uid = Number(user.id);
+    const id = Number((req.params as { id: string }).id);
+    const vis = historyVisible(uid);
+
+    const [rows] = await db.query(
+      `SELECT m.id, m.code, m.title, m.host_user_id, m.scheduled_at, m.created_at, m.ended_at,
+              u.user_name AS host_name
+       FROM meetings m
+       LEFT JOIN sys_user u ON u.user_id = m.host_user_id
+       WHERE m.id = ? AND ${vis}
+       LIMIT 1`,
+      [id],
+    );
+    const m = (rows as Record<string, unknown>[])[0];
+    if (!m) return reply.code(404).send({ error: "not_found" });
+
+    const [invRows] = await db.query(
+      `SELECT ii.display_name, ii.joined_at, d.dept_name
+       FROM meeting_invitations ii
+       LEFT JOIN sys_dept d ON d.dept_id = ii.dept_id
+       WHERE ii.meeting_id = ? AND ii.status = 'attended'
+       ORDER BY ii.joined_at ASC`,
+      [id],
+    );
+    const norm = (v: unknown): string | null => {
+      if (v == null) return null;
+      if (v instanceof Date) return v.toISOString().slice(0, 19).replace("T", " ");
+      return String(v);
+    };
+    const attendees = (invRows as { display_name: string | null; dept_name: string | null; joined_at: unknown }[]).map((r) => ({
+      name: r.display_name ?? "",
+      deptName: r.dept_name ?? "",
+      joinedAt: norm(r.joined_at) ?? "",
+    }));
+    const startTime = attendees[0]?.joinedAt || norm(m.created_at) || "";
+    const endTime = norm(m.ended_at) ?? "";
+    const startMs = startTime ? new Date(startTime.replace(" ", "T")).getTime() : NaN;
+    const endMs = endTime ? new Date(endTime.replace(" ", "T")).getTime() : NaN;
+    return {
+      meetingId: Number(m.id),
+      code: String(m.code ?? ""),
+      title: String(m.title ?? ""),
+      hostName: String(m.host_name ?? ""),
+      meetingType: m.scheduled_at ? "2" : "1",
+      startTime,
+      endTime,
+      durationSec:
+        Number.isFinite(startMs) && Number.isFinite(endMs)
+          ? Math.max(0, Math.floor((endMs - startMs) / 1000))
+          : 0,
+      attendeeCount: attendees.length,
+      attendees,
+    };
+  });
+
   // ── 待加入会议的实时推送（SSE） ──
   // EventSource 无法自定义请求头，故会话 id 经查询参数传入（与其它请求的
   // x-session-id 为同一凭据）。群组开会/点名邀请写入后由 notifyUser 触发。

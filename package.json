@@ -20,6 +20,7 @@
     "dev:api": "npm run dev -w @meeting/api",
     "dev:realtime": "npm run dev -w @meeting/realtime",
     "dev:front": "npm run dev -w @meeting/front",
+    "dev:local": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d api realtime && npm run dev:front",
     "cert:dev": "node deploy/native/bin/gen-cert.mjs",
     "dev": "concurrently -k -n api,realtime,front -c blue,magenta,green \"npm run dev:api\" \"npm run dev:realtime\" \"npm run dev:front\""
   },

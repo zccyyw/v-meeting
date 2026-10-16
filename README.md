@@ -91,8 +91,9 @@ npm run dev
 # 7. 本地开发 
 # 7.1 启动音视频
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d api realtime
-
 npm run dev:front
+或
+npm run dev:local
 ```
 
 浏览器访问 `http://localhost:8081`，默认账号 `admin / admin123`。

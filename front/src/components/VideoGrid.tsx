@@ -57,6 +57,10 @@ type Props = {
   rotationEnabled?: boolean;
   /** 轮换间隔（ms），来自本地设置（5/15/30s） */
   rotationIntervalMs?: number;
+  /** 沉浸模式：主画面占满整屏，隐藏侧栏（成员改由底部浮条承载） */
+  immersive?: boolean;
+  /** 主持人控制的"成员轮播侧栏对参会者可见"（主持人端始终可见） */
+  sideListVisible?: boolean;
 };
 
 function hasActiveCamera(stream: MediaStream | null | undefined): boolean {
@@ -648,6 +652,8 @@ export function VideoGrid({
   peerRtt,
   rotationEnabled,
   rotationIntervalMs,
+  immersive = false,
+  sideListVisible = true,
 }: Props) {
   const { t } = useTranslation();
   const handTitle = t("meeting.hand");
@@ -875,9 +881,14 @@ export function VideoGrid({
   // 右侧成员显示全部人员（含主持人/自己），仅排除共享画面 tile；
   // 点击不同成员（含主持人）即可切换主画面
   const stripTiles = useSideLayout ? tiles.filter((t) => !t.isScreen) : tiles;
-
+  const isHostSelf = localPeerId != null && localPeerId === hostPeerId;
+  const showSideList =
+    useSideLayout &&
+    stripTiles.length > 0 &&
+    !immersive &&
+    (isHostSelf || sideListVisible);
+  const isTraining = layout === "training";
   if (useSideLayout && focusTile) {
-    const isTraining = layout === "training";
     return (
       <>
         {remoteAudio}
@@ -897,7 +908,7 @@ export function VideoGrid({
               micMuted={focusTile.micMuted}
             />
           </div>
-          {stripTiles.length > 0 && (
+          {showSideList && (
             <DraggableSideList
               tiles={stripTiles}
               focusEnabled={focusEnabled}

@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import {
   App as AntApp,
   Button,
+  Descriptions,
+  Drawer,
   Form,
   Input,
   Modal,
@@ -13,17 +15,21 @@ import {
   Table,
   Tag,
   Typography,
+  theme,
 } from "antd";
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
+  EyeOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { indexColumn } from "@/components/indexColumn";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { MemberPicker, type MemberPickerValue } from "@/components/MemberPicker";
 import { SysNoticeApi, type NoticeItem } from "@/api/client";
+import { sanitizeHtml } from "@/utils/sanitizeHtml";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 
 const PAGE_SIZE_OPTIONS = ["10", "20", "30", "50"];
@@ -34,7 +40,24 @@ type FormValues = {
   noticeContent: string;
   status: "0" | "1";
   remark: string;
+  targets?: MemberPickerValue;
 };
+
+/** 将 Form 值组装为提交体：type=1 携带定向接收范围，type=2 全员不带 */
+function buildPayload(values: FormValues): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    noticeTitle: values.noticeTitle,
+    noticeType: values.noticeType,
+    noticeContent: values.noticeContent,
+    status: values.status,
+    remark: values.remark,
+  };
+  if (values.noticeType === "1" && values.targets) {
+    body.targetUserIds = values.targets.userIds;
+    body.targetDeptIds = values.targets.deptIds;
+  }
+  return body;
+}
 
 export function NoticesPage() {
   const { t } = useTranslation();
@@ -54,6 +77,27 @@ export function NoticesPage() {
   const [editing, setEditing] = useState<NoticeItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<FormValues>();
+  // 通知类型联动：type=1（通知）显示接收范围选择器，type=2（公告）全员
+  const noticeType = Form.useWatch("noticeType", form);
+  const { token } = theme.useToken();
+  // 详情 Drawer：基本信息 + 富文本 + 接收用户已读/未读
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detail, setDetail] = useState<NoticeItem | null>(null);
+
+  async function openDetail(row: NoticeItem) {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetail(null);
+    try {
+      setDetail(await SysNoticeApi.get(row.noticeId));
+    } catch (err) {
+      message.error(apiErrorMessage(t, err));
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,33 +124,53 @@ export function NoticesPage() {
     setModalMode("create");
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ noticeType: "1", status: "0", noticeContent: "", remark: "" });
+    form.setFieldsValue({ noticeType: "1", status: "0", noticeContent: "", remark: "", targets: { userIds: [], deptIds: [] } });
     setModalOpen(true);
   }
 
-  function openEdit(row: NoticeItem) {
+  async function openEdit(row: NoticeItem) {
     setModalMode("edit");
     setEditing(row);
     form.resetFields();
-    form.setFieldsValue({
-      noticeTitle: row.noticeTitle,
-      noticeType: row.noticeType as "1" | "2",
-      noticeContent: row.noticeContent,
-      status: row.status as "0" | "1",
-      remark: row.remark,
-    });
+    // 详情接口返回接收范围（列表行不含），用于编辑回显
+    try {
+      const detail = await SysNoticeApi.get(row.noticeId);
+      form.setFieldsValue({
+        noticeTitle: detail.noticeTitle,
+        noticeType: detail.noticeType as "1" | "2",
+        noticeContent: detail.noticeContent,
+        status: detail.status as "0" | "1",
+        remark: detail.remark,
+        targets: {
+          userIds: detail.targetUserIds ?? [],
+          deptIds: detail.targetDeptIds ?? [],
+        },
+      });
+    } catch (err) {
+      message.error(apiErrorMessage(t, err));
+      return;
+    }
     setModalOpen(true);
   }
 
   async function onSubmit() {
     try {
       const values = await form.validateFields();
+      // type=1（通知）必须指定接收范围（部门/用户至少一项），后端同口径校验
+      if (values.noticeType === "1") {
+        const t0 = values.targets ?? { userIds: [], deptIds: [] };
+        if (t0.userIds.length === 0 && t0.deptIds.length === 0) {
+          message.warning(t("notice.targetRequired"));
+          return;
+        }
+      }
+      const payload = buildPayload(values);
       setSubmitting(true);
       if (modalMode === "create") {
-        await SysNoticeApi.create(values);
+        await SysNoticeApi.create(payload);
         message.success(t("common.createSuccess"));
       } else if (editing) {
-        await SysNoticeApi.patch(editing.noticeId, values);
+        await SysNoticeApi.patch(editing.noticeId, payload);
         message.success(t("common.updateSuccess"));
       }
       setModalOpen(false);
@@ -139,6 +203,15 @@ export function NoticesPage() {
         : <Tag color="orange">{t("notice.typeAnnouncement")}</Tag>,
     },
     {
+      title: t("notice.targetScope"), dataIndex: "targetCount", width: 110,
+      render: (_: unknown, row: NoticeItem) => {
+        if (row.noticeType === "2" || row.targetCount === -1) {
+          return <Tag color="green">{t("notice.targetAll")}</Tag>;
+        }
+        return <Tag>{t("notice.targetCounted", { count: row.targetCount ?? 0 })}</Tag>;
+      },
+    },
+    {
       title: t("notice.status"), dataIndex: "status", width: 80,
       render: (s: string) => s === "0"
         ? <Tag color="success">{t("notice.statusNormal")}</Tag>
@@ -147,10 +220,11 @@ export function NoticesPage() {
     { title: t("notice.createBy"), dataIndex: "createBy", width: 100, render: (v: string) => v || "—" },
     { title: t("notice.createTime"), dataIndex: "createTime", width: 170, render: (v: string) => v },
     {
-      title: t("common.actions"), key: "actions", width: 100, fixed: "right",
+      title: t("common.actions"), key: "actions", width: 130, fixed: "right",
       render: (_, row) => (
         <Space size={4}>
-          <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(row)} />
+          <Button type="text" icon={<EyeOutlined />} onClick={() => void openDetail(row)} />
+          <Button type="text" icon={<EditOutlined />} onClick={() => void openEdit(row)} />
           <Popconfirm title={t("notice.confirmDelete")} onConfirm={() => void onDelete(row)} okButtonProps={{ danger: true }}>
             <Button type="text" danger icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -244,6 +318,11 @@ export function NoticesPage() {
               <Radio.Button value="2">{t("notice.typeAnnouncement")}</Radio.Button>
             </Radio.Group>
           </Form.Item>
+          {noticeType === "1" && (
+            <Form.Item name="targets" label={t("notice.targetScope")}>
+              <MemberPicker />
+            </Form.Item>
+          )}
           <Form.Item name="noticeContent" label={t("notice.content")}>
             <RichTextEditor placeholder={t("notice.contentPlaceholder")} />
           </Form.Item>
@@ -258,6 +337,82 @@ export function NoticesPage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <Drawer
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        title={detail?.noticeTitle ?? t("common.detail")}
+        width={560}
+        loading={detailLoading}
+      >
+        {detail && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label={t("notice.type")}>
+                <Tag color={detail.noticeType === "1" ? "blue" : "orange"}>
+                  {detail.noticeType === "1" ? t("notice.typeNotice") : t("notice.typeAnnouncement")}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label={t("notice.targetScope")}>
+                {detail.targetCount === -1
+                  ? <Tag color="green">{t("notice.targetAll")}</Tag>
+                  : <Tag>{t("notice.targetCounted", { count: detail.targetCount ?? 0 })}</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label={t("notice.createBy")}>{detail.createBy || "—"}</Descriptions.Item>
+              <Descriptions.Item label={t("notice.createTime")}>{detail.createTime}</Descriptions.Item>
+              {detail.remark && (
+                <Descriptions.Item label={t("notice.remark")}>{detail.remark}</Descriptions.Item>
+              )}
+            </Descriptions>
+
+            <div>
+              <Typography.Text strong style={{ display: "block", marginBottom: 8 }}>
+                {t("notice.content")}
+              </Typography.Text>
+              <div
+                className="notice-detail-content"
+                style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 6, padding: "8px 12px", minHeight: 60 }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(detail.noticeContent) }}
+              />
+            </div>
+
+            <div>
+              <Typography.Text strong style={{ display: "block", marginBottom: 8 }}>
+                {t("notice.recipients")}
+                <Typography.Text type="secondary" style={{ fontWeight: 400, marginLeft: 8 }}>
+                  {t("notice.readSummary", {
+                    read: detail.readCount ?? 0,
+                    unread: (detail.totalCount ?? 0) - (detail.readCount ?? 0),
+                    total: detail.totalCount ?? 0,
+                  })}
+                </Typography.Text>
+              </Typography.Text>
+              {(detail.recipients ?? []).map((r) => (
+                <div
+                  key={r.userId}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "6px 4px", borderBottom: `1px dashed ${token.colorBorderSecondary}`,
+                  }}
+                >
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.name || `#${r.userId}`}
+                  </span>
+                  {r.deptName && (
+                    <span style={{ fontSize: 12, color: token.colorTextSecondary }}>{r.deptName}</span>
+                  )}
+                  <Tag color={r.read ? "default" : "processing"} style={{ marginInlineEnd: 0 }}>
+                    {r.read ? t("notice.read") : t("notice.unread")}
+                  </Tag>
+                </div>
+              ))}
+              {(detail.recipients ?? []).length === 0 && (
+                <Typography.Text type="secondary">{t("notice.noRecipient")}</Typography.Text>
+              )}
+            </div>
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }

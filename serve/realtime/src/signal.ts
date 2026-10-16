@@ -50,6 +50,12 @@ type RoomState = {
   networkRttDirty: boolean;
   /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
   rotationEnabled: boolean;
+  /** 主持人控制的沉浸模式（主画面全屏 + 浮层控件），全员同步 */
+  immersive: boolean;
+  /** 沉浸模式下投屏显示模式：cover 铺满（可能裁切）/ contain 完整（保留黑边） */
+  screenFit: "cover" | "contain";
+  /** 主持人控制的"成员轮播侧栏对参会者可见"开关（主持人端始终可见） */
+  sideListVisible: boolean;
 };
 
 function peerId() {
@@ -267,6 +273,9 @@ export function createSignalHandler(db: Db) {
           // 成员画面轮播默认开启（对齐"成员过多时自动轮播"的产品预期），
           // 主持人可在设置面板随时关闭；后入会者随 joined 同步该状态
           rotationEnabled: true,
+          immersive: false,
+          screenFit: "contain",
+          sideListVisible: true,
         };
         rooms.set(meetingId, state);
         return state;
@@ -709,6 +718,9 @@ export function createSignalHandler(db: Db) {
       layout: state.room.layout,
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
+      immersive: state.immersive,
+      screenFit: state.screenFit,
+      sideListVisible: state.sideListVisible,
       allowShare: state.room.allowShareDefault,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
       capabilities: { screenAudio: true },
@@ -888,6 +900,9 @@ export function createSignalHandler(db: Db) {
       layout: state.room.layout,
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
+      immersive: state.immersive,
+      screenFit: state.screenFit,
+      sideListVisible: state.sideListVisible,
       allowShare: state.room.allowShareDefault,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
       capabilities: { screenAudio: true },
@@ -1280,6 +1295,42 @@ export function createSignalHandler(db: Db) {
           broadcastAdmitted(ctx.state, {
             type: "rotationChanged",
             enabled: message.enabled,
+          });
+          break;
+        }
+
+        case "setImmersive": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.immersive = message.immersive;
+          if (message.screenFit) {
+            ctx.state.screenFit = message.screenFit;
+          }
+          broadcastAdmitted(ctx.state, {
+            type: "immersiveChanged",
+            immersive: ctx.state.immersive,
+            screenFit: ctx.state.screenFit,
+          });
+          break;
+        }
+
+        case "setSideListVisible": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.sideListVisible = message.visible;
+          broadcastAdmitted(ctx.state, {
+            type: "sideListVisibleChanged",
+            visible: message.visible,
           });
           break;
         }

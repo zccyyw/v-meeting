@@ -22,6 +22,9 @@ const RecordingsPage = lazy(() =>
 const GroupManagePage = lazy(() =>
   import("@/pages/GroupManagePage").then((m) => ({ default: m.GroupManagePage })),
 );
+const HistoryMeetingsPage = lazy(() =>
+  import("@/pages/HistoryMeetingsPage").then((m) => ({ default: m.HistoryMeetingsPage })),
+);
 
 // ── 系统管理页面 ──
 const ManagerLoginPage = lazy(() =>
@@ -118,6 +121,10 @@ export default function App() {
             <Route
               path="/groups"
               element={<Suspense fallback={null}><GroupManagePage /></Suspense>}
+            />
+            <Route
+              path="/history"
+              element={<Suspense fallback={null}><HistoryMeetingsPage /></Suspense>}
             />
           </Route>
           <Route path="/m/:meetingId" element={<MeetingPage />} />

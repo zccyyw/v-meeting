@@ -563,6 +563,21 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .immersive-strip .video-sidelist { flex-direction: row; max-width: 100%; min-width: 0; width: auto; gap: 0.4rem; padding: 0.25rem; background: rgba(0,0,0,0.5); border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); }
 .immersive-strip .video-sidelist .video-tile { width: 8.5rem; min-width: 8.5rem; }
 .immersive-strip .video-sidelist-toolbar { width: 100%; }
+
+/* —— 沉浸模式：header/controls 浮层化，鼠标静止 3s 自动隐藏 —— */
+.meeting-stage.ui-immersive .meeting-header {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 90;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0));
+  transition: opacity 0.3s ease;
+}
+.meeting-stage.ui-immersive .controls {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 90;
+  background: linear-gradient(to top, rgba(0,0,0,0.55), rgba(0,0,0,0));
+  transition: opacity 0.3s ease;
+}
+.meeting-stage.ui-immersive.ui-idle .meeting-header,
+.meeting-stage.ui-immersive.ui-idle .controls { opacity: 0; pointer-events: none; }
+.meeting-stage.ui-immersive.ui-idle { cursor: none; }
 @media (max-width: 768px) {
   .immersive-bar-hint { display: none; }
   .immersive-strip { left: 0.5rem; bottom: 0.5rem; right: 0.5rem; }
@@ -667,7 +682,7 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
 .video-tile { position: relative; background: #111; border-radius: 16px; overflow: hidden; min-height: 100px; aspect-ratio: 16 / 10; }
 .video-tile video { width: 100%; height: 100%; max-width: none; max-height: none; object-fit: cover; display: block; background: #1a1a1a; }
 /* 屏幕共享画面用 contain 完整显示：窗口/显示器比例与 tile 不同时避免四边被裁 */
-.video-tile--screen video { object-fit: contain; }
+.video-tile--screen video { object-fit: var(--screen-fit, contain); }
 .video-tile--screen { background: #000; }
 .video-label { position: absolute; left: 0.5rem; bottom: 0.5rem; padding: 0.2rem 0.5rem; border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 0.8rem; }
 .video-label--cam-off::before { content: "🔒"; font-size: 0.65rem; margin-right: 0.2rem; }

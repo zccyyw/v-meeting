@@ -67,7 +67,8 @@
     "live": "直播中",
     "applySubmitted": "会议申请已提交，等待审批",
     "startMeeting": "发起会议",
-    "units": "{{count}} 个单位"
+    "units": "{{count}} 个单位",
+    "history": "历史会议"
   },
   "joinModal": {
     "title": "加入会议",
@@ -197,7 +198,16 @@
     "create": "新增公告",
     "edit": "修改公告",
     "confirmDelete": "确定删除此公告？",
-    "contentPlaceholder": "请输入公告内容"
+    "contentPlaceholder": "请输入公告内容",
+    "targetScope": "接收范围",
+    "targetAll": "全员",
+    "targetCounted": "指定 {{count}} 项",
+    "targetRequired": "请选择接收范围（部门/用户至少一项）",
+    "read": "已读",
+    "unread": "未读",
+    "recipients": "接收用户",
+    "noRecipient": "无接收记录",
+    "readSummary": "已读 {{read}} · 未读 {{unread}} · 共 {{total}}"
   },
   "richEditor": {
     "placeholder": "请输入内容...",
@@ -412,7 +422,11 @@
     "videoDeviceLost": "摄像头已断开或不可用，自动恢复失败。插入设备后在设置中重新选择摄像头即可恢复。",
     "screenAudio": "共享声音",
     "screenAudioOn": "关闭共享声音",
-    "screenAudioOff": "开启共享声音"
+    "screenAudioOff": "开启共享声音",
+    "screenFit": "投屏显示",
+    "screenFitContain": "完整显示（保留黑边）",
+    "screenFitCover": "铺满（可能裁切边缘）",
+    "sideListVisible": "向参会者显示成员轮播侧栏"
   },
   "recordings": {
     "title": "录制历史",
@@ -669,7 +683,8 @@
     "goApprove": "去审批",
     "host": "主持人",
     "live": "进行中",
-    "joinFailed": "加入会议失败"
+    "joinFailed": "加入会议失败",
+    "loadFailed": "通知加载失败"
   },
   "meetingMonitor": {
     "title2": "会议在线监控",
@@ -692,5 +707,26 @@
     "status_pending": "待入会",
     "status_left": "已离开",
     "status_rejected": "已拒绝"
+  },
+  "history": {
+    "pageTitle": "历史会议",
+    "backHome": "返回",
+    "title": "会议主题",
+    "meetingCode": "会议号",
+    "meetingType": "会议类型",
+    "typeReserved": "预约会议",
+    "typeFast": "快速会议",
+    "hostName": "主持人",
+    "myRole": "我的身份",
+    "roleHost": "主持人",
+    "roleParticipant": "参与者",
+    "participantCount": "参会人数",
+    "duration": "时长",
+    "startTime": "开始时间",
+    "endTime": "结束时间",
+    "detailTitle": "会议详情",
+    "meetingInfo": "会议信息",
+    "attendees": "参会人员",
+    "noAttendees": "无参会记录"
   }
 }

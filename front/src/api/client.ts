@@ -489,6 +489,16 @@ export type NoticeItem = {
   updateBy: string;
   updateTime: string;
   remark: string;
+  /** 接收范围计数：-1 = 全员（type=2 或无 target 的存量 type=1） */
+  targetCount?: number;
+  /** 编辑回显：定向接收范围（仅详情接口返回） */
+  targetUserIds?: number[];
+  targetDeptIds?: number[];
+  targets?: { targetType: "user" | "dept"; targetId: number; name: string }[];
+  /** 管理端详情：接收用户列表（部门展开 ∪ 直选，去重）+ 已读标记 */
+  recipients?: { userId: number; name: string; deptName: string; read: number }[];
+  readCount?: number;
+  totalCount?: number;
 };
 
 export const SysNoticeApi = {
@@ -507,6 +517,56 @@ export const SysNoticeApi = {
   patch: (id: number, body: Record<string, unknown>) =>
     api<NoticeItem>(`/sys-notice/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   remove: (id: number) => api<void>(`/sys-notice/${id}`, { method: "DELETE" }),
+};
+
+// ── 历史会议（我主持的 + 我参加过的，已结束） ──
+
+export type HistoryMeetingItem = {
+  meetingId: number;
+  code: string;
+  title: string;
+  hostName: string;
+  meetingType: "1" | "2";
+  startTime: string;
+  endTime: string;
+  durationSec: number;
+  participantCount: number;
+  myRole: "host" | "participant";
+};
+
+export type HistoryMeetingDetail = HistoryMeetingItem & {
+  attendeeCount: number;
+  attendees: { name: string; deptName: string; joinedAt: string }[];
+};
+
+export const MeetingsApiExt = {
+  myHistory: (params?: { page?: number; pageSize?: number }) => {
+    const sp = new URLSearchParams();
+    sp.set("page", String(params?.page ?? 1));
+    sp.set("pageSize", String(params?.pageSize ?? 20));
+    return api<{ items: HistoryMeetingItem[]; total: number; page: number; pageSize: number }>(`/meetings/my-history?${sp}`);
+  },
+  detail: (id: number) => api<HistoryMeetingDetail>(`/meetings/my-history/${id}`),
+};
+
+// ── C 端：我的通知（首页铃铛） ──
+
+export type MyNoticeItem = {
+  noticeId: number;
+  noticeTitle: string;
+  noticeType: string;
+  createTime: string;
+  read: number;
+};
+
+export const SysNoticeMyApi = {
+  list: (params?: { page?: number; pageSize?: number }) => {
+    const sp = new URLSearchParams();
+    sp.set("page", String(params?.page ?? 1));
+    sp.set("pageSize", String(params?.pageSize ?? 20));
+    return api<{ items: MyNoticeItem[]; total: number; unreadCount: number; page: number; pageSize: number }>(`/sys-notice/my?${sp}`);
+  },
+  get: (id: number) => api<NoticeItem>(`/sys-notice/my/${id}`),
 };
 
 // ── 操作日志 API ──

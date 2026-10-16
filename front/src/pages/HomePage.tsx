@@ -24,6 +24,7 @@ import {
   ScheduleOutlined,
   PlayCircleOutlined,
   TeamOutlined,
+  ProfileOutlined,
 } from "@ant-design/icons";
 import {
   MeetingApi,
@@ -438,8 +439,9 @@ export function HomePage() {
       schedForm.resetFields();
       setModal("schedule");
     }},
-    { key: "recordings", label: t("home.recordings"), icon: <PlayCircleOutlined style={{ fontSize: TILE_ICON_SIZE }} />, onClick: goToRecordings },
     { key: "groups", label: t("group.title"), icon: <TeamOutlined style={{ fontSize: TILE_ICON_SIZE }} />, onClick: () => navigate("/groups") },
+    { key: "recordings", label: t("home.recordings"), icon: <PlayCircleOutlined style={{ fontSize: TILE_ICON_SIZE }} />, onClick: goToRecordings },
+    { key: "history", label: t("home.history"), icon: <ProfileOutlined style={{ fontSize: TILE_ICON_SIZE }} />, onClick: () => navigate("/history") },
   ];
 
   return (

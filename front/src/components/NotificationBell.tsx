@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Badge, Button, Empty, Popover, Tag, theme } from "antd";
+import { sanitizeHtml } from "@/utils/sanitizeHtml";
+import { Badge, Button, Empty, Modal, Popover, Tag, theme } from "antd";
 import { BellOutlined } from "@ant-design/icons";
-import { MeetingApi, MeetingAppApi, type MyInvitationItem } from "@/api/client";
+import { MeetingApi, MeetingAppApi, SysNoticeMyApi, type MyInvitationItem, type MyNoticeItem, type NoticeItem } from "@/api/client";
 import { formatMeetingCode, getJoinPrefs } from "@/auth/joinPrefs";
 import { rememberJoin } from "@/auth/joinHistory";
 import { getRoles } from "@/auth/session";
@@ -55,6 +56,12 @@ export function NotificationBell() {
   const isApprover =
     getRoles().includes("admin") || getRoles().includes("auth_admin");
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  // 通知公告（全员公告 + 定向给我的通知）：已读状态在服务端
+  const [notices, setNotices] = useState<MyNoticeItem[]>([]);
+  const [noticeUnread, setNoticeUnread] = useState(0);
+  const [noticeDetail, setNoticeDetail] = useState<NoticeItem | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -71,6 +78,14 @@ export function NotificationBell() {
       }
     } catch {
       /* 静默失败：不影响主流程 */
+    }
+    // 通知公告与邀请相互独立，失败互不影响
+    try {
+      const res = await SysNoticeMyApi.list({ page: 1, pageSize: 20 });
+      setNotices(res.items);
+      setNoticeUnread(res.unreadCount);
+    } catch {
+      /* 静默失败 */
     }
   }, []);
 
@@ -172,6 +187,23 @@ export function NotificationBell() {
     }
   }
 
+  async function openNoticeDetail(id: number) {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    try {
+      // 服务端可见性校验 + 标记已读
+      const detail = await SysNoticeMyApi.get(id);
+      setNoticeDetail(detail);
+      setNotices((prev) => prev.map((n) => (n.noticeId === id ? { ...n, read: 1 } : n)));
+      setNoticeUnread((n) => Math.max(0, n - 1));
+    } catch (err) {
+      showMessage(t("notify.loadFailed"));
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
   const content = (
     <div style={{ width: 320, maxHeight: 400, overflowY: "auto" }}>
       {isApprover && pendingApprovals > 0 && (
@@ -198,7 +230,42 @@ export function NotificationBell() {
           </Button>
         </div>
       )}
-      {items.length === 0 && !(isApprover && pendingApprovals > 0) ? (
+      {notices.length > 0 && (
+        <div style={{ padding: "8px 4px 2px", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+          <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 2 }}>
+            {t("notice.pageTitle")}
+          </div>
+          {notices.map((n) => (
+            <div
+              key={n.noticeId}
+              onClick={() => void openNoticeDetail(n.noticeId)}
+              style={{
+                padding: "6px 0", cursor: "pointer", borderRadius: 6,
+                borderBottom: n === notices[notices.length - 1] ? "none" : `1px dashed ${token.colorBorderSecondary}`,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span
+                  style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: n.read ? 0.55 : 1 }}
+                  title={n.noticeTitle}
+                >
+                  {n.noticeTitle}
+                </span>
+                <Tag color={n.read ? "default" : "processing"} style={{ marginInlineEnd: 0 }}>
+                  {n.read ? t("notice.read") : t("notice.unread")}
+                </Tag>
+              </div>
+              <div style={{ fontSize: 12, color: token.colorTextSecondary, display: "flex", alignItems: "center", gap: 6 }}>
+                <Tag color={n.noticeType === "1" ? "blue" : "orange"} style={{ marginInlineEnd: 0 }}>
+                  {n.noticeType === "1" ? t("notice.typeNotice") : t("notice.typeAnnouncement")}
+                </Tag>
+                <span>{n.createTime}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {items.length === 0 && notices.length === 0 && !(isApprover && pendingApprovals > 0) ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={t("notify.empty")}
@@ -262,7 +329,8 @@ export function NotificationBell() {
   );
 
   return (
-    <Popover
+    <>
+      <Popover
       content={content}
       title={
         <div
@@ -296,10 +364,38 @@ export function NotificationBell() {
         aria-label={t("notify.title")}
         style={{ fontSize: 18 }}
       >
-        <Badge count={unreadCount + (isApprover ? pendingApprovals : 0)} size="small">
+        <Badge count={unreadCount + (isApprover ? pendingApprovals : 0) + noticeUnread} size="small">
           <BellOutlined style={{ fontSize: 18 }} />
         </Badge>
       </Button>
     </Popover>
+    <Modal
+      open={detailOpen}
+      title={noticeDetail?.noticeTitle}
+      footer={null}
+      onCancel={() => setDetailOpen(false)}
+      loading={detailLoading}
+      width={640}
+      centered
+    >
+      {noticeDetail && (
+        <div>
+          <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            <Tag color={noticeDetail.noticeType === "1" ? "blue" : "orange"} style={{ marginInlineEnd: 0 }}>
+              {noticeDetail.noticeType === "1" ? t("notice.typeNotice") : t("notice.typeAnnouncement")}
+            </Tag>
+            <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
+              {noticeDetail.createTime}
+            </span>
+          </div>
+          {/* 富文本为管理端发布内容，展示前经 DOMPurify 白名单净化 */}
+          <div
+            className="notice-detail-content"
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(noticeDetail.noticeContent) }}
+          />
+        </div>
+      )}
+    </Modal>
+    </>
   );
 }

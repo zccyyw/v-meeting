@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -61,7 +61,10 @@ const emptySnapshot: MediaRoomSnapshot = {
   allowShare: true,
   waitingRoomEnabled: false,
   peerRtt: {},
-  rotationEnabled:false,
+  rotationEnabled: false,
+  immersive: false,
+  screenFit: "contain",
+  sideListVisible: true,
   recordAllowed: false,
   chatMessages: [],
   error: null,
@@ -159,7 +162,33 @@ function MeetingPageInner() {
   >([]);
   const danmuIdRef = useRef(0);
   const lastChatLenRef = useRef(0);
-  const [immersive, setImmersive] = useState(false);
+  // 沉浸模式：状态来自房间广播（snap.immersive，主持人控制全员同步）；
+  // uiIdle 为本地行为——鼠标静止 3s 隐藏浮层控件，移动后恢复
+  const immersive = snap.immersive;
+  const [uiIdle, setUiIdle] = useState(false);
+  const uiIdleTimerRef = useRef<number | null>(null);
+  const pokeUi = useCallback(() => {
+    setUiIdle(false);
+    if (uiIdleTimerRef.current) window.clearTimeout(uiIdleTimerRef.current);
+    uiIdleTimerRef.current = window.setTimeout(() => setUiIdle(true), 3000);
+  }, []);
+  useEffect(() => {
+    if (!immersive) {
+      setUiIdle(false);
+      if (uiIdleTimerRef.current) window.clearTimeout(uiIdleTimerRef.current);
+      return;
+    }
+    pokeUi();
+    window.addEventListener("mousemove", pokeUi);
+    window.addEventListener("mousedown", pokeUi);
+    window.addEventListener("touchstart", pokeUi);
+    return () => {
+      window.removeEventListener("mousemove", pokeUi);
+      window.removeEventListener("mousedown", pokeUi);
+      window.removeEventListener("touchstart", pokeUi);
+      if (uiIdleTimerRef.current) window.clearTimeout(uiIdleTimerRef.current);
+    };
+  }, [immersive, pokeUi]);
   const [shareElapsed, setShareElapsed] = useState(0);
   const lastRecordingPeersRef = useRef<Set<string>>(new Set());
   /** 已建立录制基线的入会会话（peerId）；重连会换 peerId，需要重新建立基线 */
@@ -201,11 +230,6 @@ function MeetingPageInner() {
     const started = Date.now();
     const t = window.setInterval(() => setShareElapsed(Date.now() - started), 1000);
     return () => window.clearInterval(t);
-  }, [snap.sharingScreen]);
-
-  // 停止共享时自动退出沉浸模式
-  useEffect(() => {
-    if (!snap.sharingScreen) setImmersive(false);
   }, [snap.sharingScreen]);
 
   // 监听他人录制状态变化 -> Toast + 聊天系统消息
@@ -743,13 +767,14 @@ function MeetingPageInner() {
             </Dropdown>
           )}
 
-          {inMeeting && snap.sharingScreen && (
+          {inMeeting && isHost && (snap.sharingScreen || snap.layout !== "grid") && (
             <button
               type="button"
-              className="meeting-header-btn"
-              onClick={() => setImmersive((v) => !v)}
+              className={`meeting-header-btn${snap.immersive ? " is-active" : ""}`}
+              onClick={() => roomRef.current?.setImmersive(!snap.immersive, snap.screenFit)}
+              title={snap.immersive ? t("meeting.exitImmersive") : t("meeting.enterImmersive")}
             >
-              {immersive
+              {snap.immersive
                 ? t("meeting.exitImmersive")
                 : t("meeting.enterImmersive")}
             </button>
@@ -850,6 +875,30 @@ function MeetingPageInner() {
                     <option value={30000}>30s</option>
                   </select>
                 </label>
+                {isHost && (
+                  <label className="control-select">
+                    {t("meeting.screenFit")}
+                    <select
+                      value={snap.screenFit}
+                      onChange={(e) => {
+                        roomRef.current?.setImmersive(snap.immersive, e.target.value as "cover" | "contain");
+                      }}
+                    >
+                      <option value="contain">{t("meeting.screenFitContain")}</option>
+                      <option value="cover">{t("meeting.screenFitCover")}</option>
+                    </select>
+                  </label>
+                )}
+                {isHost && (
+                  <label className="checkbox danmu-toggle-row">
+                    <input
+                      type="checkbox"
+                      checked={snap.sideListVisible}
+                      onChange={(e) => roomRef.current?.setSideListVisible(e.target.checked)}
+                    />
+                    {t("meeting.sideListVisible")}
+                  </label>
+                )}
                 <label className="control-select">
                   {t("meeting.layoutCols")}
                   <select
@@ -906,7 +955,10 @@ function MeetingPageInner() {
         </div>
       </header>
 
-      <div className="meeting-stage">
+      <div
+        className={`meeting-stage${immersive ? " ui-immersive" : ""}${uiIdle ? " ui-idle" : ""}`}
+        style={{ "--screen-fit": immersive ? snap.screenFit : "contain" } as React.CSSProperties}
+      >
         {/* 阻断级错误（红）：进不了会 / 人数超限等 */}
         {snap.error && snap.error !== "reconnect_failed" && (
           <p className="error">
@@ -1022,15 +1074,16 @@ function MeetingPageInner() {
           onDeny={(id) => roomRef.current?.deny(id)}
         />
 
-        {inMeeting && immersive ? (
+        {inMeeting && immersive && (isHost || snap.sideListVisible) && (
           <div className="meeting-immersive">
             <ImmersiveStrip
               tiles={immersiveTiles}
               sharingLabel={`${t("meeting.sharing")} ${formatDuration(shareElapsed)}`}
-              onExit={() => setImmersive(false)}
+              onExit={() => roomRef.current?.setImmersive(false)}
             />
           </div>
-        ) : inMeeting && (
+        )}
+        {inMeeting && (
           <div className="meeting-main">
             <div className="meeting-videos">
               <VideoGrid
@@ -1049,6 +1102,8 @@ function MeetingPageInner() {
                 layout={snap.layout}
                 focusPeerId={snap.focusPeerId}
                 layoutCols={layoutCols}
+                immersive={immersive}
+                sideListVisible={isHost || snap.sideListVisible}
                 hostPeerId={
                   isHost
                     ? snap.peerId

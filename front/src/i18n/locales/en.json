@@ -67,7 +67,8 @@
     "live": "LIVE",
     "applySubmitted": "Application submitted, pending approval",
     "startMeeting": "Start meeting",
-    "units": "{{count}} units"
+    "units": "{{count}} units",
+    "history": "History"
   },
   "joinModal": {
     "title": "Join meeting",
@@ -197,7 +198,16 @@
     "create": "Create Notice",
     "edit": "Edit Notice",
     "confirmDelete": "Delete this notice?",
-    "contentPlaceholder": "Enter notice content"
+    "contentPlaceholder": "Enter notice content",
+    "targetScope": "Recipients",
+    "targetAll": "All Users",
+    "targetCounted": "{{count}} target(s)",
+    "targetRequired": "Select at least one department or user",
+    "read": "Read",
+    "unread": "Unread",
+    "recipients": "Recipients",
+    "noRecipient": "No recipients",
+    "readSummary": "Read {{read}} · Unread {{unread}} · Total {{total}}"
   },
   "richEditor": {
     "placeholder": "Enter content...",
@@ -412,7 +422,11 @@
     "videoDeviceLost": "Camera disconnected or unavailable; auto-recovery failed. Re-select the camera in Settings after reconnecting it.",
     "screenAudio": "Screen audio",
     "screenAudioOn": "Mute screen audio",
-    "screenAudioOff": "Unmute screen audio"
+    "screenAudioOff": "Unmute screen audio",
+    "screenFit": "Screen Share Fit",
+    "screenFitContain": "Fit (letterbox)",
+    "screenFitCover": "Fill (may crop edges)",
+    "sideListVisible": "Show member strip to participants"
   },
   "recordings": {
     "title": "Recordings",
@@ -669,7 +683,8 @@
     "goApprove": "Review",
     "host": "Host",
     "live": "Live",
-    "joinFailed": "Failed to join meeting"
+    "joinFailed": "Failed to join meeting",
+    "loadFailed": "Failed to load notice"
   },
   "meetingMonitor": {
     "title2": "Meeting Monitor",
@@ -692,5 +707,26 @@
     "status_pending": "Pending",
     "status_left": "Left",
     "status_rejected": "Rejected"
+  },
+  "history": {
+    "pageTitle": "Meeting History",
+    "backHome": "Back",
+    "title": "Title",
+    "meetingCode": "Meeting Code",
+    "meetingType": "Type",
+    "typeReserved": "Scheduled",
+    "typeFast": "Quick",
+    "hostName": "Host",
+    "myRole": "My Role",
+    "roleHost": "Host",
+    "roleParticipant": "Participant",
+    "participantCount": "Participants",
+    "duration": "Duration",
+    "startTime": "Start",
+    "endTime": "End",
+    "detailTitle": "Meeting Detail",
+    "meetingInfo": "Meeting Info",
+    "attendees": "Attendees",
+    "noAttendees": "No attendees"
   }
 }

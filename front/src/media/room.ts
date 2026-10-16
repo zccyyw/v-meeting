@@ -60,6 +60,12 @@ export type MediaRoomSnapshot = {
   peerRtt: Record<string, number>;
   /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
   rotationEnabled: boolean;
+  /** 主持人控制的沉浸模式（主画面全屏 + 浮层控件），全员同步 */
+  immersive: boolean;
+  /** 沉浸模式下投屏显示模式：cover 铺满 / contain 完整（默认） */
+  screenFit: "cover" | "contain";
+  /** 主持人控制的"成员轮播侧栏对参会者可见"开关（主持人端始终可见） */
+  sideListVisible: boolean;
   focusPeerId: string | null;
   sharingScreen: boolean;
   canShare: boolean;
@@ -154,6 +160,9 @@ export class MediaRoom {
   private layout: MeetingLayout = "grid";
   private peerRtt = new Map<string, number>();
   private rotationEnabled = false;
+  private immersive = false;
+  private screenFit: "cover" | "contain" = "contain";
+  private sideListVisible = true;
   private rttTimer: ReturnType<typeof setInterval> | null = null;
   private focusPeerId: string | null = null;
   private screenFocusPeerId: string | null = null;
@@ -212,6 +221,9 @@ export class MediaRoom {
       layout: this.layout,
       peerRtt: Object.fromEntries(this.peerRtt),
       rotationEnabled: this.rotationEnabled,
+      immersive: this.immersive,
+      screenFit: this.screenFit,
+      sideListVisible: this.sideListVisible,
       focusPeerId: this.screenFocusPeerId ?? this.focusPeerId,
       sharingScreen: this.sharingScreen,
       canShare: this.canShare,
@@ -325,6 +337,25 @@ export class MediaRoom {
     // 本地立即生效（主持人自己），服务端广播随后覆盖
     if (this.rotationEnabled !== enabled) {
       this.rotationEnabled = enabled;
+      this.emit();
+    }
+  }
+
+  /** 主持人开关沉浸模式（服务端校验 host 并广播全员；可同步投屏显示模式） */
+  setImmersive(immersive: boolean, screenFit?: "cover" | "contain"): void {
+    this.signal.send({ type: "setImmersive", immersive, screenFit });
+    if (this.immersive !== immersive || (screenFit && this.screenFit !== screenFit)) {
+      this.immersive = immersive;
+      if (screenFit) this.screenFit = screenFit;
+      this.emit();
+    }
+  }
+
+  /** 主持人控制"成员轮播侧栏"对参会者的可见性（主持人端始终可见） */
+  setSideListVisible(visible: boolean): void {
+    this.signal.send({ type: "setSideListVisible", visible });
+    if (this.sideListVisible !== visible) {
+      this.sideListVisible = visible;
       this.emit();
     }
   }
@@ -984,6 +1015,16 @@ export class MediaRoom {
 
       case "rotationChanged":
         this.rotationEnabled = msg.enabled;
+        break;
+
+      case "immersiveChanged":
+        this.immersive = msg.immersive;
+        this.screenFit = msg.screenFit;
+        break;
+
+      case "sideListVisibleChanged":
+        this.sideListVisible = msg.visible;
+        break;
         this.emit();
         break;
 
@@ -1172,6 +1213,15 @@ export class MediaRoom {
     }
     if (msg.rotationEnabled !== undefined) {
       this.rotationEnabled = msg.rotationEnabled;
+    }
+    if (msg.immersive !== undefined) {
+      this.immersive = msg.immersive;
+    }
+    if (msg.screenFit !== undefined) {
+      this.screenFit = msg.screenFit;
+    }
+    if (msg.sideListVisible !== undefined) {
+      this.sideListVisible = msg.sideListVisible;
     }
     this.status = "joined";
     this.emit();

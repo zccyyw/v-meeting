@@ -74,6 +74,17 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     enabled: z.boolean(),
   }),
   z.object({
+    /** 主持人开关沉浸模式（主画面全屏 + 浮层控件），可同时同步投屏显示模式 */
+    type: z.literal("setImmersive"),
+    immersive: z.boolean(),
+    screenFit: z.enum(["cover", "contain"]).optional(),
+  }),
+  z.object({
+    /** 主持人控制"成员轮播侧栏"是否对其他参会者可见 */
+    type: z.literal("setSideListVisible"),
+    visible: z.boolean(),
+  }),
+  z.object({
     type: z.literal("produce"),
     transportId: z.string(),
     kind: z.enum(["audio", "video"]),
@@ -126,6 +137,11 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     allowShare: z.boolean().optional(),
     // 主持人控制的"成员画面轮换"开关状态：后入会者直接同步
     rotationEnabled: z.boolean().optional(),
+    // 沉浸模式（主画面全屏 + 浮层控件）与投屏显示模式：后入会者直接同步
+    immersive: z.boolean().optional(),
+    screenFit: z.enum(["cover", "contain"]).optional(),
+    // 主持人控制的"成员轮播侧栏对参会者可见"开关：后入会者直接同步
+    sideListVisible: z.boolean().optional(),
     peers: z.array(
       z.object({
         peerId: z.string(),
@@ -214,6 +230,17 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     /** 主持人切换"成员画面轮换"后广播全员 */
     type: z.literal("rotationChanged"),
     enabled: z.boolean(),
+  }),
+  z.object({
+    /** 主持人切换沉浸模式后广播全员（附带投屏显示模式） */
+    type: z.literal("immersiveChanged"),
+    immersive: z.boolean(),
+    screenFit: z.enum(["cover", "contain"]),
+  }),
+  z.object({
+    /** 主持人切换"成员轮播侧栏可见性"后广播全员 */
+    type: z.literal("sideListVisibleChanged"),
+    visible: z.boolean(),
   }),
   z.object({
     /** 服务端观测到 WebRTC transport ICE/DTLS 异常时通知客户端给出可见提示 */
