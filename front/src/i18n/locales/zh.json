@@ -316,7 +316,6 @@
     "hostOnlyHint": "仅主持人可切换布局",
     "layoutGrid": "宫格布局",
     "layoutSpeaker": "演讲者布局",
-    "layoutTraining": "培训布局",
     "focusSpeaker": "设为主画面",
     "exitFocus": "点击退出主画面",
     "noCameraHint": "未检测到摄像头，已以仅语音模式加入，可正常观看其他参会者画面",
@@ -447,7 +446,12 @@
     "sideListTop": "顶部横排",
     "sideListFloat": "悬浮面板",
     "onlyShowSpeakers": "仅显示正在说话的人",
-    "reaction": "表情回应"
+    "reaction": "表情回应",
+    "layoutPanelTitle": "默认布局",
+    "layoutGridNine": "一屏9等分",
+    "layoutVariantEmbed": "右侧成员列表",
+    "layoutVariantTop": "顶部成员列表",
+    "layoutVariantFloat": "悬浮列表"
   },
   "recordings": {
     "title": "录制历史",

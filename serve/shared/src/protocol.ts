@@ -27,7 +27,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("raiseHand"), raised: z.boolean() }),
   z.object({ type: z.literal("chat"), text: z.string().min(1).max(2000) }),
-  z.object({ type: z.literal("setLayout"), layout: z.enum(["grid", "speaker", "training"]) }),
+  z.object({ type: z.literal("setLayout"), layout: z.enum(["grid", "speaker"]) }),
   z.object({ type: z.literal("setFocus"), peerId: z.string().nullable() }),
   z.object({
     type: z.literal("host"),
@@ -141,7 +141,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     recordAllowed: z.boolean().optional(),
     // 房间当前布局与焦点：后入会者据此直接落到主持人已切换的布局，
     // 否则前端只会用默认值（宫格）。
-    layout: z.enum(["grid", "speaker", "training"]).optional(),
+    layout: z.enum(["grid", "speaker"]).optional(),
     focusPeerId: z.string().nullable().optional(),
     // 房间当前共享权限：主持人可能在有人入会前就已关闭共享，
     // 不下发会导致后入会者看到可用的共享入口、点击却被服务端拒绝。
@@ -198,7 +198,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("layout"),
-    layout: z.enum(["grid", "speaker", "training"]),
+    layout: z.enum(["grid", "speaker"]),
     focusPeerId: z.string().nullable(),
   }),
   z.object({ type: z.literal("forceMute"), audio: z.boolean(), video: z.boolean() }),

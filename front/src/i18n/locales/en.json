@@ -316,7 +316,6 @@
     "hostOnlyHint": "Only the host can change the layout",
     "layoutGrid": "Grid layout",
     "layoutSpeaker": "Speaker layout",
-    "layoutTraining": "Training layout",
     "focusSpeaker": "Set as main view",
     "exitFocus": "Click to exit main view",
     "noCameraHint": "No camera detected. Joined in audio-only mode; you can still see other participants.",
@@ -447,7 +446,12 @@
     "sideListTop": "Top Strip",
     "sideListFloat": "Floating Panel",
     "onlyShowSpeakers": "Only Show Speakers",
-    "reaction": "Reactions"
+    "reaction": "Reactions",
+    "layoutPanelTitle": "Default Layout",
+    "layoutGridNine": "9-up Grid",
+    "layoutVariantEmbed": "Right Member List",
+    "layoutVariantTop": "Top Member List",
+    "layoutVariantFloat": "Floating Panel"
   },
   "recordings": {
     "title": "Recordings",

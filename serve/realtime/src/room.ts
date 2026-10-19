@@ -16,7 +16,7 @@ export class MeetingRoom {
   waitingRoomEnabled: boolean;
   allowShareDefault: boolean;
   recordAllowed: boolean;
-  layout: "grid" | "speaker" | "training" = "grid";
+  layout: "grid" | "speaker" = "grid";
   focusPeerId: string | null = null;
   ended = false;
   private peers = new Map<string, Peer>();

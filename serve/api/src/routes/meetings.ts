@@ -279,7 +279,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const [rows] = await db.query(
       `SELECT m.id, m.code, m.title, m.host_user_id, m.scheduled_at, m.created_at, m.ended_at,
               u.user_name AS host_name,
-              (SELECT COUNT(*) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') AS participants,
+              (SELECT COUNT(*) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') + CASE WHEN m.host_user_id IS NULL THEN 0 WHEN EXISTS (SELECT 1 FROM meeting_invitations ii2 WHERE ii2.meeting_id = m.id AND ii2.status = 'attended' AND ii2.user_id = m.host_user_id) THEN 0 ELSE 1 END AS participants,
               (SELECT MIN(ii.joined_at) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') AS first_joined
        FROM meetings m
        LEFT JOIN sys_user u ON u.user_id = m.host_user_id

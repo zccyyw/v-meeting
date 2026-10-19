@@ -19,12 +19,12 @@ import { HostControls } from "@/components/HostControls";
 import { Modal } from "@/components/Modal";
 import { VideoGrid, type LayoutCols } from "@/components/VideoGrid";
 import { WaitingRoom } from "@/components/WaitingRoom";
+import { MediaRoom, type MediaRoomSnapshot } from "@/media/room";
 import { InvitationPanel } from "@/components/InvitationPanel";
 import { FloatingPanel } from "@/components/FloatingPanel";
 import { useActiveSpeaker, type ActiveSpeakerSource } from "@/hooks/useActiveSpeaker";
 import { useIsNarrow } from "@/hooks/useIsNarrow";
 import { useRecorder } from "@/hooks/useRecorder";
-import { MediaRoom, type MediaRoomSnapshot, type MeetingLayout } from "@/media/room";
 import { SignalClient } from "@/signal/client";
 import { showMessage } from "@/ui/toast";
 import type { RecorderSource } from "@/media/recorder";
@@ -168,7 +168,7 @@ function MeetingPageInner() {
     () => localStorage.getItem("meeting.showJoinDuration") === "1",
   );
   // 布局子型（本地偏好，仅自己生效）
-  const [sideListLayout, setSideListLayout] = useState<"default" | "top" | "float">(function (init) { return init === "top" || init === "float" ? init : "default"; }(localStorage.getItem("meeting.sideListLayout") || "default"));
+  const [sideListLayout, setSideListLayout] = useState<"embed" | "top" | "float">(function (init) { return init === "top" || init === "float" ? init : "embed"; }(localStorage.getItem("meeting.sideListLayout") || "default"));
   const [onlyShowSpeakers, setOnlyShowSpeakers] = useState(
     () => localStorage.getItem("meeting.onlyShowSpeakers") === "1",
   );
@@ -714,7 +714,6 @@ function MeetingPageInner() {
       <header className="meeting-header">
         <div className="meeting-header-info">
           <Popover
-            trigger={["click"]}
             placement="bottomLeft"
             content={(
               <div className="meeting-detail-panel">
@@ -773,51 +772,97 @@ function MeetingPageInner() {
                 <span>·</span>
                 <span>{t("meeting.joinDuration")} {formatDuration(joinElapsed)}</span>
               </>
-            )}            {roleLabel ? (
-              <>
-                <span>·</span>
-                <span>{roleLabel}</span>
-              </>
-            ) : null}
+            )}
           </p>
         </div>
 
         <div className="meeting-header-actions">
           {inMeeting && (
-            <Dropdown
+            <Popover
               trigger={["click"]}
-              disabled={!isHost}
-              menu={{
-                selectable: true,
-                selectedKeys: [snap.layout],
-                onClick: ({ key }) => {
-                  if (!isHost || key === snap.layout) return;
-                  roomRef.current?.setLayout(key as MeetingLayout);
-                },
-                items: [
-                  { key: "grid", label: t("meeting.layoutGrid") },
-                  { key: "speaker", label: t("meeting.layoutSpeaker") },
-                  { key: "training", label: t("meeting.layoutTraining") },
-                ],
-              }}
-            >
-              <button
-                type="button"
-                className="meeting-header-btn"
-                disabled={!isHost}
-                aria-label={t("meeting.layoutLabel")}
-                title={isHost ? undefined : t("meeting.hostOnlyHint")}
-              >
-                {t(
-                  snap.layout === "grid"
-                    ? "meeting.layoutGrid"
-                    : snap.layout === "speaker"
-                      ? "meeting.layoutSpeaker"
-                      : "meeting.layoutTraining"
+              placement="bottomRight"
+              content={(
+              <div className="layout-panel">
+                <div className="layout-panel-head">
+                  <span className="layout-panel-title">{t("meeting.layoutPanelTitle")}</span>
+                  <label className="layout-panel-speakers">
+                    <input
+                      type="checkbox"
+                      checked={onlyShowSpeakers}
+                      onChange={(e) => {
+                        setOnlyShowSpeakers(e.target.checked);
+                        localStorage.setItem("meeting.onlyShowSpeakers", e.target.checked ? "1" : "0");
+                      }}
+                    />
+                    {t("meeting.onlyShowSpeakers")}
+                  </label>
+                </div>
+                <div className="layout-panel-tabs">
+                  <button
+                    type="button"
+                    className={snap.layout === "grid" ? "is-active" : ""}
+                    disabled={!isHost}
+                    title={isHost ? undefined : t("meeting.hostOnlyHint")}
+                    onClick={() => {
+                      if (isHost && snap.layout !== "grid") roomRef.current?.setLayout("grid");
+                    }}
+                  >
+                    {t("meeting.layoutGrid")}
+                  </button>
+                  <button
+                    type="button"
+                    className={snap.layout === "speaker" ? "is-active" : ""}
+                    disabled={!isHost}
+                    title={isHost ? undefined : t("meeting.hostOnlyHint")}
+                    onClick={() => {
+                      if (isHost && snap.layout !== "speaker") roomRef.current?.setLayout("speaker");
+                    }}
+                  >
+                    {t("meeting.layoutSpeaker")}
+                  </button>
+                </div>
+                {snap.layout === "grid" ? (
+                  <div className="layout-panel-cards">
+                    <button type="button" className="layout-card is-active">
+                      <span className="layout-thumb layout-thumb--grid">
+                        <i /><i /><i /><i /><i /><i /><i /><i /><i />
+                      </span>
+                      {t("meeting.layoutGridNine")}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="layout-panel-cards">
+                    {([
+                      ["embed", "layoutVariantEmbed", "layout-thumb--embed"],
+                      ["top", "layoutVariantTop", "layout-thumb--top"],
+                      ["float", "layoutVariantFloat", "layout-thumb--float"],
+                    ] as const).map(([v, labelKey, thumbCls]) => (
+                      <button
+                        key={v}
+                        type="button"
+                        className={`layout-card${sideListLayout === v ? " is-active" : ""}`}
+                        onClick={() => {
+                          if (snap.layout !== "speaker" && isHost) roomRef.current?.setLayout("speaker");
+                          setSideListLayout(v);
+                          localStorage.setItem("meeting.sideListLayout", v);
+                        }}
+                      >
+                        <span className={`layout-thumb ${thumbCls}`}>
+                          <i /><i />
+                        </span>
+                        {t(`meeting.${labelKey}`)}
+                      </button>
+                    ))}
+                  </div>
                 )}
+              </div>
+              )}
+            >
+              <button type="button" className="meeting-header-btn" aria-label={t("meeting.layoutLabel")}>
+                {snap.layout === "grid" ? t("meeting.layoutGrid") : t("meeting.layoutSpeaker")}
                 <DownOutlined style={{ fontSize: 10, marginLeft: 6 }} aria-hidden />
               </button>
-            </Dropdown>
+            </Popover>
           )}
           {inMeeting && isHost && (
             <Dropdown
@@ -967,11 +1012,11 @@ function MeetingPageInner() {
                     value={sideListLayout}
                     onChange={(e) => {
                       const v = e.target.value;
-                      setSideListLayout(v === "top" ? "top" : v === "float" ? "float" : "default");
+                      setSideListLayout(v === "top" ? "top" : v === "float" ? "float" : "embed");
                       localStorage.setItem("meeting.sideListLayout", v);
                     }}
                   >
-                    <option value="default">{t("meeting.sideListDefault")}</option>
+                    <option value="embed">{t("meeting.sideListDefault")}</option>
                     <option value="top">{t("meeting.sideListTop")}</option>
                     <option value="float">{t("meeting.sideListFloat")}</option>
                   </select>
@@ -1065,8 +1110,6 @@ function MeetingPageInner() {
         </div>
       </header>
 
-      <div
-      >
         {/* 阻断级错误（红）：进不了会 / 人数超限等 */}
         {snap.error && snap.error !== "reconnect_failed" && (
           <p className="error">
@@ -1184,6 +1227,8 @@ function MeetingPageInner() {
           onDeny={(id) => roomRef.current?.deny(id)}
         />
 
+        {inMeeting && (
+          <div className="meeting-main">
             <div className="meeting-videos">
               <VideoGrid
                 localStream={snap.localStream}
@@ -1301,6 +1346,7 @@ function MeetingPageInner() {
               </FloatingPanel>
             )}
           </div>
+        )}
       </div>
 
       {inMeeting && (

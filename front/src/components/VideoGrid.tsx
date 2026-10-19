@@ -62,7 +62,7 @@ type Props = {
   /** 主持人控制的"成员轮播侧栏对参会者可见"（主持人端始终可见） */
   sideListVisible?: boolean;
   /** 本地布局子型：default 右侧列/面板、top 顶部横排、float 悬浮面板（仅自己生效） */
-  sideVariant?: "default" | "top" | "float";
+  sideVariant?: "embed" | "top" | "float";
   /** "仅显示正在说话的人"：最近 3s 有电平活动的成员集合；null=不过滤 */
   onlySpeakers?: Set<string> | null;
 };
@@ -660,7 +660,7 @@ export function VideoGrid({
   rotationIntervalMs,
   immersive = false,
   sideListVisible = true,
-  sideVariant = "default",
+  sideVariant = "embed",
   onlySpeakers = null,
 }: Props) {
   const { t } = useTranslation();
@@ -838,12 +838,12 @@ export function VideoGrid({
         ? hostPeerId
         : (tiles[0]?.peerId ?? null);
 
-  const useSideLayout = layout === "speaker" || layout === "training" || hasScreen;
+  const useSideLayout = layout === "speaker" || hasScreen;
 
   // 点击切换主画面：培训模式与演讲者布局均开放（onFocusPeer 仅主持人注入，
   // 服务端 setFocus 亦做 host 校验）。
   const focusEnabled =
-    (layout === "training" || layout === "speaker") && onFocusPeer != null;
+    layout === "speaker" && onFocusPeer != null;
   // 是否为"显式焦点"（主持人点选的成员，而非默认回退的主画面）。
   const explicitFocus =
     focusPeerId != null && tiles.some((t) => t.peerId === focusPeerId && !t.isScreen);
@@ -879,7 +879,7 @@ export function VideoGrid({
   //  - 任意布局：只要有投屏就显示（grid/speaker 投屏时也会走侧栏分支），
   //    修复“投屏时其他成员看不到画中画”的问题
   const showPip =
-    (layout === "training" || hasScreen) &&
+    hasScreen &&
     Boolean(pipTile) &&
     focusTile != null &&
     (selfSharing
@@ -899,27 +899,12 @@ export function VideoGrid({
     stripTiles.length > 0 &&
     !immersive &&
     (isHostSelf || sideListVisible);
-  const isTraining = layout === "training";
   if (useSideLayout && focusTile) {
     return (
       <>
         {remoteAudio}
         {screenAudio}
-        <div className={`video-grid ${isTraining ? "video-grid--training" : "video-grid--side"}${sideVariant === "top" ? " video-grid--top" : ""}`}>
-          <div className="video-side-main">
-            <VideoTile
-              stream={focusTile.stream}
-              label={focusTile.label}
-              muted={focusTile.muted}
-              handRaised={focusTile.handRaised}
-              handTitle={handTitle}
-              focused
-              showAvatar={!focusTile.isScreen && focusTile.forceAvatar}
-              isScreen={focusTile.isScreen}
-              localSelfScreen={focusTile.localSelfScreen}
-              micMuted={focusTile.micMuted}
-            />
-          </div>
+        <div className={`video-grid ${"video-grid--side"}${sideVariant === "top" ? " video-grid--top" : ""}`}>
           {showSideList && sideVariant === "top" && (
             <div className="video-toplist" role="list">
               {shownStripTiles.map((tile) => (
@@ -943,6 +928,22 @@ export function VideoGrid({
               ))}
             </div>
           )}
+
+
+          <div className="video-side-main">
+            <VideoTile
+              stream={focusTile.stream}
+              label={focusTile.label}
+              muted={focusTile.muted}
+              handRaised={focusTile.handRaised}
+              handTitle={handTitle}
+              focused
+              showAvatar={!focusTile.isScreen && focusTile.forceAvatar}
+              isScreen={focusTile.isScreen}
+              localSelfScreen={focusTile.localSelfScreen}
+              micMuted={focusTile.micMuted}
+            />
+          </div>
           {showSideList && sideVariant !== "top" && (
             <DraggableSideList
               tiles={shownStripTiles}
@@ -950,7 +951,7 @@ export function VideoGrid({
               focusedPeerId={explicitFocus ? focusPeerId : null}
               handTitle={handTitle}
               onFocusPeer={onFocusPeer}
-              variant={sideVariant === "float" ? "float" : isTraining ? "panel" : "embed"}
+              variant={sideVariant === "float" ? "float" : "embed"}
               rttByPeer={peerRtt}
               rotationEnabled={rotationEnabled}
               rotationIntervalMs={rotationIntervalMs}

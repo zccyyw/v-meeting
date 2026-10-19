@@ -20,7 +20,7 @@ export type PeerInfo = {
   recording: boolean;
 };
 
-export type MeetingLayout = "grid" | "speaker" | "training";
+export type MeetingLayout = "grid" | "speaker";
 
 export type ChatMessage = {
   peerId: string;
@@ -1069,36 +1069,36 @@ export class MediaRoom {
 
       case "sideListVisibleChanged":
         this.sideListVisible = msg.visible;
-        break;      case "lockedChanged":
-      this.locked = msg.locked;
-      break;
+        break;
+
+      case "lockedChanged":
+        this.locked = msg.locked;
+        break;
 
       case "hideCodeChanged":
       this.hideCode = msg.hide;
       break;
 
       case "chatAllowedChanged":
-      this.chatAllowed = msg.allowed;
-      break;
+        this.chatAllowed = msg.allowed;
+        break;
 
       case "selfUnmuteAllowedChanged":
-      this.selfUnmuteAllowed = msg.allowed;
-      break;
+        this.selfUnmuteAllowed = msg.allowed;
+        break;
 
       case "raiseHandAllowedChanged":
-      this.raiseHandAllowed = msg.allowed;
-      break;
+        this.raiseHandAllowed = msg.allowed;
+        break;
 
       case "reactionAllowedChanged":
-      this.reactionAllowed = msg.allowed;
-      break;
+        this.reactionAllowed = msg.allowed;
+        break;
 
       case "reaction":
       // 表情反应气泡由 UI 层消费（emit 后快照不含瞬时消息）；此处仅透传事件
       this.emitReaction?.(msg.peerId, msg.emoji);
       break;
-        this.emit();
-        break;
 
       case "peerNetworkStats": {
         this.peerRtt = new Map(msg.peers.map((p) => [p.peerId, p.rttMs]));
