@@ -232,7 +232,7 @@ export async function noticeRoutes(app: FastifyInstance, db: Db, redis: Redis) {
           `SELECT u.user_id,
                   COALESCE(u.nick_name, u.user_name, '') AS name,
                   COALESCE(d.dept_name, '') AS dept_name,
-                  MAX(CASE WHEN r.user_id IS NULL THEN 0 ELSE 1 END) AS read
+                  MAX(CASE WHEN r.user_id IS NULL THEN 0 ELSE 1 END) AS isRead
            FROM sys_notice_target t
            JOIN sys_user u ON (
                 (t.target_type = 'user' AND u.user_id = t.target_id)
@@ -242,25 +242,25 @@ export async function noticeRoutes(app: FastifyInstance, db: Db, redis: Redis) {
            LEFT JOIN sys_notice_read r ON r.notice_id = t.notice_id AND r.user_id = u.user_id
            WHERE t.notice_id = ?
            GROUP BY u.user_id
-           ORDER BY read ASC, u.user_id ASC`,
+           ORDER BY isRead ASC, u.user_id ASC`,
           [id],
         )
       : await db.query(
           `SELECT u.user_id,
                   COALESCE(u.nick_name, u.user_name, '') AS name,
                   COALESCE(d.dept_name, '') AS dept_name,
-                  CASE WHEN r.user_id IS NULL THEN 0 ELSE 1 END AS read
+                  CASE WHEN r.user_id IS NULL THEN 0 ELSE 1 END AS isRead
            FROM sys_user u
            LEFT JOIN sys_dept d ON d.dept_id = u.dept_id
            LEFT JOIN sys_notice_read r ON r.notice_id = ? AND r.user_id = u.user_id
-           ORDER BY read ASC, u.user_id ASC`,
+           ORDER BY isRead ASC, u.user_id ASC`,
           [id],
         );
-    const recipients = (recRows as { user_id: number | string; name: string; dept_name: string; read: number | string }[]).map((r) => ({
+    const recipients = (recRows as { user_id: number | string; name: string; dept_name: string; isRead: number | string }[]).map((r) => ({
       userId: Number(r.user_id),
       name: r.name,
       deptName: r.dept_name,
-      read: Number(r.read),
+      read: Number(r.isRead),
     }));
     const readCount = recipients.filter((r) => r.read === 1).length;
 
@@ -382,18 +382,18 @@ export async function noticeRoutes(app: FastifyInstance, db: Db, redis: Redis) {
 
     const [rows] = await db.query(
       `SELECT n.notice_id, n.notice_title, n.notice_type, n.create_time,
-              CASE WHEN r.user_id IS NULL THEN 0 ELSE 1 END AS read
+              CASE WHEN r.user_id IS NULL THEN 0 ELSE 1 END AS isRead
        FROM sys_notice n
        LEFT JOIN sys_notice_read r ON r.notice_id = n.notice_id AND r.user_id = ${uid}
        WHERE ${vis}
        ORDER BY n.notice_id DESC ${limitClause(db, page, pageSize)}`,
     );
-    const items = (rows as { notice_id: number | string; notice_title: string; notice_type: string; create_time: string; read: number }[]).map((r) => ({
+    const items = (rows as { notice_id: number | string; notice_title: string; notice_type: string; create_time: string; isRead: number }[]).map((r) => ({
       noticeId: Number(r.notice_id),
       noticeTitle: r.notice_title,
       noticeType: r.notice_type,
       createTime: r.create_time,
-      read: Number(r.read),
+      read: Number(r.isRead),
     }));
     return { items, total, unreadCount, page, pageSize };
   });

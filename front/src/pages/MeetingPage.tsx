@@ -891,7 +891,6 @@ function MeetingPageInner() {
                   { key: "freeChat", label: (snap.chatAllowed ? "\u2713 " : "") + t("meeting.toolFreeChat") },
                   { key: "selfUnmute", label: (snap.selfUnmuteAllowed ? "\u2713 " : "") + t("meeting.toolSelfUnmute") },
                   { key: "raiseHand", label: (snap.raiseHandAllowed ? "\u2713 " : "") + t("meeting.toolRaiseHand") },
-                  { key: "reaction", label: (snap.reactionAllowed ? "\u2713 " : "") + t("meeting.toolReaction") },
                   { type: "divider" },
                   { key: "waiting", label: (snap.waitingRoomEnabled ? "\u2713 " : "") + t("meeting.waitingRoomToggle") },
                   { key: "record", label: (snap.recordAllowed ? "\u2713 " : "") + t("meeting.recordToggle") },
@@ -903,7 +902,6 @@ function MeetingPageInner() {
                     case "freeChat": roomRef.current?.setChatAllowed(!snap.chatAllowed); break;
                     case "selfUnmute": roomRef.current?.setSelfUnmuteAllowed(!snap.selfUnmuteAllowed); break;
                     case "raiseHand": roomRef.current?.setRaiseHandAllowed(!snap.raiseHandAllowed); break;
-                    case "reaction": roomRef.current?.setReactionAllowed(!snap.reactionAllowed); break;
                     case "waiting": roomRef.current?.setWaitingRoom(!snap.waitingRoomEnabled); break;
                     case "record": roomRef.current?.setRecordAllowed(!snap.recordAllowed); break;
                   }
