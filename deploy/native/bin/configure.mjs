@@ -139,7 +139,7 @@ async function main() {
   }
 
   // --- Seed default users ---
-  const runSeed = await ask("Seed default users (admin/admin123, test1-5/123456)? (Y/n)", "Y");
+  const runSeed = await ask("Seed default users (admin/123456, test1-5/123456)? (Y/n)", "Y");
   if (runSeed.toLowerCase() !== "n") {
     log("Seeding default users...");
     runNode(path.join(PREFIX, "app/serve/api"), "dist/seed-admin.js");
@@ -168,7 +168,7 @@ async function main() {
   const hasCertNow = fs.existsSync(path.join(CERT_DIR, "fullchain.pem"));
   const proto = hasCertNow ? "https" : "http";
   log(`  Access: ${proto}://<server-ip>:${port}/`);
-  log(`  Login:  admin / admin123  (超级管理员)`);
+  log(`  Login:  admin / 123456  (超级管理员)`);
   log(`          test1-5 / 123456    (普通用户)`);
 
   rl.close();

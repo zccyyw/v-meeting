@@ -155,7 +155,7 @@ run_node "$PREFIX/app/serve/api" dist/migrate.js \
   || log "迁移失败：请确认 conf/.env 的数据库配置可用（默认 MySQL 需先建库建用户并启动数据库），修正后重新运行 sudo ./install.sh"
 
 if [[ "${MEETING_SKIP_SEED:-0}" != "1" ]]; then
-  log "写入默认用户：admin/admin123（超级管理员）、test1-5/123456（普通用户）（可用 MEETING_SKIP_SEED=1 跳过）"
+  log "写入默认用户：admin/123456（超级管理员）、test1-5/123456（普通用户）（可用 MEETING_SKIP_SEED=1 跳过）"
   run_node "$PREFIX/app/serve/api" dist/seed-admin.js || log "seed 已存在或失败（可稍后手动执行）"
 fi
 
@@ -177,5 +177,5 @@ log "  配置: $PREFIX/conf/.env"
 log "  Node 运行时: $NODE_BIN（$NODE_VER）"
 log "  网关默认: https://0.0.0.0:\${GATEWAY_PORT:-443}  （/ → 前端, /api → API, /ws → 信令）"
 log "  健康检查: curl -k https://127.0.0.1/api/healthz"
-log "  默认账号: admin / admin123 （生产请立即修改密码）"
+log "  默认账号: admin / 123456 （生产请立即修改密码）"
 log "说明文档: $ROOT/INSTALL.md"

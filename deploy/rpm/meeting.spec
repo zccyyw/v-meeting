@@ -63,7 +63,7 @@ echo ""
 echo "  4. Verify:     curl -k https://127.0.0.1/api/healthz"
 echo "                 (or http:// if no cert)"
 echo ""
-echo "  Default login: admin / admin123"
+echo "  Default login: admin / 123456"
 echo ""
 
 %preun

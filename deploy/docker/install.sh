@@ -174,7 +174,7 @@ if [ "$CMD" = "--env-only" ]; then
 fi
 
 compose up -d
-echo "OK: 已启动。默认账号 admin/admin123（首次登录会要求修改密码）"
+echo "OK: 已启动。默认账号 admin/123456（首次登录会要求修改密码）"
 echo "    查看日志: docker-compose -p meeting logs -f   （注意必须带 -p meeting）"
 echo "    停止: bash install.sh stop    卸载: bash install.sh down"
 echo "    443 HTTPS 需要证书：bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>"

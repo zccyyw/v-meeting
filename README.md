@@ -96,13 +96,13 @@ npm run dev:front
 npm run dev:local
 ```
 
-浏览器访问 `http://localhost:8081`，默认账号 `admin / admin123`。
+浏览器访问 `http://localhost:8081`，默认账号 `admin / 123456`。
 
 ### 全容器验证或演示
 ```bash
 
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-# 验证： http://localhost:8088 （admin/admin123）
+# 验证： http://localhost:8088 （admin/123456）
 
 ```
 
@@ -278,7 +278,7 @@ curl -k https://127.0.0.1/api/healthz
 
 | 用户名 | 密码 | 昵称 | 角色 | 说明 |
 |--------|------|------|------|------|
-| `admin` | `admin123` | 管理员 | 超级管理员 (role_id=1) | 拥有所有权限 |
+| `admin` | `123456` | 管理员 | 超级管理员 (role_id=1) | 拥有所有权限 |
 | `system` | `System@123` | 系统用户 | 超级管理员 (role_id=1) | 隐藏用户，仅用于系统级操作 |
 | `sysadmin` | `Admin@123` | 系统管理员 | 系统管理员 (role_id=3) | 三员之一，管理用户与配置 |
 | `authadmin` | `Admin@123` | 授权管理员 | 授权管理员 (role_id=4) | 三员之一，会议 / 用户审批 |

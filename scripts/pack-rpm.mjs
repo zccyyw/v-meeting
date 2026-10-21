@@ -268,7 +268,7 @@ writeFileSync(
     "Verify:",
     "  curl -k https://127.0.0.1/api/healthz",
     "",
-    "Default login: admin / admin123",
+    "Default login: admin / 123456",
     "",
   ].join("\n"),
 );

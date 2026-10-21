@@ -119,7 +119,7 @@ async function seedLegacyUser(
 
 export async function seedAdmin(db?: Db) {
   if (!db) db = await createPool();
-  const adminHash = await hashPassword("admin123");
+  const adminHash = await hashPassword("123456");
   const testHash = await hashPassword("123456");
   const useSysUser = await hasSysUser(db);
   const seeded: string[] = [];
@@ -201,7 +201,7 @@ if (isMain) {
   seedAdmin()
     .then((r) => {
       console.log(`seeded ${r.seeded.length} users: ${r.seeded.join(", ")}`);
-      console.log(`  admin       / admin123   (系统管理员)`);
+      console.log(`  admin       / 123456     (系统管理员)`);
       console.log(`  system      / System@123 (系统隐藏用户)`);
       console.log(`  authadmin   / Admin@123  (授权管理员)`);
       console.log(`  auditadmin  / Admin@123  (审计管理员)`);

@@ -30,6 +30,9 @@ import { showMessage } from "@/ui/toast";
 import type { RecorderSource } from "@/media/recorder";
 import { App as AntApp, Dropdown, Popover } from "antd";
 
+/** 宫格布局"一屏N等分"可选档位（对齐腾讯会议：3/6/9/12，默认 9） */
+const GRID_DIVISIONS = [3, 6, 9, 12] as const;
+
 function formatDuration(ms: number): string {
   const total = Math.floor(ms / 1000);
   const h = Math.floor(total / 3600);
@@ -186,7 +189,11 @@ function MeetingPageInner() {
       ? displayName
       : snap.peers.find((p) => p.peerId === activeSpeakerId)?.displayName ?? null;
   const [danmuEnabled, setDanmuEnabled] = useState(false);
-  const [layoutCols, setLayoutCols] = useState<LayoutCols>("auto");
+  // 宫格"一屏N等分"：本地偏好，仅自己生效（localStorage 持久化）
+  const [layoutCols, setLayoutCols] = useState<LayoutCols>(function (init) {
+    const n = Number(init);
+    return n === 3 || n === 6 || n === 12 ? (n as LayoutCols) : 9;
+  }(localStorage.getItem("meeting.layoutCols") || "9"));
   const [danmuItems, setDanmuItems] = useState<
     { id: number; text: string; self: boolean }[]
   >([]);
@@ -783,78 +790,88 @@ function MeetingPageInner() {
               placement="bottomRight"
               content={(
               <div className="layout-panel">
-                <div className="layout-panel-head">
-                  <span className="layout-panel-title">{t("meeting.layoutPanelTitle")}</span>
-                  <label className="layout-panel-speakers">
-                    <input
-                      type="checkbox"
-                      checked={onlyShowSpeakers}
-                      onChange={(e) => {
-                        setOnlyShowSpeakers(e.target.checked);
-                        localStorage.setItem("meeting.onlyShowSpeakers", e.target.checked ? "1" : "0");
-                      }}
-                    />
-                    {t("meeting.onlyShowSpeakers")}
-                  </label>
-                </div>
                 <div className="layout-panel-tabs">
-                  <button
-                    type="button"
-                    className={snap.layout === "grid" ? "is-active" : ""}
-                    disabled={!isHost}
-                    title={isHost ? undefined : t("meeting.hostOnlyHint")}
-                    onClick={() => {
-                      if (isHost && snap.layout !== "grid") roomRef.current?.setLayout("grid");
-                    }}
-                  >
+                  <span className={`layout-tab-label${snap.layout === "grid" ? " is-active" : ""}`}>
                     {t("meeting.layoutGrid")}
-                  </button>
-                  <button
-                    type="button"
-                    className={snap.layout === "speaker" ? "is-active" : ""}
-                    disabled={!isHost}
-                    title={isHost ? undefined : t("meeting.hostOnlyHint")}
-                    onClick={() => {
-                      if (isHost && snap.layout !== "speaker") roomRef.current?.setLayout("speaker");
-                    }}
-                  >
-                    {t("meeting.layoutSpeaker")}
-                  </button>
+                  </span>
+                  <span className={`layout-tab-label layout-tab-label--grow${snap.layout === "speaker" ? " is-active" : ""}`}>
+                    <span className="layout-tab-text">{t("meeting.layoutSpeaker")}</span>
+                    <label className="layout-panel-speakers">
+                      <input
+                        type="checkbox"
+                        checked={onlyShowSpeakers}
+                        onChange={(e) => {
+                          setOnlyShowSpeakers(e.target.checked);
+                          localStorage.setItem("meeting.onlyShowSpeakers", e.target.checked ? "1" : "0");
+                        }}
+                      />
+                      {t("meeting.onlyShowSpeakers")}
+                    </label>
+                  </span>
                 </div>
-                {snap.layout === "grid" ? (
-                  <div className="layout-panel-cards">
-                    <button type="button" className="layout-card is-active">
+                <div className="layout-panel-cards">
+                  {/* 宫格卡片：两个点击区——缩略图区点击切宫格布局，等分标签区点击弹等分菜单 */}
+                  <div className={`layout-card${snap.layout === "grid" ? " is-active" : ""}`}>
+                    <button
+                      type="button"
+                      className="layout-card-main"
+                      title={t("meeting.layoutGrid")}
+                      onClick={() => {
+                        if (isHost && snap.layout !== "grid") roomRef.current?.setLayout("grid");
+                      }}
+                    >
                       <span className="layout-thumb layout-thumb--grid">
                         <i /><i /><i /><i /><i /><i /><i /><i /><i />
                       </span>
-                      {t("meeting.layoutGridNine")}
                     </button>
-                  </div>
-                ) : (
-                  <div className="layout-panel-cards">
-                    {([
-                      ["embed", "layoutVariantEmbed", "layout-thumb--embed"],
-                      ["top", "layoutVariantTop", "layout-thumb--top"],
-                      ["float", "layoutVariantFloat", "layout-thumb--float"],
-                    ] as const).map(([v, labelKey, thumbCls]) => (
-                      <button
-                        key={v}
-                        type="button"
-                        className={`layout-card${sideListLayout === v ? " is-active" : ""}`}
-                        onClick={() => {
-                          if (snap.layout !== "speaker" && isHost) roomRef.current?.setLayout("speaker");
-                          setSideListLayout(v);
-                          localStorage.setItem("meeting.sideListLayout", v);
-                        }}
-                      >
-                        <span className={`layout-thumb ${thumbCls}`}>
-                          <i /><i />
-                        </span>
-                        {t(`meeting.${labelKey}`)}
+                    <Dropdown
+                      trigger={["click"]}
+                      placement="bottomLeft"
+                      menu={{
+                        items: GRID_DIVISIONS.map((n) => ({
+                          key: String(n),
+                          label: t("meeting.gridDivisions", { n }),
+                        })),
+                        selectedKeys: [String(layoutCols)],
+                        onClick: ({ key }) => {
+                          const n = Number(key) as LayoutCols;
+                          setLayoutCols(n);
+                          localStorage.setItem("meeting.layoutCols", key);
+                          // 切换等分时联动切换会议布局（当前在演讲者布局则切回宫格）
+                          if (isHost && snap.layout !== "grid") roomRef.current?.setLayout("grid");
+                        },
+                      }}
+                    >
+                      <button type="button" className="layout-card-label">
+                        {t("meeting.gridDivisions", { n: layoutCols })}
+                        <DownOutlined style={{ fontSize: 10 }} aria-hidden />
                       </button>
-                    ))}
+                    </Dropdown>
                   </div>
-                )}
+                  {([
+                    ["embed", "layoutVariantEmbed", "layout-thumb--embed", 4],
+                    ["top", "layoutVariantTop", "layout-thumb--top", 5],
+                    ["float", "layoutVariantFloat", "layout-thumb--float", 3],
+                  ] as const).map(([v, labelKey, thumbCls, iconCount]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`layout-card${snap.layout === "speaker" && sideListLayout === v ? " is-active" : ""}`}
+                      onClick={() => {
+                        if (snap.layout !== "speaker" && isHost) roomRef.current?.setLayout("speaker");
+                        setSideListLayout(v);
+                        localStorage.setItem("meeting.sideListLayout", v);
+                      }}
+                    >
+                      <span className={`layout-thumb ${thumbCls}`}>
+                        {Array.from({ length: iconCount }, (_, i) => (
+                          <i key={i} />
+                        ))}
+                      </span>
+                      {t(`meeting.${labelKey}`)}
+                    </button>
+                  ))}
+                </div>
               </div>
               )}
             >
@@ -1006,21 +1023,6 @@ function MeetingPageInner() {
                     {t("meeting.sideListVisible")}
                   </label>
                 )}
-                <label className="control-select">
-                  {t("meeting.sideListLayout")}
-                  <select
-                    value={sideListLayout}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setSideListLayout(v === "top" ? "top" : v === "float" ? "float" : "embed");
-                      localStorage.setItem("meeting.sideListLayout", v);
-                    }}
-                  >
-                    <option value="embed">{t("meeting.sideListDefault")}</option>
-                    <option value="top">{t("meeting.sideListTop")}</option>
-                    <option value="float">{t("meeting.sideListFloat")}</option>
-                  </select>
-                </label>
                 <label className="checkbox danmu-toggle-row">
                   <input
                     type="checkbox"
@@ -1031,20 +1033,6 @@ function MeetingPageInner() {
                     }}
                   />
                   {t("meeting.onlyShowSpeakers")}
-                </label>
-                <label className="control-select">
-                  {t("meeting.layoutCols")}
-                  <select
-                    value={String(layoutCols)}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setLayoutCols(v === "4" ? 4 : v === "6" ? 6 : "auto");
-                    }}
-                  >
-                    <option value="auto">{t("meeting.layoutColsAuto")}</option>
-                    <option value="4">{t("meeting.layoutCols4")}</option>
-                    <option value="6">{t("meeting.layoutCols6")}</option>
-                  </select>
                 </label>
                 <label className="checkbox danmu-toggle-row">
                   <input
@@ -1355,8 +1343,6 @@ function MeetingPageInner() {
           camEnabled={snap.camEnabled}
           handRaised={snap.handRaised}
           handDisabled={!snap.raiseHandAllowed && !isHost}
-          onReaction={(emoji) => roomRef.current?.setReaction(emoji)}
-          reactionDisabled={!snap.reactionAllowed && !isHost}
           sharingScreen={snap.sharingScreen}
           canShare={snap.canShare}
           isHost={isHost}

@@ -144,7 +144,7 @@ sudo -u meeting /opt/meeting/bin/node --env-file=/opt/meeting/conf/.env dist/see
 |----|------|
 | 浏览器入口 | `https://<服务器IP>/`（`GATEWAY_PORT` 默认 443，需已放证书） |
 | API 健康检查 | `curl -k https://127.0.0.1/api/healthz` |
-| 默认账号 | `admin` / `admin123` |
+| 默认账号 | `admin` / `123456` |
 
 ```bash
 curl -sk https://127.0.0.1/api/healthz

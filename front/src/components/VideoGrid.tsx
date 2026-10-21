@@ -5,7 +5,8 @@ import { HandIcon } from "@/components/HandIcon";
 import type { MeetingLayout, PeerInfo } from "@/media/room";
 import { useSpeaking } from "@/media/useSpeaking";
 
-export type LayoutCols = "auto" | 4 | 6;
+/** 宫格布局"一屏N等分"可选档位（对齐腾讯会议） */
+export type LayoutCols = 3 | 6 | 9 | 12;
 
 export type Tile = {
   key: string;
@@ -48,7 +49,7 @@ type Props = {
   hostPeerId?: string | null;
   /**
    * Called when user clicks a tile to set focus, or null to exit focus
-   * (training/speaker mode, host only).
+   * (speaker mode, host only).
    */
   onFocusPeer?: (peerId: string | null) => void;
   /** 各成员网络延迟（ms），key=peerId；驱动画面右上角延迟角标 */
@@ -80,8 +81,70 @@ function hasLiveVideo(stream: MediaStream | null | undefined): boolean {
   return stream.getVideoTracks().some((t) => t.readyState === "live");
 }
 
-/** Draggable side list — can be dragged as a floating panel; collapsible. */
+/**
+ * 成员画面轮播（图片轮播式）：内容超出容器时每隔 intervalMs 沿轴平滑滚动
+ * 一屏循环展示；用户滚轮/触摸时暂停，交互停止 10 秒后自动恢复。
+ * 注意：仅在用户手动滚动（滚轮/触摸）期间暂停，鼠标悬停不暂停——用户盯着
+ * 面板看轮播时鼠标必然停在面板上，悬停暂停会导致"看起来永不滚动"。
+ */
+function useStripRotation(
+  axis: "x" | "y",
+  rotationEnabled: boolean | undefined,
+  rotationIntervalMs: number,
+  dep: unknown,
+) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [userHold, setUserHold] = useState(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const markUserHold = useCallback(() => {
+    setUserHold(true);
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = setTimeout(() => setUserHold(false), 10_000);
+  }, []);
+  useEffect(
+    () => () => {
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!rotationEnabled || userHold) return;
+    const timer = setInterval(() => {
+      const el = listRef.current;
+      if (!el) return;
+      const horizontal = axis === "x";
+      const maxScroll = horizontal
+        ? el.scrollWidth - el.clientWidth
+        : el.scrollHeight - el.clientHeight;
+      if (maxScroll <= 4) return;
+      const cur = horizontal ? el.scrollLeft : el.scrollTop;
+      const atEnd = cur >= maxScroll - 4;
+      const step = horizontal ? el.clientWidth : el.clientHeight;
+      const target = atEnd ? 0 : Math.min(cur + step, maxScroll);
+      if (horizontal) el.scrollTo({ left: target, behavior: "smooth" });
+      else el.scrollTo({ top: target, behavior: "smooth" });
+    }, rotationIntervalMs);
+    return () => clearInterval(timer);
+  }, [axis, rotationEnabled, userHold, rotationIntervalMs, dep]);
+
+  // 轮播关闭时复位滚动位置
+  useEffect(() => {
+    if (!rotationEnabled && listRef.current) {
+      listRef.current.scrollTop = 0;
+      listRef.current.scrollLeft = 0;
+    }
+  }, [rotationEnabled]);
+
+  return { listRef, markUserHold };
+}
+
+/**
+ * 演讲者布局成员列表：
+ * - embed：右侧流入列，可拖成自由浮窗；
+ * - float：默认停靠屏幕右缘的悬浮面板，可收起/展开，不可拖动。
+ */
 export function DraggableSideList({
   tiles,
   focusEnabled,
@@ -116,84 +179,43 @@ export function DraggableSideList({
   rotationEnabled?: boolean;
   /** 轮换间隔（ms） */
   rotationIntervalMs?: number;
-  /**
-   * embed：嵌入右侧列（演讲布局，可拖动/收起）；
-   * panel：固定右侧悬浮面板（培训布局，默认收起、不可拖动）。
-   */
-  variant?: "embed" | "panel" | "float";
+  /** embed：右侧流入列（可拖动）；float：停靠右缘悬浮面板（可收起/展开） */
+  variant?: "embed" | "float";
 }) {
-  // —— 成员画面自动轮播（图片轮播式）：内容超出容器时每隔"轮换间隔"平滑滚动
-  // 一屏循环展示；用户滚轮/触摸/悬停时暂停，交互停止 10 秒后自动恢复 ——
-  const listRef = useRef<HTMLDivElement>(null);
-  const [userHold, setUserHold] = useState(false);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rotating = Boolean(rotationEnabled);
-
-  const markUserHold = useCallback(() => {
-    setUserHold(true);
-    if (holdTimer.current) clearTimeout(holdTimer.current);
-    holdTimer.current = setTimeout(() => setUserHold(false), 10_000);
-  }, []);
-  useEffect(
-    () => () => {
-      if (holdTimer.current) clearTimeout(holdTimer.current);
-    },
-    [],
-  );
-
-  // 稳定 ref 回调（避免每次渲染重建导致 listRef 瞬时为 null，滚动被跳过）
-  const setListRef = useCallback((el: HTMLDivElement | null) => {
-    dragRef.current = el;
-    listRef.current = el;
-  }, []);
-
-  useEffect(() => {
-    // 仅在用户手动滚动（滚轮/触摸）期间暂停；鼠标悬停不暂停——用户盯着
-    // 面板看轮播时鼠标必然停在面板上，悬停暂停会导致"看起来永不滚动"
-    if (!rotating || userHold) return;
-    const timer = setInterval(() => {
-      const el = listRef.current;
-      if (!el) return;
-      const maxScroll = el.scrollHeight - el.clientHeight;
-      if (maxScroll <= 4) return;
-      const atBottom = el.scrollTop >= maxScroll - 4;
-      const target = atBottom ? 0 : Math.min(el.scrollTop + el.clientHeight, maxScroll);
-      el.scrollTo({ top: target, behavior: "smooth" });
-    }, rotationIntervalMs);
-    return () => clearInterval(timer);
-  }, [rotating, userHold, rotationIntervalMs, tiles.length]);
-
-  // 轮播关闭时复位滚动位置
-  useEffect(() => {
-    if (!rotationEnabled && listRef.current) listRef.current.scrollTop = 0;
-  }, [rotationEnabled]);
-
   const { t } = useTranslation();
-  const isPanel = variant === "panel";
   const isFloat = variant === "float";
-  const [floating, setFloating] = useState(isFloat);
-  // float 子型默认浮起
-  // 培训悬浮面板默认收起
-  const [collapsed, setCollapsed] = useState(variant === "panel");
+  const rotation = useStripRotation("y", rotationEnabled, rotationIntervalMs, tiles.length);
+  const [collapsed, setCollapsed] = useState(false);
+  // embed 可拖成自由浮窗；float 固定停靠右缘，不拖动
+  const [floating, setFloating] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
+  // 稳定 ref 回调（避免每次渲染重建导致 listRef 瞬时为 null，滚动被跳过）
+  const setListRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      dragRef.current = el;
+      rotation.listRef.current = el;
+    },
+    [rotation.listRef],
+  );
+
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
-    if (variant === "panel") return; // 固定右侧，不支持拖动（float 可拖）
-    // Only start drag on the header area (the drag handle)
-    const target = e.target as HTMLElement;
-    if (!target.classList.contains("video-sidelist-drag-handle")) return;
-    setFloating(true);
-    const el = dragRef.current;
-    if (!el) return;
-    // Use offsetLeft/Top (relative to the positioned .video-grid container) so
-    // the absolute left/top style matches, avoiding a jump on first drag.
-    dragStart.current = { x: e.clientX, y: e.clientY, px: el.offsetLeft, py: el.offsetTop };
-    e.preventDefault();
+      if (isFloat) return; // 停靠右缘，不支持拖动
+      // Only start drag on the header area (the drag handle)
+      const target = e.target as HTMLElement;
+      if (!target.classList.contains("video-sidelist-drag-handle")) return;
+      setFloating(true);
+      const el = dragRef.current;
+      if (!el) return;
+      // Use offsetLeft/Top (relative to the positioned .video-grid container) so
+      // the absolute left/top style matches, avoiding a jump on first drag.
+      dragStart.current = { x: e.clientX, y: e.clientY, px: el.offsetLeft, py: el.offsetTop };
+      e.preventDefault();
     },
-    [isPanel],
+    [isFloat],
   );
 
   useEffect(() => {
@@ -215,66 +237,78 @@ export function DraggableSideList({
     };
   }, [floating]);
 
-  const style: React.CSSProperties = isPanel
-    ? // 培训悬浮面板：固定右侧，展开时占满可用高度（内部滚动）；
-      // 收起时贴右侧垂直居中，与展开态的左侧切换页签位置对应
-      collapsed
-      ? { position: "absolute", top: "50%", right: "0.75rem", zIndex: 50, transform: "translateY(-50%)" }
-      : { position: "absolute", top: "0.75rem", right: "0.75rem", bottom: "0.75rem", zIndex: 50 }
-    : floating
-      ? { position: "absolute", right: "auto", bottom: "auto", left: pos.x, top: pos.y, zIndex: 50, opacity: 0.95 }
-      : {};
-
-  if (collapsed && isPanel) {
-    // 培训面板收起：只渲染展开页签（绝对定位，不占布局宽度）
+  // 浮窗停靠（float）：外层 wrap 贴右缘且不裁剪，手柄恒在列表左侧垂直居中；
+  // 收起后仅剩手柄、位置不变——收起/展开共用同一操作位。
+  // 手柄必须置于滚动容器之外：面板自身 overflow 会把左缘外的手柄裁掉（历史 bug）。
+  if (isFloat) {
     return (
-      <button
-        type="button"
-        className="video-sidelist-toggle video-sidelist-toggle--tab"
-        style={{ right: "0.75rem" }}
-        onClick={() => setCollapsed(false)}
-        title={t("meeting.expandList")}
-        aria-label={t("meeting.expandList")}
-      >
-        ‹
-      </button>
-    );
-  }
-
-  return (
-    <div
-      ref={setListRef}
-      className={`video-sidelist${floating ? " video-sidelist--floating" : ""}${
-        isPanel ? " video-sidelist--panel" : ""
-      }`}
-      style={style}
-      onWheel={markUserHold}
-      onTouchStart={markUserHold}
-    >
-      {!isPanel ? (
-        // 演讲者布局：仅保留拖动手柄，不提供收起/展开
-        <div className="video-sidelist-toolbar">
-          <div
-            className="video-sidelist-drag-handle"
-            onMouseDown={onMouseDown}
-            title={t("meeting.dragHandle")}
-          >
-            <span className="video-sidelist-drag-icon" aria-hidden />
-          </div>
-        </div>
-      ) : (
-        // 培训面板：切换页签固定在列表左缘垂直居中
+      <div className={`video-sidelist-dock-wrap${collapsed ? " video-sidelist-dock-wrap--collapsed" : ""}`}>
         <button
           type="button"
           className="video-sidelist-toggle video-sidelist-toggle--tab"
-          style={{ left: "-1.45rem" }}
-          onClick={() => setCollapsed(true)}
-          title={t("meeting.collapseList")}
-          aria-label={t("meeting.collapseList")}
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? t("meeting.expandList") : t("meeting.collapseList")}
+          aria-label={collapsed ? t("meeting.expandList") : t("meeting.collapseList")}
+          aria-expanded={!collapsed}
         >
-          ›
+          {collapsed ? "‹" : "›"}
         </button>
-      )}
+        {!collapsed && (
+          <div
+            ref={setListRef}
+            className="video-sidelist video-sidelist--dock"
+            onWheel={rotation.markUserHold}
+            onTouchStart={rotation.markUserHold}
+          >
+            {tiles.map((tile) => (
+              <VideoTile
+                key={tile.key}
+                stream={tile.stream}
+                label={tile.label}
+                muted={tile.muted}
+                micMuted={tile.micMuted}
+                handRaised={tile.handRaised}
+                handTitle={handTitle}
+                showAvatar={tile.forceAvatar}
+                compact
+                focused={focusedPeerId != null && tile.peerId === focusedPeerId}
+                focusable={focusEnabled}
+                rttMs={rttByPeer?.[tile.peerId]}
+                onClick={
+                  focusEnabled && onFocusPeer
+                    ? () => onFocusPeer(tile.peerId)
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 右侧流入列（embed）：可拖成自由浮窗，不提供收起/展开
+  return (
+    <div
+      ref={setListRef}
+      className={`video-sidelist${floating ? " video-sidelist--floating" : ""}`}
+      style={
+        floating
+          ? { position: "absolute", right: "auto", bottom: "auto", left: pos.x, top: pos.y, zIndex: 50, opacity: 0.95 }
+          : undefined
+      }
+      onWheel={rotation.markUserHold}
+      onTouchStart={rotation.markUserHold}
+    >
+      <div className="video-sidelist-toolbar">
+        <div
+          className="video-sidelist-drag-handle"
+          onMouseDown={onMouseDown}
+          title={t("meeting.dragHandle")}
+        >
+          <span className="video-sidelist-drag-icon" aria-hidden />
+        </div>
+      </div>
       {tiles.map((tile) => (
         <VideoTile
           key={tile.key}
@@ -893,6 +927,13 @@ export function VideoGrid({
     const shownStripTiles = onlySpeakers
       ? stripTiles.filter((t) => onlySpeakers.has(t.peerId === localPeerId ? "local" : t.peerId))
       : stripTiles;
+  // 顶部横排成员列表：与右侧列表共用同一套轮播机制（横向轴，超宽才滚）
+  const topRotation = useStripRotation(
+    "x",
+    rotationEnabled,
+    rotationIntervalMs ?? 15_000,
+    shownStripTiles.length,
+  );
   const isHostSelf = localPeerId != null && localPeerId === hostPeerId;
   const showSideList =
     useSideLayout &&
@@ -906,7 +947,13 @@ export function VideoGrid({
         {screenAudio}
         <div className={`video-grid ${"video-grid--side"}${sideVariant === "top" ? " video-grid--top" : ""}`}>
           {showSideList && sideVariant === "top" && (
-            <div className="video-toplist" role="list">
+            <div
+              className="video-toplist"
+              role="list"
+              ref={topRotation.listRef}
+              onWheel={topRotation.markUserHold}
+              onTouchStart={topRotation.markUserHold}
+            >
               {shownStripTiles.map((tile) => (
                 <div key={tile.key} className="video-toplist-item" role="listitem">
                   <VideoTile
@@ -918,12 +965,13 @@ export function VideoGrid({
                     showAvatar={!tile.isScreen && tile.forceAvatar}
                     micMuted={tile.micMuted}
                     localSelfScreen={tile.localSelfScreen}
+                    rttMs={peerRtt?.[tile.peerId]}
+                    focused={focusPeerId === tile.peerId}
+                    focusable={focusEnabled}
+                    onClick={
+                      focusEnabled && onFocusPeer ? () => onFocusPeer(tile.peerId) : undefined
+                    }
                   />
-                  {focusEnabled && (
-                    <button type="button" className="video-toplist-focus" onClick={() => onFocusPeer?.(tile.peerId)}>
-                      {focusPeerId === tile.peerId ? "✓" : "切"}
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
@@ -971,30 +1019,61 @@ export function VideoGrid({
     );
   }
 
+  // 宫格"一屏N等分"：前 N 个瓦片等分主区域，超出部分进底部胶片条。
+  // 列数映射：3/6/9→3列、12→4列（9=3×3，12=4×3，6=3×2，3=3×1）。
+  const gridCols = layoutCols === 12 ? 4 : 3;
+  const mainTiles = tiles.slice(0, layoutCols);
+  const overflowTiles = tiles.slice(layoutCols);
+  const gridRows = Math.max(1, Math.ceil(mainTiles.length / gridCols));
+
   return (
     <>
       {remoteAudio}
       {screenAudio}
       <div
         className="video-grid video-grid--grid"
-        data-cols={layoutCols}
+        data-cols={gridCols}
+        style={{ "--grid-rows": gridRows } as React.CSSProperties}
       >
-        {tiles.map((tile) => (
-          <VideoTile
-            key={tile.key}
-            stream={tile.stream}
-            label={tile.label}
-            muted={tile.muted}
-            handRaised={tile.handRaised}
-            handTitle={handTitle}
-            showAvatar={!tile.isScreen && tile.forceAvatar}
-            isScreen={tile.isScreen}
-            localSelfScreen={tile.localSelfScreen}
-            rttMs={tile.rttMs}
-            micMuted={tile.micMuted}
-            camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
-          />
-        ))}
+        <div className="video-grid-main">
+          {mainTiles.map((tile) => (
+            <VideoTile
+              key={tile.key}
+              stream={tile.stream}
+              label={tile.label}
+              muted={tile.muted}
+              handRaised={tile.handRaised}
+              handTitle={handTitle}
+              showAvatar={!tile.isScreen && tile.forceAvatar}
+              isScreen={tile.isScreen}
+              localSelfScreen={tile.localSelfScreen}
+              rttMs={tile.rttMs}
+              micMuted={tile.micMuted}
+              camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
+            />
+          ))}
+        </div>
+        {overflowTiles.length > 0 && (
+          <div className="video-grid-overflow" role="list">
+            {overflowTiles.map((tile) => (
+              <div key={tile.key} role="listitem" className="video-grid-overflow-item">
+                <VideoTile
+                  stream={tile.stream}
+                  label={tile.label}
+                  muted={tile.muted}
+                  handRaised={tile.handRaised}
+                  handTitle={handTitle}
+                  showAvatar={!tile.isScreen && tile.forceAvatar}
+                  isScreen={tile.isScreen}
+                  localSelfScreen={tile.localSelfScreen}
+                  rttMs={tile.rttMs}
+                  micMuted={tile.micMuted}
+                  camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

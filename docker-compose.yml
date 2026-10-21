@@ -79,9 +79,12 @@ services:
     # 优雅停机：给 API 30s 完成进行中的请求（含录制上传）后再 SIGKILL
     stop_grace_period: 30s
     environment:
-      DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
+      # 数据库驱动跟随 .env 的 DB_DRIVER（本地默认 mysql，与宿主机 db:reset 同库）
+      DB_DRIVER: ${DB_DRIVER:-sqlite}
+      # 容器内经 host.docker.internal 访问宿主机 MySQL：
+      # .env 里的 127.0.0.1 在容器内指向容器自身，必须用 host.docker.internal
+      MYSQL_HOST: host.docker.internal
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
       MYSQL_USER: ${MYSQL_USER:-meeting}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
@@ -135,9 +138,12 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     environment:
-      DB_DRIVER: ${COMPOSE_PROFILES:-sqlite}
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
+      # 数据库驱动跟随 .env 的 DB_DRIVER（本地默认 mysql，与宿主机 db:reset 同库）
+      DB_DRIVER: ${DB_DRIVER:-sqlite}
+      # 容器内经 host.docker.internal 访问宿主机 MySQL：
+      # .env 里的 127.0.0.1 在容器内指向容器自身，必须用 host.docker.internal
+      MYSQL_HOST: host.docker.internal
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
       MYSQL_USER: ${MYSQL_USER:-meeting}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}

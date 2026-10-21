@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { App, Popover } from "antd";
+import { App } from "antd";
 import {
   AudioOutlined,
   SoundOutlined,
@@ -14,7 +14,6 @@ import {
   PoweroffOutlined,
   PlayCircleOutlined,
   StopOutlined,
-  SmileOutlined,
 } from "@ant-design/icons";
 import { HandIcon } from "@/components/HandIcon";
 
@@ -36,8 +35,6 @@ type Props = {
   onToggleCam: () => void;
   onToggleHand: () => void;
   handDisabled?: boolean;
-  onReaction?: (emoji: string) => void;
-  reactionDisabled?: boolean;
   onToggleScreenShare: () => void;
   /** 存在共享内容声音（任一成员在共享且带音频）时显示该开关 */
   screenAudioAvailable?: boolean;
@@ -106,8 +103,6 @@ export function Controls({
   onToggleCam,
   onToggleHand,
   handDisabled = false,
-  onReaction,
-  reactionDisabled = false,
   onToggleScreenShare,
   screenAudioAvailable,
   screenAudioMuted,
@@ -229,25 +224,6 @@ export function Controls({
           ariaLabel={handRaised ? t("meeting.handDown") : t("meeting.hand")}
           ariaPressed={handRaised}
         />
-        {reactionDisabled ? (
-          <ControlButton label={t("meeting.reaction")} icon={<SmileOutlined style={ICON_STYLE} />} onClick={() => {}} disabled />
-        ) : (
-        <Popover
-          trigger={["click"]}
-          placement="topRight"
-          content={(
-          <div className="reaction-picker">
-            {["👍", "👏", "❤️", "😂", "🎉", "😮"].map((e) => (
-              <button key={e} type="button" className="reaction-emoji" onClick={() => onReaction?.(e)}>
-                {e}
-              </button>
-            ))}
-          </div>
-          )}
-        >
-          <ControlButton label={t("meeting.reaction")} icon={<SmileOutlined style={ICON_STYLE} />} onClick={() => {}} disabled={reactionDisabled} />
-        </Popover>
-        )}
       </div>
 
       <div className="controls-leave">

@@ -378,7 +378,7 @@ echo "  3. Start:      sudo systemctl enable --now meeting-api meeting-realtime 
 echo ""
 echo "  4. Verify:     curl -k https://127.0.0.1/api/healthz"
 echo ""
-echo "  Default login: admin / admin123"
+echo "  Default login: admin / 123456"
 echo ""
 
 %preun

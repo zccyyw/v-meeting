@@ -330,8 +330,10 @@ body.meeting-active {
   color: #fff;
 }
 
-/* 兼容：页面中仍使用原生 button 且非 antd 的元素 */
-button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy) {
+/* 兼容：页面中仍使用原生 button 且非 antd 的元素。
+   排除项说明：layout-*（布局面板，需保持中性色）、video-sidelist-toggle /
+   video-toplist-focus（会议视频区自有样式）不套用默认主色，避免被全局蓝覆盖。 */
+button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus) {
   font: inherit;
   padding: 0.6rem 1rem;
   border-radius: 8px;
@@ -341,7 +343,7 @@ button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-h
   cursor: pointer;
 }
 
-button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):disabled {
+button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -566,48 +568,15 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 
 /* —— 视频网格 —— */
 .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 0.75rem; flex: 1; min-height: 0; height: 100%; margin-bottom: 0; align-content: stretch; grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
-.video-grid--grid { display: flex; flex-wrap: wrap; justify-content: center; align-content: center; }
-.video-grid--grid .video-tile { width: clamp(240px, 17vw, 320px); aspect-ratio: 16 / 9; min-height: 0; height: auto; flex-shrink: 0; }
-.video-grid--grid[data-cols="4"] .video-tile { width: clamp(220px, calc((100% - 3 * 0.75rem) / 4), 320px); }
-.video-grid--grid[data-cols="6"] .video-tile { width: clamp(180px, calc((100% - 5 * 0.75rem) / 6), 280px); }
-.video-grid--speaker { grid-template-columns: 1fr; }
-.video-grid--training { display: flex; flex-direction: row; gap: 0.75rem; flex: 1; min-height: 0; overflow: hidden; }
-.video-grid--training .video-side-main { flex: 4 1 0; }
-.video-grid--training .video-sidelist { flex: 0 1 14rem; min-width: 9rem; max-width: 14rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 0.5rem; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; align-content: start; justify-content: center; }
-/* 修复行高塌陷重叠：grid auto 行 sizing 不计入 aspect-ratio 高度（内容贡献
-   只有 label ~89px），而 tile 实际渲染 129px -> 相邻行覆盖。改用 padding-top
-   比例盒（相对列宽）撑高度，该高度参与 grid 行 sizing；内容绝对定位盒内。 */
-.video-grid--training .video-sidelist .video-tile {
-  min-height: 0;
-  aspect-ratio: auto;
-  height: auto;
-  padding-top: 62.5%; /* 16:10 */
-  flex-shrink: 0;
-}
-.video-grid--training .video-sidelist .video-tile > * {
-  position: absolute;
-}
-.video-grid--training .video-sidelist .video-tile > video {
-  inset: 0;
-}
-.video-grid--training .video-sidelist .video-tile > .video-label {
-  left: 0.4rem;
-  bottom: 0.3rem;
-}
-.video-grid--training .video-sidelist .video-tile > .video-tile-rtt {
-  top: 0.25rem;
-  right: 0.25rem;
-}
-.video-grid--training .video-sidelist .video-tile > .hand-badge {
-  top: 0.25rem;
-  left: 0.4rem;
-}
-.video-grid--training .video-sidelist .video-tile > .video-tile-avatar {
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* 宫格布局"一屏N等分"：前N个进主区域（按列数等宽、行数受视高约束），超出部分进底部胶片条 */
+.video-grid--grid { display: flex; flex-direction: column; gap: 0.75rem; }
+.video-grid-main { flex: 1; min-height: 0; display: flex; flex-wrap: wrap; justify-content: center; align-content: center; gap: 0.75rem; }
+.video-grid-main .video-tile { --tile-w: clamp(200px, 17vw, 320px); width: min(var(--tile-w), calc((100vh - 14rem) * 16 / (10 * var(--grid-rows, 1)))); aspect-ratio: 16 / 10; min-height: 0; height: auto; flex-shrink: 0; }
+.video-grid--grid[data-cols="3"] .video-grid-main .video-tile { --tile-w: calc((100% - 1.5rem) / 3); }
+.video-grid--grid[data-cols="4"] .video-grid-main .video-tile { --tile-w: calc((100% - 2.25rem) / 4); }
+.video-grid-overflow { flex: none; display: flex; gap: 0.5rem; overflow-x: auto; padding-top: 0.5rem; border-top: 1px solid rgba(255, 255, 255, 0.08); scrollbar-width: thin; }
+.video-grid-overflow .video-tile { width: clamp(110px, 9vw, 160px); aspect-ratio: 16 / 10; min-height: 0; flex-shrink: 0; }
+.video-grid-overflow .video-tile-avatar { width: 2rem; height: 2rem; font-size: 0.85rem; }
 .video-tile--focusable { cursor: pointer; transition: outline 0.15s, box-shadow 0.15s; outline: 2px solid transparent; }
 .video-tile--focusable:hover { outline-color: rgba(18, 120, 255, 0.6); box-shadow: 0 0 0 2px rgba(18, 120, 255, 0.3); }
 .video-tile--focusable:focus-visible { outline-color: rgba(18, 120, 255, 0.8); }
@@ -620,16 +589,43 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 
 /* 可拖动的侧边列表 */
 .video-sidelist--floating { width: 14rem; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.12); padding: 0.25rem; }
-/* 培训布局悬浮面板：固定右侧、不可拖动，展开时占满可用高度（内部滚动） */
-.video-sidelist--panel { flex: 0 0 auto; width: 16rem; max-width: none; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 0.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
-/* 培训面板切换页签：垂直居中；展开态由内联 left 定位（面板左缘外侧），收起态由内联 right 定位（屏幕右缘） */
-button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: translateY(-50%); width: 1.45rem; height: 3rem; border-radius: 8px 0 0 8px; }
+/* 浮窗停靠外层：贴右缘上下拉伸、不裁剪；手柄 + 面板横排，手柄垂直居中 */
+.video-sidelist-dock-wrap { position: absolute; top: 0.75rem; right: 0.75rem; bottom: 0.75rem; z-index: 50; display: flex; align-items: center; }
+/* 收起态：手柄幽灵化（低透明度轮廓），悬停 wrap 区域显形；padding-left 扩大透明热区 */
+.video-sidelist-dock-wrap--collapsed { padding-left: 8px; }
+.video-sidelist-dock-wrap--collapsed button.video-sidelist-toggle--tab { opacity: 0.2; }
+.video-sidelist-dock-wrap--collapsed:hover button.video-sidelist-toggle--tab { opacity: 1; }
+/* 悬浮列表面板：占满 wrap 高度（内部滚动） */
+.video-sidelist--dock { flex: 0 0 auto; align-self: stretch; width: 14rem; max-width: none; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 0.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+/* 收起/展开手柄：位于列表左侧、垂直居中，展开/收起两态位置恒定；
+   半胶囊造型贴合面板左缘，带渐变与悬浮增宽反馈 */
+.video-sidelist-dock-wrap button.video-sidelist-toggle--tab {
+  position: static;
+  transform: none;
+  width: 1.1rem;
+  height: 4.5rem;
+  margin-right: -1px;
+  border-radius: 10px 0 0 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
+  color: #c9cdd3;
+  font-size: 0.8rem;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
+  transition: background 0.2s ease, color 0.2s ease, width 0.15s ease, opacity 0.25s ease;
+}
+.video-sidelist-dock-wrap button.video-sidelist-toggle--tab:hover {
+  width: 1.3rem;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.video-sidelist-dock-wrap button.video-sidelist-toggle--tab:active {
+  background: rgba(255, 255, 255, 0.28);
+}
 .video-sidelist-drag-handle { height: 6px; cursor: grab; display: flex; align-items: center; justify-content: center; margin-bottom: 0.25rem; }
 .video-sidelist-drag-handle:active { cursor: grabbing; }
 .video-sidelist-drag-icon { width: 28px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); }
 .video-sidelist-toolbar { display: flex; align-items: center; gap: 0.25rem; }
 .video-sidelist-toolbar .video-sidelist-drag-handle { flex: 1; }
-.video-sidelist-toggle { flex-shrink: 0; width: 1.4rem; height: 1.4rem; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; background: rgba(255,255,255,0.06); color: #e8e8e8; font-size: 0.9rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.video-sidelist-toggle { flex-shrink: 0; width: 1.4rem; height: 1.4rem; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; background: rgba(255,255,255,0.06); color: #e8e8e8; font-family: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .video-sidelist-toggle:hover { background: rgba(255,255,255,0.12); }
 .video-sidelist--collapsed { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; width: auto; min-width: 2.2rem; padding: 0.35rem 0.25rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.35); }
 .video-sidelist--collapsed .video-sidelist-drag-handle { writing-mode: vertical-lr; height: auto; flex: 1; }
@@ -637,7 +633,7 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
 .video-sidelist--collapsed .video-sidelist-toggle { transform: none; }
 
 /* 主讲人小窗（PIP）：默认右下角悬浮，可拖动 */
-.video-grid--side, .video-grid--training { position: relative; }
+.video-grid--side { position: relative; }
 .video-pip { position: absolute; right: 1rem; bottom: 1rem; width: clamp(10rem, 22%, 16rem); aspect-ratio: 16 / 10; z-index: 60; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; cursor: grab; background: #111; }
 .video-pip:active { cursor: grabbing; }
 .video-pip .video-tile { width: 100%; height: 100%; min-height: 0; border-radius: 0; }
@@ -881,9 +877,6 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
   .controls-cluster { max-width: 100%; }
   .video-grid--side { flex-direction: row; }
   .video-sidelist { max-width: 7.5rem; min-width: 5.5rem; }
-  .video-grid--training { flex-direction: column; }
-  .video-grid--training .video-sidelist { max-width: 100%; min-width: 0; flex-direction: row; overflow-x: auto; overflow-y: hidden; }
-  .video-grid--training .video-side-main { flex: 3 1 0; }
   .admin-page-header { flex-direction: column; align-items: stretch; }
   .recordings-preview-antd-video { max-height: min(50vh, 420px); }
   .meeting-page { padding-top: env(safe-area-inset-top); }
@@ -1001,10 +994,7 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
 .meeting-detail-row { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; font-size: 13px; }
 .meeting-detail-row span:first-child { flex: none; min-width: 76px; color: #8c8c8c; }
 
-/* —— 表情反应 —— */
-.reaction-picker { display: flex; gap: 4px; }
-.reaction-emoji { width: 36px; height: 36px; border: none; background: transparent; border-radius: 8px; cursor: pointer; font-size: 20px; }
-.reaction-emoji:hover { background: #f0f0f0; }
+/* —— 表情反应（仅接收展示；发送入口已移除）—— */
 .reaction-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 55; }
 .reaction-bubble { position: absolute; bottom: 90px; left: 50%; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 13px; animation: reaction-rise 2.6s ease-out forwards; }
 .reaction-emoji-bubble { font-size: 20px; }
@@ -1036,41 +1026,38 @@ button.video-sidelist-toggle--tab { position: absolute; top: 50%; transform: tra
   background: #1f1f1f;
 }
 .video-toplist-item .video-tile { width: 100%; height: 100%; }
-.video-toplist-focus {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 2;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  cursor: pointer;
-  font-size: 12px;
-}
-.video-toplist-focus:hover { background: #1677ff; }
 
 /* —— 图形化布局选择面板 —— */
-.layout-panel { width: 340px; }
-.layout-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.layout-panel-title { font-weight: 600; font-size: 13px; }
-.layout-panel-speakers { display: flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; }
-.layout-panel-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
-.layout-panel-tabs button { flex: 1; padding: 4px 0; border: none; background: transparent; cursor: pointer; font-size: 13px; color: #8c8c8c; }
-.layout-panel-tabs button.is-active { color: #1f1f1f; font-weight: 600; }
-.layout-panel-tabs button:disabled { cursor: not-allowed; color: #d9d9d9; }
-.layout-panel-cards { display: flex; gap: 10px; flex-wrap: wrap; }
-.layout-card { width: 92px; border: 1px solid #d9d9d9; border-radius: 8px; background: #fff; cursor: pointer; padding: 6px; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.layout-card.is-active { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15); }
-.layout-thumb { display: flex; gap: 2px; width: 72px; height: 44px; border-radius: 4px; background: #eef2f7; padding: 4px; box-sizing: border-box; }
-.layout-thumb i { background: #bcd4f5; border-radius: 2px; }
+/* —— 布局面板（白底、中性灰，无蓝色）—— */
+.layout-panel { width: 680px; max-width: calc(100vw - 2rem); }
+.layout-panel-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+/* 布局类型标签：纯展示，无点击事件；布局切换由下方卡片驱动。
+   宫格布局为内容宽；演讲者布局通栏（flex:1），checkbox 包含其中——合计与卡片区域同宽 */
+.layout-tab-label { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-radius: 8px; background: #f0f0f0; font-size: 13px; line-height: 18px; color: #595959; user-select: none; }
+.layout-tab-label--grow { flex: 1; min-width: 0; justify-content: space-between; }
+.layout-tab-label.is-active .layout-tab-text { color: #1f1f1f; font-weight: 600; }
+.layout-panel-speakers { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #595959; cursor: pointer; white-space: nowrap; }
+.layout-panel-cards { display: flex; gap: 12px; }
+/* 卡片容器：宫格卡片为 div 双点击区（缩略图切布局 + 等分标签弹菜单），演讲者卡片为单 button */
+.layout-card { width: 156px; border: 1px solid #e5e5e5; border-radius: 8px; background: #fff; padding: 10px 8px; font-family: inherit; font-size: 12px; line-height: 1.4; color: #595959; display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
+button.layout-card { cursor: pointer; }
+.layout-card:hover { border-color: #b0b0b0; }
+.layout-card.is-active { border: 1px solid #79b8ff; box-shadow: 0 0 0 1px #79b8ff, 0 0 12px rgba(121, 184, 255, 0.6); color: #1f1f1f; }
+.layout-card-main { border: none; background: transparent; cursor: pointer; padding: 0; font-family: inherit; display: flex; justify-content: center; }
+.layout-card-label { border: none; background: transparent; cursor: pointer; padding: 0; font-family: inherit; font-size: 12px; color: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.layout-card-label:hover { color: #1f1f1f; }
+.layout-card-main:focus-visible, .layout-card-label:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.35); outline-offset: 1px; }
+.layout-thumb { display: flex; gap: 2px; width: 132px; height: 80px; border-radius: 4px; background: #f0f0f0; padding: 4px; box-sizing: border-box; }
+.layout-thumb i { background: #d9d9d9; border-radius: 2px; }
+/* 一屏N等分：3×3 九宫格 */
 .layout-thumb--grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
-.layout-thumb--embed { display: grid; grid-template-columns: 2fr 1fr; }
-.layout-thumb--embed i:first-child { grid-row: span 2; background: #8fb7ec; }
-.layout-thumb--top { display: grid; grid-template-rows: 1fr 2fr; }
-.layout-thumb--top i:first-child { background: #8fb7ec; }
-.layout-thumb--float { position: relative; display: block; }
-.layout-thumb--float i:first-child { position: absolute; inset: 4px; background: #8fb7ec; }
-.layout-thumb--float i:last-child { position: absolute; top: 0; right: 0; width: 18px; height: 12px; background: #5a8fd0; }
+/* 右侧成员列表：左侧大画面 + 右列 3 个小窗 */
+.layout-thumb--embed { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: repeat(3, 1fr); }
+.layout-thumb--embed i:first-child { grid-row: span 3; background: #bfbfbf; }
+/* 顶部成员列表：顶部 4 个小窗横排 + 下方大画面 */
+.layout-thumb--top { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: 1fr 2fr; }
+.layout-thumb--top i:last-child { grid-column: 1 / -1; background: #bfbfbf; }
+/* 悬浮列表：整幅画面 + 右缘叠加竖条（对应覆盖式停靠形态） */
+.layout-thumb--float { display: block; position: relative; }
+.layout-thumb--float i:first-child { display: block; width: 100%; height: 100%; background: #bfbfbf; }
+.layout-thumb--float i:last-child { position: absolute; top: 4px; bottom: 4px; right: 4px; width: 22px; border-radius: 2px; }
