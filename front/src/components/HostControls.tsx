@@ -12,13 +12,11 @@ import type { InvitationItem } from "@/api/client";
 
 type Props = {
   isHost: boolean;
-  allowShare: boolean;
   allMuted: boolean;
   peers: PeerInfo[];
   selfPeerId: string | null;
   invitations: InvitationItem[];
   onClose: () => void;
-  onToggleAllowShare: () => void;
   onToggleMuteAll: () => void;
   onMutePeer: (peerId: string) => void;
   onUnmutePeer: (peerId: string) => void;
@@ -48,13 +46,11 @@ function getInitials(name: string): string {
 
 export function HostControls({
   isHost,
-  allowShare,
   allMuted,
   peers,
   selfPeerId,
   invitations,
   onClose,
-  onToggleAllowShare,
   onToggleMuteAll,
   onMutePeer,
   onUnmutePeer,
@@ -120,9 +116,6 @@ export function HostControls({
         <div className="host-actions">
           <button type="button" onClick={onToggleMuteAll}>
             {allMuted ? t("meeting.unmuteAll") : t("meeting.muteAll")}
-          </button>
-          <button type="button" onClick={onToggleAllowShare}>
-            {allowShare ? t("meeting.denyShare") : t("meeting.allowShare")}
           </button>
         </div>
       )}

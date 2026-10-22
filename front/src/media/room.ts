@@ -60,6 +60,8 @@ export type MediaRoomSnapshot = {
   peerRtt: Record<string, number>;
   /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
   rotationEnabled: boolean;
+  /** 房间级轮播间隔（ms）：主持人选定，全员同步 */
+  rotationIntervalMs: number;
   /** 主持人控制的"成员轮播侧栏对参会者可见"开关（主持人端始终可见） */
   sideListVisible: boolean;  /** 主持人锁定会议：锁定后禁止新成员加入 */
   locked: boolean;
@@ -73,6 +75,10 @@ export type MediaRoomSnapshot = {
   raiseHandAllowed: boolean;
   /** 主持人开关：允许成员表情回应 */
   reactionAllowed: boolean;
+  /** 主持人开关：允许成员切换本地布局（等分/侧栏子型/仅显示说话者，仅对本端生效） */
+  layoutSwitchAllowed: boolean;
+  /** 主持人开关：弹幕（开启后全员聊天消息以弹幕形式飘过） */
+  danmuEnabled: boolean;
   focusPeerId: string | null;
   sharingScreen: boolean;
   canShare: boolean;
@@ -167,6 +173,7 @@ export class MediaRoom {
   private layout: MeetingLayout = "grid";
   private peerRtt = new Map<string, number>();
   private rotationEnabled = false;
+  private rotationIntervalMs = 20_000;
   private sideListVisible = true;
   private locked = false;
   private hideCode = false;
@@ -174,6 +181,8 @@ export class MediaRoom {
   private selfUnmuteAllowed = true;
   private raiseHandAllowed = true;
   private reactionAllowed = true;
+  private layoutSwitchAllowed = true;
+  private danmuEnabled = false;
   /** 表情反应瞬时事件回调（UI 层设置，用于气泡飘屏） */
   emitReaction?: (peerId: string, emoji: string) => void;
   private rttTimer: ReturnType<typeof setInterval> | null = null;
@@ -234,12 +243,15 @@ export class MediaRoom {
       layout: this.layout,
       peerRtt: Object.fromEntries(this.peerRtt),
       rotationEnabled: this.rotationEnabled,
+      rotationIntervalMs: this.rotationIntervalMs,
       sideListVisible: this.sideListVisible,      locked: this.locked,
       hideCode: this.hideCode,
       chatAllowed: this.chatAllowed,
       selfUnmuteAllowed: this.selfUnmuteAllowed,
       raiseHandAllowed: this.raiseHandAllowed,
       reactionAllowed: this.reactionAllowed,
+      layoutSwitchAllowed: this.layoutSwitchAllowed,
+      danmuEnabled: this.danmuEnabled,
       focusPeerId: this.screenFocusPeerId ?? this.focusPeerId,
       sharingScreen: this.sharingScreen,
       canShare: this.canShare,
@@ -356,6 +368,14 @@ export class MediaRoom {
       this.emit();
     }
   }
+  /** 主持人设置"画面轮播间隔"（房间级，服务端校验 host 并广播全员） */
+  setRotationInterval(intervalMs: number): void {
+    this.signal.send({ type: "setRotationInterval", intervalMs });
+    if (this.rotationIntervalMs !== intervalMs) {
+      this.rotationIntervalMs = intervalMs;
+      this.emit();
+    }
+  }
   /** 主持人控制"成员轮播侧栏"对参会者的可见性（主持人端始终可见） */
   setSideListVisible(visible: boolean): void {
     this.signal.send({ type: "setSideListVisible", visible });
@@ -408,6 +428,22 @@ export class MediaRoom {
   /** 发表情反应（瞬时广播，不进快照） */
   setReaction(emoji: string): void {
     this.signal.send({ type: "setReaction", emoji });
+  }
+  /** 主持人开关"允许成员切换本地布局"（服务端校验 host 并广播全员） */
+  setLayoutSwitchAllowed(allowed: boolean): void {
+    this.signal.send({ type: "setLayoutSwitchAllowed", allowed });
+    if (this.layoutSwitchAllowed !== allowed) {
+      this.layoutSwitchAllowed = allowed;
+      this.emit();
+    }
+  }
+  /** 主持人开关"弹幕"（服务端校验 host 并广播全员） */
+  setDanmuEnabled(enabled: boolean): void {
+    this.signal.send({ type: "setDanmuEnabled", enabled });
+    if (this.danmuEnabled !== enabled) {
+      this.danmuEnabled = enabled;
+      this.emit();
+    }
   }
 
   /**
@@ -1065,34 +1101,57 @@ export class MediaRoom {
 
       case "rotationChanged":
         this.rotationEnabled = msg.enabled;
+        this.emit();
+        break;
+
+      case "rotationIntervalChanged":
+        this.rotationIntervalMs = msg.intervalMs;
+        this.emit();
         break;
 
       case "sideListVisibleChanged":
         this.sideListVisible = msg.visible;
+        this.emit();
         break;
 
       case "lockedChanged":
         this.locked = msg.locked;
+        this.emit();
         break;
 
       case "hideCodeChanged":
       this.hideCode = msg.hide;
+      this.emit();
       break;
 
       case "chatAllowedChanged":
         this.chatAllowed = msg.allowed;
+        this.emit();
         break;
 
       case "selfUnmuteAllowedChanged":
         this.selfUnmuteAllowed = msg.allowed;
+        this.emit();
         break;
 
       case "raiseHandAllowedChanged":
         this.raiseHandAllowed = msg.allowed;
+        this.emit();
         break;
 
       case "reactionAllowedChanged":
         this.reactionAllowed = msg.allowed;
+        this.emit();
+        break;
+
+      case "layoutSwitchAllowedChanged":
+        this.layoutSwitchAllowed = msg.allowed;
+        this.emit();
+        break;
+
+      case "danmuEnabledChanged":
+        this.danmuEnabled = msg.enabled;
+        this.emit();
         break;
 
       case "reaction":
@@ -1286,9 +1345,21 @@ export class MediaRoom {
     if (msg.rotationEnabled !== undefined) {
       this.rotationEnabled = msg.rotationEnabled;
     }
+    if (msg.rotationIntervalMs !== undefined) {
+      this.rotationIntervalMs = msg.rotationIntervalMs;
+    }
     if (msg.sideListVisible !== undefined) {
       this.sideListVisible = msg.sideListVisible;
     }
+    // 主持人控制项快照：旧服务端不下发这些字段时保留各自默认值
+    if (msg.locked !== undefined) this.locked = msg.locked;
+    if (msg.hideCode !== undefined) this.hideCode = msg.hideCode;
+    if (msg.chatAllowed !== undefined) this.chatAllowed = msg.chatAllowed;
+    if (msg.selfUnmuteAllowed !== undefined) this.selfUnmuteAllowed = msg.selfUnmuteAllowed;
+    if (msg.raiseHandAllowed !== undefined) this.raiseHandAllowed = msg.raiseHandAllowed;
+    if (msg.reactionAllowed !== undefined) this.reactionAllowed = msg.reactionAllowed;
+    if (msg.layoutSwitchAllowed !== undefined) this.layoutSwitchAllowed = msg.layoutSwitchAllowed;
+    if (msg.danmuEnabled !== undefined) this.danmuEnabled = msg.danmuEnabled;
     this.status = "joined";
     this.emit();
     await this.setupMedia();

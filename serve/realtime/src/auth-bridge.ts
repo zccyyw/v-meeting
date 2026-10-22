@@ -6,6 +6,10 @@ export type JoinAuth = {
   userId: string | null;
   role: UserRole;
   displayName: string | null;
+  /** 会议主持人 userId：房间创建时按其读取主持人偏好初始化开关默认值 */
+  hostUserId: number | null;
+  /** 锁定状态（已落库）：房间创建时恢复，realtime 重启后不丢失 */
+  locked: boolean;
   waitingRoomEnabled: boolean;
   recordAllowed: boolean;
   allowShare: boolean;
@@ -31,6 +35,8 @@ export async function validateJoinToken(db: Db, token: string): Promise<JoinAuth
     userId: row.user_id == null ? null : String(row.user_id),
     role: row.role,
     displayName: row.display_name,
+    hostUserId: row.host_user_id == null ? null : Number(row.host_user_id),
+    locked: !!row.locked,
     waitingRoomEnabled: !!row.waiting_room_enabled,
     recordAllowed: !!row.record_allowed,
     allowShare: row.allow_share == null ? true : !!row.allow_share,

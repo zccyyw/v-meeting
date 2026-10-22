@@ -1,0 +1,2 @@
+-- Placeholder: applied via migrate.ts INFORMATION_SCHEMA.
+-- Adds meetings.locked TINYINT/BOOLEAN NOT NULL DEFAULT 0/FALSE

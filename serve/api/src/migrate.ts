@@ -232,6 +232,29 @@ async function migrateMeetingRecordAllowed(db: Db): Promise<number> {
 }
 
 /**
+ * 020：锁定会议状态落库（此前只存在于 realtime 进程内存里）。
+ * - locked：加入弹窗（join-token 接口）即拦截被锁会议，且 realtime 重启后不丢失。
+ * - 主持人加入不受限（join-token 按 host_user_id 放行）。
+ */
+async function migrateMeetingLocked(db: Db): Promise<number> {
+  if (await hasMeetingColumn(db, "locked")) return 1;
+  if (db.driver === "postgres") {
+    await db.query(
+      `ALTER TABLE meetings ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
+  } else if (db.driver === "sqlite") {
+    await db.query(
+      `ALTER TABLE meetings ADD COLUMN locked INTEGER NOT NULL DEFAULT 0`,
+    );
+  } else {
+    await db.query(
+      `ALTER TABLE meetings ADD COLUMN locked TINYINT(1) NOT NULL DEFAULT 0`,
+    );
+  }
+  return 1;
+}
+
+/**
  * 012：会议运行时状态落库（此前只存在于 realtime 进程内存里）。
  * - allow_share   共享权限：主持人关闭共享后，房间销毁重建不该回退为"允许"
  * - last_active_at 最后活跃时间：服务重启后用于收尾遗留的 live 会议
@@ -775,6 +798,10 @@ export async function migrate(db?: Db) {
     }
     if (file === "012_meeting_runtime_state.sql") {
       count += await migrateMeetingRuntimeState(db);
+      continue;
+    }
+    if (file === "020_meeting_locked.sql") {
+      count += await migrateMeetingLocked(db);
       continue;
     }
     if (file === "008_sys_security.sql") {

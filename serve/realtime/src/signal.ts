@@ -50,6 +50,8 @@ type RoomState = {
   networkRttDirty: boolean;
   /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
   rotationEnabled: boolean;
+  /** 房间级轮播间隔（ms）：主持人选定，广播全员同步轮播节奏 */
+  rotationIntervalMs: number;
   /** 主持人控制的"成员轮播侧栏对参会者可见"开关（主持人端始终可见） */
   sideListVisible: boolean;
   /** 主持人锁定会议：锁定后禁止新成员加入 */
@@ -64,7 +66,94 @@ type RoomState = {
   raiseHandAllowed: boolean;
   /** 主持人开关：允许成员表情回应 */
   reactionAllowed: boolean;
+  /** 主持人开关：允许成员切换本地布局（等分/侧栏子型/仅显示说话者，仅对本端生效） */
+  layoutSwitchAllowed: boolean;
+  /** 主持人开关：弹幕（开启后全员聊天消息以弹幕形式飘过） */
+  danmuEnabled: boolean;
+  /** 会议主持人 userId：开关切换时写入其偏好（host_meeting_prefs） */
+  hostUserId: number | null;
 };
+
+/** 主持人偏好（host_meeting_prefs 行）：主持人工具开关的"下次开会保持" */
+type HostPrefs = {
+  chatAllowed: boolean;
+  selfUnmuteAllowed: boolean;
+  raiseHandAllowed: boolean;
+  allowShare: boolean;
+  recordAllowed: boolean;
+  waitingRoomEnabled: boolean;
+  rotationEnabled: boolean;
+  rotationIntervalMs: number;
+  sideListVisible: boolean;
+  layoutSwitchAllowed: boolean;
+  danmuEnabled: boolean;
+};
+
+/** 读取主持人偏好行；无记录或无 userId 时返回 null（调用方用默认值兜底） */
+async function loadHostPrefs(db: Db, userId: number | null): Promise<HostPrefs | null> {
+  if (userId == null) return null;
+  try {
+    const [rows] = await db.query(
+      `SELECT * FROM host_meeting_prefs WHERE user_id = ? LIMIT 1`,
+      [userId]
+    );
+    const row = (rows as Record<string, unknown>[])[0];
+    if (!row) return null;
+    return {
+      chatAllowed: !!row.chat_allowed,
+      selfUnmuteAllowed: !!row.self_unmute_allowed,
+      raiseHandAllowed: !!row.raise_hand_allowed,
+      allowShare: row.allow_share == null ? true : !!row.allow_share,
+      recordAllowed: !!row.record_allowed,
+      waitingRoomEnabled: !!row.waiting_room_enabled,
+      rotationEnabled: row.rotation_enabled == null ? true : !!row.rotation_enabled,
+      rotationIntervalMs: Number(row.rotation_interval_ms) || 20_000,
+      sideListVisible: row.side_list_visible == null ? true : !!row.side_list_visible,
+      layoutSwitchAllowed: row.layout_switch_allowed == null ? true : !!row.layout_switch_allowed,
+      danmuEnabled: !!row.danmu_enabled,
+    };
+  } catch (err) {
+    // 表未迁移到位时静默降级为默认值，不阻断入会
+    console.error("loadHostPrefs failed", err);
+    return null;
+  }
+}
+
+/** 开关列白名单（列名只来自代码，无注入面） */
+const HOST_PREF_COLUMNS = [
+  "chat_allowed",
+  "self_unmute_allowed",
+  "raise_hand_allowed",
+  "allow_share",
+  "record_allowed",
+  "waiting_room_enabled",
+  "rotation_enabled",
+  "rotation_interval_ms",
+  "side_list_visible",
+  "layout_switch_allowed",
+  "danmu_enabled",
+] as const;
+
+type HostPrefPatch = Partial<Record<(typeof HOST_PREF_COLUMNS)[number], number>>;
+
+/** 主持人切换开关后异步落偏好（fire-and-forget，失败仅记日志不影响信令） */
+function saveHostPrefs(db: Db, userId: number | null, patch: HostPrefPatch): void {
+  if (userId == null) return;
+  const cols = Object.keys(patch).filter((c) =>
+    (HOST_PREF_COLUMNS as readonly string[]).includes(c)
+  );
+  if (cols.length === 0) return;
+  const vals = cols.map((c) => patch[c as keyof HostPrefPatch]);
+  const placeholders = cols.map(() => "?").join(", ");
+  const updates = cols.map((c) => `${c} = VALUES(${c})`).join(", ");
+  const sql =
+    db.driver === "mysql"
+      ? `INSERT INTO host_meeting_prefs (user_id, ${cols.join(", ")}) VALUES (?, ${placeholders}) ON DUPLICATE KEY UPDATE ${updates}`
+      : `INSERT INTO host_meeting_prefs (user_id, ${cols.join(", ")}) VALUES (?, ${placeholders}) ON CONFLICT (user_id) DO UPDATE SET ${cols.map((c) => `${c} = EXCLUDED.${c}`)}, updated_at = ${db.driver === "postgres" ? "NOW()" : "datetime('now')"}`;
+  void db
+    .query(sql, [userId, ...vals])
+    .catch((err) => console.error("saveHostPrefs failed", err));
+}
 
 function peerId() {
   return randomBytes(8).toString("hex");
@@ -253,7 +342,10 @@ export function createSignalHandler(db: Db) {
     meetingId: string,
     waitingRoomEnabled: boolean,
     recordAllowed: boolean,
-    allowShareDefault: boolean
+    allowShareDefault: boolean,
+    hostUserId: number | null,
+    hostPrefs: HostPrefs | null,
+    locked = false
   ): Promise<RoomState> {
     const existing = rooms.get(meetingId);
     if (existing) return existing;
@@ -280,14 +372,22 @@ export function createSignalHandler(db: Db) {
           networkRttDirty: false,
           // 成员画面轮播默认开启（对齐"成员过多时自动轮播"的产品预期），
           // 主持人可在设置面板随时关闭；后入会者随 joined 同步该状态
-          rotationEnabled: true,
-          sideListVisible: true,
-          locked: false,
+          // 以下 8 项开关的初始值：优先取会议主持人的偏好（host_meeting_prefs），
+          // 实现"本次变动开关后，下次开会保持不变"；无偏好记录时用历史默认值。
+          rotationEnabled: hostPrefs?.rotationEnabled ?? true,
+          rotationIntervalMs: hostPrefs?.rotationIntervalMs ?? 20_000,
+          sideListVisible: hostPrefs?.sideListVisible ?? true,
+          // 锁定状态已落库：恢复而非重置（此前 realtime 重启会丢失主持人锁定动作）
+          locked,
           hideCode: false,
-          chatAllowed: true,
-          selfUnmuteAllowed: true,
-          raiseHandAllowed: true,
+          chatAllowed: hostPrefs?.chatAllowed ?? true,
+          selfUnmuteAllowed: hostPrefs?.selfUnmuteAllowed ?? true,
+          raiseHandAllowed: hostPrefs?.raiseHandAllowed ?? true,
           reactionAllowed: true,
+          // 本地布局切换默认允许（旧行为）；弹幕默认关闭（原为本地偏好，全局化后由主持人开启）
+          layoutSwitchAllowed: hostPrefs?.layoutSwitchAllowed ?? true,
+          danmuEnabled: hostPrefs?.danmuEnabled ?? false,
+          hostUserId,
         };
         rooms.set(meetingId, state);
         return state;
@@ -730,8 +830,18 @@ export function createSignalHandler(db: Db) {
       layout: state.room.layout,
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
+      rotationIntervalMs: state.rotationIntervalMs,
       sideListVisible: state.sideListVisible,
       allowShare: state.room.allowShareDefault,
+      // 主持人控制项快照：后入会者直接同步（缺字段时前端用各自默认值兜底）
+      locked: state.locked,
+      hideCode: state.hideCode,
+      chatAllowed: state.chatAllowed,
+      selfUnmuteAllowed: state.selfUnmuteAllowed,
+      raiseHandAllowed: state.raiseHandAllowed,
+      reactionAllowed: state.reactionAllowed,
+      layoutSwitchAllowed: state.layoutSwitchAllowed,
+      danmuEnabled: state.danmuEnabled,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
       capabilities: { screenAudio: true },
       peers: admittedPeerList(state).filter((p) => p.peerId !== targetPeerId),
@@ -840,11 +950,18 @@ export function createSignalHandler(db: Db) {
     // Replace any previous session on this socket
     await leavePeer(ws, true);
 
+    // 房间尚不存在时才读取主持人偏好（新建房间用其初始化开关默认值）
+    const hostPrefs = rooms.has(auth.meetingId)
+      ? null
+      : await loadHostPrefs(db, auth.hostUserId);
     const state = await getOrCreateRoom(
       auth.meetingId,
       auth.waitingRoomEnabled,
       auth.recordAllowed,
-      auth.allowShare
+      auth.allowShare,
+      auth.hostUserId,
+      hostPrefs,
+      auth.locked
     );
     if (state.room.ended) {
       send(ws, { type: "error", message: "meeting_ended" });
@@ -915,8 +1032,18 @@ export function createSignalHandler(db: Db) {
       layout: state.room.layout,
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
+      rotationIntervalMs: state.rotationIntervalMs,
       sideListVisible: state.sideListVisible,
       allowShare: state.room.allowShareDefault,
+      // 主持人控制项快照：后入会者直接同步（缺字段时前端用各自默认值兜底）
+      locked: state.locked,
+      hideCode: state.hideCode,
+      chatAllowed: state.chatAllowed,
+      selfUnmuteAllowed: state.selfUnmuteAllowed,
+      raiseHandAllowed: state.raiseHandAllowed,
+      reactionAllowed: state.reactionAllowed,
+      layoutSwitchAllowed: state.layoutSwitchAllowed,
+      danmuEnabled: state.danmuEnabled,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
       capabilities: { screenAudio: true },
       peers: admittedPeerList(state).filter((p) => p.peerId !== id),
@@ -1083,6 +1210,8 @@ export function createSignalHandler(db: Db) {
         } catch (err) {
           console.error("setSharePermission db update failed", err);
         }
+        // 同步主持人偏好：下次开会保持
+        saveHostPrefs(db, state.hostUserId, { allow_share: allow ? 1 : 0 });
         broadcastAdmitted(state, { type: "sharePermission", allowed: allow });
         break;
       }
@@ -1098,6 +1227,8 @@ export function createSignalHandler(db: Db) {
         } catch (err) {
           console.error("setWaitingRoom db update failed", err);
         }
+        // 同步主持人偏好：下次开会保持
+        saveHostPrefs(db, state.hostUserId, { waiting_room_enabled: enabled ? 1 : 0 });
         broadcastAdmitted(state, { type: "waitingRoomChanged", enabled });
         if (enabled) {
           // 等待中的成员收不到 broadcastAdmitted，需单独告知开关变化，
@@ -1126,6 +1257,8 @@ export function createSignalHandler(db: Db) {
         } catch (err) {
           console.error("setRecordAllowed db update failed", err);
         }
+        // 同步主持人偏好：下次开会保持
+        saveHostPrefs(db, state.hostUserId, { record_allowed: allowed ? 1 : 0 });
         broadcastAdmitted(state, { type: "recordAllowedChanged", allowed });
         break;
       }
@@ -1305,9 +1438,31 @@ export function createSignalHandler(db: Db) {
             return;
           }
           ctx.state.rotationEnabled = message.enabled;
+          saveHostPrefs(db, ctx.state.hostUserId, { rotation_enabled: message.enabled ? 1 : 0 });
           broadcastAdmitted(ctx.state, {
             type: "rotationChanged",
             enabled: message.enabled,
+          });
+          break;
+        }
+
+        case "setRotationInterval": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          // 仅接受约定档位，非法值回落默认 20s
+          const allowed = [5_000, 10_000, 20_000, 30_000, 60_000];
+          ctx.state.rotationIntervalMs = allowed.includes(message.intervalMs)
+            ? message.intervalMs
+            : 20_000;
+          saveHostPrefs(db, ctx.state.hostUserId, { rotation_interval_ms: ctx.state.rotationIntervalMs });
+          broadcastAdmitted(ctx.state, {
+            type: "rotationIntervalChanged",
+            intervalMs: ctx.state.rotationIntervalMs,
           });
           break;
         }
@@ -1321,6 +1476,7 @@ export function createSignalHandler(db: Db) {
             return;
           }
           ctx.state.sideListVisible = message.visible;
+          saveHostPrefs(db, ctx.state.hostUserId, { side_list_visible: message.visible ? 1 : 0 });
           broadcastAdmitted(ctx.state, {
             type: "sideListVisibleChanged",
             visible: message.visible,
@@ -1336,6 +1492,13 @@ export function createSignalHandler(db: Db) {
             return;
           }
           ctx.state.locked = message.locked;
+          // 落库：加入弹窗（join-token 接口）即拦截被锁会议；realtime 重启后锁定不丢失
+          void db
+            .query(`UPDATE meetings SET locked = ? WHERE id = ?`, [
+              message.locked ? 1 : 0,
+              ctx.state.room.meetingId,
+            ])
+            .catch((err) => console.error("setLocked db update failed", err));
           broadcastAdmitted(ctx.state, { type: "lockedChanged", locked: message.locked });
           break;
         }
@@ -1360,6 +1523,7 @@ export function createSignalHandler(db: Db) {
             return;
           }
           ctx.state.chatAllowed = message.allowed;
+          saveHostPrefs(db, ctx.state.hostUserId, { chat_allowed: message.allowed ? 1 : 0 });
           broadcastAdmitted(ctx.state, { type: "chatAllowedChanged", allowed: message.allowed });
           break;
         }
@@ -1372,6 +1536,7 @@ export function createSignalHandler(db: Db) {
             return;
           }
           ctx.state.selfUnmuteAllowed = message.allowed;
+          saveHostPrefs(db, ctx.state.hostUserId, { self_unmute_allowed: message.allowed ? 1 : 0 });
           broadcastAdmitted(ctx.state, { type: "selfUnmuteAllowedChanged", allowed: message.allowed });
           break;
         }
@@ -1384,6 +1549,7 @@ export function createSignalHandler(db: Db) {
             return;
           }
           ctx.state.raiseHandAllowed = message.allowed;
+          saveHostPrefs(db, ctx.state.hostUserId, { raise_hand_allowed: message.allowed ? 1 : 0 });
           broadcastAdmitted(ctx.state, { type: "raiseHandAllowedChanged", allowed: message.allowed });
           break;
         }
@@ -1397,6 +1563,32 @@ export function createSignalHandler(db: Db) {
           }
           ctx.state.reactionAllowed = message.allowed;
           broadcastAdmitted(ctx.state, { type: "reactionAllowedChanged", allowed: message.allowed });
+          break;
+        }
+        case "setLayoutSwitchAllowed": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.layoutSwitchAllowed = message.allowed;
+          saveHostPrefs(db, ctx.state.hostUserId, { layout_switch_allowed: message.allowed ? 1 : 0 });
+          broadcastAdmitted(ctx.state, { type: "layoutSwitchAllowedChanged", allowed: message.allowed });
+          break;
+        }
+        case "setDanmuEnabled": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.danmuEnabled = message.enabled;
+          saveHostPrefs(db, ctx.state.hostUserId, { danmu_enabled: message.enabled ? 1 : 0 });
+          broadcastAdmitted(ctx.state, { type: "danmuEnabledChanged", enabled: message.enabled });
           break;
         }
         case "setReaction": {

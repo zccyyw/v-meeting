@@ -488,6 +488,10 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const m = (rows as any[])[0];
     if (!m) return reply.code(404).send({ error: "not_found" });
     if (m.status === "ended") return reply.code(409).send({ error: "ended" });
+    // 锁定会议在加入弹窗即拦截：主持人不受限，其余成员不签发入会凭证（不跳转会议页）
+    if (m.locked && String(m.host_user_id) !== String(user.id)) {
+      return reply.code(403).send({ error: "meeting_locked" });
+    }
 
     const allowed = await assertJoinPassword(m, user.id, body.password, reply);
     if (!allowed) return;
@@ -523,6 +527,10 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const m = (rows as any[])[0];
     if (!m) return reply.code(404).send({ error: "not_found" });
     if (m.status === "ended") return reply.code(409).send({ error: "ended" });
+    // 锁定会议对访客一律拦截（访客不可能是主持人）
+    if (m.locked) {
+      return reply.code(403).send({ error: "meeting_locked" });
+    }
 
     const allowed = await assertJoinPassword(m, null, password, reply);
     if (!allowed) return;

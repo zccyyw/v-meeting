@@ -151,6 +151,11 @@ function AppShellInner() {
           alignItems: "center",
           overflow: "hidden",
           background: token.colorBgContainer,
+          // 侧栏独立于内容滚动：内容变高（或窗口缩矮）时，底部退出/改密/主题图标
+          // 不会被顶出视口（sticky 用内联样式，避免被 antd 运行时注入的样式覆盖）
+          position: "sticky",
+          top: 0,
+          height: "100dvh",
         }}
       >
         <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, paddingTop: 16 }}>
@@ -166,6 +171,7 @@ function AppShellInner() {
           mode="inline"
           selectedKeys={[location.pathname]}
           items={menuItems}
+          className="app-sider-menu"
           style={{
             flex: 1,
             background: "transparent",
@@ -173,7 +179,7 @@ function AppShellInner() {
           }}
         />
 
-        <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingBottom: 16, marginTop: "auto" }}>
+        <div className="app-sider-bottom" style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingBottom: 16, marginTop: "auto" }}>
           <NotificationBell />
           <ThemeToggle />
           {!installed && (canInstall || /iPad|iPhone|iPod/.test(navigator.userAgent)) && (
@@ -251,7 +257,7 @@ function AppShellInner() {
       </Sider>
 
       <Layout>
-        <Content style={{ padding: "24px 32px", overflow: "auto" }}>
+        <Content className="app-content">
           <Outlet />
         </Content>
       </Layout>

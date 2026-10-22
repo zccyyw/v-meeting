@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -8,6 +8,8 @@ import {
   DownOutlined,
   FullscreenOutlined,
   FullscreenExitOutlined,
+  LayoutOutlined,
+  ToolOutlined,
 } from "@ant-design/icons";
 import { MeetingApi, RecordingsApi, InvitationApi, type InvitationItem } from "@/api/client";
 import { copyText, formatMeetingCode } from "@/auth/joinPrefs";
@@ -28,10 +30,90 @@ import { useRecorder } from "@/hooks/useRecorder";
 import { SignalClient } from "@/signal/client";
 import { showMessage } from "@/ui/toast";
 import type { RecorderSource } from "@/media/recorder";
-import { App as AntApp, Dropdown, Popover } from "antd";
+import { App as AntApp, ConfigProvider, Dropdown, Popover, theme } from "antd";
 
 /** 宫格布局"一屏N等分"可选档位（对齐腾讯会议：3/6/9/12，默认 9） */
 const GRID_DIVISIONS = [3, 6, 9, 12] as const;
+
+/** 画面轮播间隔可选档位（ms），房间级：主持人选定后广播全员 */
+const ROTATION_INTERVALS = [5_000, 10_000, 20_000, 30_000, 60_000] as const;
+
+/**
+ * 参会时长计时存储（模块级）：
+ * 计时彻底独立于组件钩子链——会议组件钩子数量庞大（i18n/router/媒体房间等
+ * 内部钩子混杂），曾出现外层 state 推进但渲染文本冻结的问题；改为外部存储 +
+ * useSyncExternalStore 后，消费者以快照读取，计时不受组件渲染影响。
+ */
+const joinDurationStore = (() => {
+  let elapsed = 0;
+  let startedAt: number | null = null;
+  let timer: number | null = null;
+  const listeners = new Set<() => void>();
+  const emit = () => listeners.forEach((l) => l());
+  return {
+    /** 入会时启动计时（重复调用幂等） */
+    start() {
+      if (startedAt == null) startedAt = Date.now();
+      if (timer != null) return;
+      timer = window.setInterval(() => {
+        elapsed = Math.floor((Date.now() - (startedAt ?? Date.now())) / 1000);
+        emit();
+      }, 1000);
+    },
+    /** 离会时停止并归零 */
+    stop() {
+      if (timer != null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+      startedAt = null;
+      elapsed = 0;
+      emit();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    get: () => elapsed,
+  };
+})();
+
+/**
+ * 会议页 antd 浮层（布局选择 / 会议详情）的暗色主题：
+ * 会议页整体是自定义暗色（--meeting-*），antd 默认亮色浮层放进去会突兀，
+ * 用局部 ConfigProvider 覆写 colorBgElevated 等 token，使浮层底色/箭头/文字
+ * 与会议暗黑风格一致（嵌套的等分 Dropdown 菜单一并继承）。
+ */
+const MEETING_DARK_OVERLAY_THEME = {
+  algorithm: theme.darkAlgorithm,
+  token: {
+    colorPrimary: "#1278ff",
+    borderRadius: 8,
+    colorBgElevated: "#32353b",
+    colorBgContainer: "#26292e",
+    colorText: "#f5f6f7",
+    colorTextSecondary: "rgba(255, 255, 255, 0.55)",
+    colorBorder: "rgba(255, 255, 255, 0.14)",
+    colorBorderSecondary: "rgba(255, 255, 255, 0.08)",
+    colorFill: "rgba(255, 255, 255, 0.08)",
+    colorFillSecondary: "rgba(255, 255, 255, 0.12)",
+    colorFillTertiary: "rgba(255, 255, 255, 0.06)",
+  },
+};
+
+/**
+ * 主持人工具菜单项左侧的"√"槽位：
+ * 固定宽度保证勾选/未勾选时文字左缘对齐，未选中仅隐藏 √（占位保留）。
+ */
+function hostMenuCheck(on: boolean) {
+  return (
+    <span className={`host-menu-check${on ? " is-on" : ""}`}>
+      <CheckOutlined aria-hidden />
+    </span>
+  );
+}
 
 function formatDuration(ms: number): string {
   const total = Math.floor(ms / 1000);
@@ -58,6 +140,7 @@ const emptySnapshot: MediaRoomSnapshot = {
   camEnabled: false,
   handRaised: false,
   layout: "grid",
+  rotationIntervalMs: 20_000,
   focusPeerId: null,
   sharingScreen: false,
   canShare: true,
@@ -72,6 +155,8 @@ const emptySnapshot: MediaRoomSnapshot = {
   selfUnmuteAllowed: true,
   raiseHandAllowed: true,
   reactionAllowed: true,
+  layoutSwitchAllowed: true,
+  danmuEnabled: false,
   recordAllowed: false,
   chatMessages: [],
   error: null,
@@ -100,14 +185,7 @@ function MeetingPageInner() {
   const [snap, setSnap] = useState<MediaRoomSnapshot>(emptySnapshot);
   // 全屏状态：fullscreenchange 事件同步（含浏览器 ESC 退出）
   const [isFullscreen, setIsFullscreen] = useState(() => !!document.fullscreenElement);
-  // 成员画面轮换间隔（本地设置，持久化；主持人开关状态走信令）
-  const [rotationIntervalMs, setRotationIntervalMs] = useState<number>(() => {
-    const raw = Number(localStorage.getItem("rotationIntervalMs"));
-    return raw === 5000 || raw === 15000 || raw === 30000 ? raw : 15000;
-  });
-  useEffect(() => {
-    localStorage.setItem("rotationIntervalMs", String(rotationIntervalMs));
-  }, [rotationIntervalMs]);
+  // 成员画面轮换间隔已升级为房间级（主持人工具选定，信令广播全员），见 snap.rotationIntervalMs
   useEffect(() => {
     const sync = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener("fullscreenchange", sync);
@@ -188,7 +266,7 @@ function MeetingPageInner() {
     activeSpeakerId === "local"
       ? displayName
       : snap.peers.find((p) => p.peerId === activeSpeakerId)?.displayName ?? null;
-  const [danmuEnabled, setDanmuEnabled] = useState(false);
+  // 弹幕全局化：开关在主持人工具中，由信令广播（snap.danmuEnabled），不再有本地开关
   // 宫格"一屏N等分"：本地偏好，仅自己生效（localStorage 持久化）
   const [layoutCols, setLayoutCols] = useState<LayoutCols>(function (init) {
     const n = Number(init);
@@ -290,7 +368,7 @@ function MeetingPageInner() {
       setUnreadChat((n) => n + newMsgs.length);
     }
 
-    if (danmuEnabled) {
+    if (snap.danmuEnabled) {
       const items = newMsgs.map((m) => ({
         id: ++danmuIdRef.current,
         text: `${m.displayName}: ${m.text}`,
@@ -298,7 +376,7 @@ function MeetingPageInner() {
       }));
       setDanmuItems((prevItems) => [...prevItems, ...items].slice(-30));
     }
-  }, [snap.chatMessages, chatOpen, danmuEnabled, snap.peerId]);
+  }, [snap.chatMessages, chatOpen, snap.danmuEnabled, snap.peerId]);
 
   useEffect(() => {
     if (!wantAutoShare) return;
@@ -486,39 +564,17 @@ function MeetingPageInner() {
     if (ok) await flashCopied();
   }
 
-  if (!token) {
-    return (
-      <main className="page">
-        <h1>{t("meeting.missingToken")}</h1>
-        <p className="muted">{t("meeting.missingTokenHint")}</p>
-        <p>
-          <Link to="/">{t("meeting.backHome")}</Link>
-        </p>
-      </main>
-    );
-  }
-
-  const selfWaiting = snap.status === "waiting";
+  // 注意：以下钩子必须位于任何条件 return（如缺 token 的早退）之前，
+  // 否则构成条件钩子（React 规则违规），会导致钩子状态/副作用异常。
   const inMeeting = snap.status === "joined";
-  const isHost = snap.role === "host";
-  // 主持人始终可录制；普通参会者需主持人开启"开启录制"
-  const canRecord = isHost || snap.recordAllowed;
 
-  // 参会时长计时
-
-  const [joinElapsed, setJoinElapsed] = useState(0);
-
+  // 参会时长：模块级存储 + useSyncExternalStore（仅追加钩子，不移动既有槽位）
+  const joinElapsed = useSyncExternalStore(joinDurationStore.subscribe, joinDurationStore.get);
   useEffect(() => {
-
-    if (!inMeeting) { setJoinElapsed(0); return; }
-
-    const startedAt = Date.now();
-
-    const timer = window.setInterval(() => setJoinElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
-
-    return () => window.clearInterval(timer);
-
+    if (inMeeting) joinDurationStore.start();
+    else joinDurationStore.stop();
   }, [inMeeting]);
+
   // —— 表情反应气泡 ——
   const [reactions, setReactions] = useState<{ id: number; peerId: string; emoji: string }[]>([]);
   const reactionIdRef = useRef(0);
@@ -541,6 +597,23 @@ function MeetingPageInner() {
       if (roomRef.current) roomRef.current.emitReaction = undefined;
     };
   }, [inMeeting]);
+
+  if (!token) {
+    return (
+      <main className="page">
+        <h1>{t("meeting.missingToken")}</h1>
+        <p className="muted">{t("meeting.missingTokenHint")}</p>
+        <p>
+          <Link to="/">{t("meeting.backHome")}</Link>
+        </p>
+      </main>
+    );
+  }
+
+  const selfWaiting = snap.status === "waiting";
+  const isHost = snap.role === "host";
+  // 主持人始终可录制；普通参会者需主持人开启"开启录制"
+  const canRecord = isHost || snap.recordAllowed;
   const reactionName = (peerId: string) =>
     peerId === snap.peerId ? displayName : snap.peers.find((p) => p.peerId === peerId)?.displayName ?? null;
 
@@ -677,6 +750,8 @@ function MeetingPageInner() {
       : snap.role
         ? t("meeting.roleParticipant")
         : "";
+  // 主持人关闭"允许成员切换本地布局"后，成员的布局浮窗整体只读（本地偏好仍生效，仅不能改）
+  const layoutLocked = inMeeting && !isHost && !snap.layoutSwitchAllowed;
   const inviteLink = meetingCode
     ? `${window.location.origin}/?join=${meetingCode}`
     : "";
@@ -720,6 +795,7 @@ function MeetingPageInner() {
         )}
       <header className="meeting-header">
         <div className="meeting-header-info">
+          <ConfigProvider theme={MEETING_DARK_OVERLAY_THEME}>
           <Popover
             placement="bottomLeft"
             content={(
@@ -728,7 +804,7 @@ function MeetingPageInner() {
                 <div className="meeting-detail-row"><span>{t("meeting.meetingCode")}</span><strong>{snap.hideCode ? "••••••" : meetingCode ? formatMeetingCode(meetingCode) : "—"}</strong></div>
                 <div className="meeting-detail-row"><span>{t("meeting.myRole")}</span><strong>{isHost ? t("meeting.roleHost") : t("meeting.roleParticipant")}</strong></div>
                 {showJoinDuration && inMeeting && (
-                  <div className="meeting-detail-row"><span>{t("meeting.joinDuration")}</span><strong>{formatDuration(joinElapsed)}</strong></div>
+                  <div className="meeting-detail-row"><span>{t("meeting.joinDuration")}</span><strong>{formatDuration(joinElapsed * 1000)}</strong></div>
                 )}
               </div>
             )}
@@ -737,9 +813,10 @@ function MeetingPageInner() {
               {meetingTitle}
             </button>
           </Popover>
+          </ConfigProvider>
           <p className="meeting-header-meta">
             {meetingCode ? (
-              <span className="meeting-code-row">
+              <span className="meeting-code-row meeting-meta-code">
                 <span className="meeting-code">
                   {t("meeting.meetingCode")}{snap.hideCode ? " ••••••" : ` ${formatMeetingCode(meetingCode)}`}
                 </span>
@@ -758,10 +835,12 @@ function MeetingPageInner() {
                 </button>
               </span>
             ) : (
-              <span>{meetingId}</span>
+              <span className="meeting-meta-code">{meetingId}</span>
             )}
-            <span>·</span>
-            <span>{displayName}</span>
+            <span className="meeting-meta-name">
+              <span>·</span>
+              <span>{displayName}</span>
+            </span>
             {recorder.recording && (
               <span className="recording-indicator" title={t("meeting.recording")}>
                 <span className="recording-dot" aria-hidden />
@@ -769,37 +848,42 @@ function MeetingPageInner() {
               </span>
             )}
             {roleLabel ? (
-              <>
+              <span className="meeting-meta-role">
                 <span>·</span>
                 <span>{roleLabel}</span>
-              </>
+              </span>
             ) : null}
             {showJoinDuration && inMeeting && (
-              <>
+              <span className="meeting-meta-duration">
                 <span>·</span>
-                <span>{t("meeting.joinDuration")} {formatDuration(joinElapsed)}</span>
-              </>
+                <span>{t("meeting.joinDuration")} {formatDuration(joinElapsed * 1000)}</span>
+              </span>
             )}
           </p>
         </div>
 
         <div className="meeting-header-actions">
           {inMeeting && (
-            <Popover
-              trigger={["click"]}
-              placement="bottomRight"
-              content={(
+            <ConfigProvider theme={MEETING_DARK_OVERLAY_THEME}>
+              <Popover
+                trigger={["click"]}
+                placement="bottomRight"
+                content={(
               <div className="layout-panel">
+                {layoutLocked && (
+                  <p className="layout-panel-lock-hint">{t("meeting.layoutSwitchLockedHint")}</p>
+                )}
                 <div className="layout-panel-tabs">
                   <span className={`layout-tab-label${snap.layout === "grid" ? " is-active" : ""}`}>
                     {t("meeting.layoutGrid")}
                   </span>
                   <span className={`layout-tab-label layout-tab-label--grow${snap.layout === "speaker" ? " is-active" : ""}`}>
                     <span className="layout-tab-text">{t("meeting.layoutSpeaker")}</span>
-                    <label className="layout-panel-speakers">
+                    <label className={`layout-panel-speakers${layoutLocked ? " is-locked" : ""}`}>
                       <input
                         type="checkbox"
                         checked={onlyShowSpeakers}
+                        disabled={layoutLocked}
                         onChange={(e) => {
                           setOnlyShowSpeakers(e.target.checked);
                           localStorage.setItem("meeting.onlyShowSpeakers", e.target.checked ? "1" : "0");
@@ -811,11 +895,12 @@ function MeetingPageInner() {
                 </div>
                 <div className="layout-panel-cards">
                   {/* 宫格卡片：两个点击区——缩略图区点击切宫格布局，等分标签区点击弹等分菜单 */}
-                  <div className={`layout-card${snap.layout === "grid" ? " is-active" : ""}`}>
+                  <div className={`layout-card${snap.layout === "grid" ? " is-active" : ""}${layoutLocked ? " is-locked" : ""}`}>
                     <button
                       type="button"
                       className="layout-card-main"
                       title={t("meeting.layoutGrid")}
+                      disabled={layoutLocked}
                       onClick={() => {
                         if (isHost && snap.layout !== "grid") roomRef.current?.setLayout("grid");
                       }}
@@ -827,6 +912,7 @@ function MeetingPageInner() {
                     <Dropdown
                       trigger={["click"]}
                       placement="bottomLeft"
+                      disabled={layoutLocked}
                       menu={{
                         items: GRID_DIVISIONS.map((n) => ({
                           key: String(n),
@@ -842,7 +928,7 @@ function MeetingPageInner() {
                         },
                       }}
                     >
-                      <button type="button" className="layout-card-label">
+                      <button type="button" className="layout-card-label" disabled={layoutLocked}>
                         {t("meeting.gridDivisions", { n: layoutCols })}
                         <DownOutlined style={{ fontSize: 10 }} aria-hidden />
                       </button>
@@ -856,7 +942,8 @@ function MeetingPageInner() {
                     <button
                       key={v}
                       type="button"
-                      className={`layout-card${snap.layout === "speaker" && sideListLayout === v ? " is-active" : ""}`}
+                      className={`layout-card${snap.layout === "speaker" && sideListLayout === v ? " is-active" : ""}${layoutLocked ? " is-locked" : ""}`}
+                      disabled={layoutLocked}
                       onClick={() => {
                         if (snap.layout !== "speaker" && isHost) roomRef.current?.setLayout("speaker");
                         setSideListLayout(v);
@@ -875,44 +962,112 @@ function MeetingPageInner() {
               </div>
               )}
             >
-              <button type="button" className="meeting-header-btn" aria-label={t("meeting.layoutLabel")}>
-                {snap.layout === "grid" ? t("meeting.layoutGrid") : t("meeting.layoutSpeaker")}
-                <DownOutlined style={{ fontSize: 10, marginLeft: 6 }} aria-hidden />
+              <button type="button" className="meeting-header-btn meeting-header-btn--ghost" aria-label={t("meeting.layoutLabel")}>
+                <span className="meeting-header-btn-full">
+                  {snap.layout === "grid" ? t("meeting.layoutGrid") : t("meeting.layoutSpeaker")}
+                </span>
+                <span className="meeting-header-btn-compact">{t("meeting.layoutLabel")}</span>
+                <LayoutOutlined className="meeting-header-btn-icon" aria-hidden />
+                <DownOutlined className="meeting-header-btn-caret" style={{ fontSize: 10, marginLeft: 6 }} aria-hidden />
               </button>
             </Popover>
+            </ConfigProvider>
           )}
           {inMeeting && isHost && (
-            <Dropdown
-              trigger={["click"]}
-              menu={{
-                items: [
-                  { key: "lock", label: (snap.locked ? "\u2713 " : "") + t("meeting.toolLock") },
-                  { key: "hideCode", label: (snap.hideCode ? "\u2713 " : "") + t("meeting.toolHideCode") },
-                  { key: "freeChat", label: (snap.chatAllowed ? "\u2713 " : "") + t("meeting.toolFreeChat") },
-                  { key: "selfUnmute", label: (snap.selfUnmuteAllowed ? "\u2713 " : "") + t("meeting.toolSelfUnmute") },
-                  { key: "raiseHand", label: (snap.raiseHandAllowed ? "\u2713 " : "") + t("meeting.toolRaiseHand") },
-                  { type: "divider" },
-                  { key: "waiting", label: (snap.waitingRoomEnabled ? "\u2713 " : "") + t("meeting.waitingRoomToggle") },
-                  { key: "record", label: (snap.recordAllowed ? "\u2713 " : "") + t("meeting.recordToggle") },
-                ],
-                onClick: ({ key }) => {
-                  switch (key) {
-                    case "lock": roomRef.current?.setLocked(!snap.locked); break;
-                    case "hideCode": roomRef.current?.setHideCode(!snap.hideCode); break;
-                    case "freeChat": roomRef.current?.setChatAllowed(!snap.chatAllowed); break;
-                    case "selfUnmute": roomRef.current?.setSelfUnmuteAllowed(!snap.selfUnmuteAllowed); break;
-                    case "raiseHand": roomRef.current?.setRaiseHandAllowed(!snap.raiseHandAllowed); break;
-                    case "waiting": roomRef.current?.setWaitingRoom(!snap.waitingRoomEnabled); break;
-                    case "record": roomRef.current?.setRecordAllowed(!snap.recordAllowed); break;
-                  }
-                },
-              }}
-            >
-              <button type="button" className="meeting-header-btn" title={t("meeting.hostTools")}>
-                {t("meeting.hostTools")}
-                <DownOutlined style={{ fontSize: 10, marginLeft: 6 }} aria-hidden />
-              </button>
-            </Dropdown>
+            <ConfigProvider theme={MEETING_DARK_OVERLAY_THEME}>
+              <Dropdown
+                trigger={["click"]}
+                placement="bottomRight"
+                classNames={{ root: "meeting-dark-menu" }}
+                menu={{
+                  items: [
+                    {
+                      type: "group",
+                      label: t("meeting.hostGroupMeeting"),
+                      children: [
+                        { key: "lock", icon: hostMenuCheck(snap.locked), label: t("meeting.toolLock") },
+                        { key: "hideCode", icon: hostMenuCheck(snap.hideCode), label: t("meeting.toolHideCode") },
+                      ],
+                    },
+                    {
+                      type: "group",
+                      label: t("meeting.hostGroupPermission"),
+                      children: [
+                        { key: "freeChat", icon: hostMenuCheck(snap.chatAllowed), label: t("meeting.toolFreeChat") },
+                        { key: "selfUnmute", icon: hostMenuCheck(snap.selfUnmuteAllowed), label: t("meeting.toolSelfUnmute") },
+                        { key: "raiseHand", icon: hostMenuCheck(snap.raiseHandAllowed), label: t("meeting.toolRaiseHand") },
+                        { key: "allowShare", icon: hostMenuCheck(snap.allowShare), label: t("meeting.toolAllowShare") },
+                        { key: "record", icon: hostMenuCheck(snap.recordAllowed), label: t("meeting.recordToggle") },
+                      ],
+                    },
+                    {
+                      type: "group",
+                      label: t("meeting.hostGroupLayout"),
+                      children: [
+                        { key: "rotation", icon: hostMenuCheck(snap.rotationEnabled), label: t("meeting.rotationToggle") },
+                        {
+                          key: "rotationInterval",
+                          icon: <span className="host-menu-check" />,
+                          label: (
+                            <span className="host-menu-label">
+                              {t("meeting.rotationInterval")}
+                              <span className="host-menu-value">
+                                {snap.rotationIntervalMs / 1000}s
+                              </span>
+                            </span>
+                          ),
+                          children: ROTATION_INTERVALS.map((ms) => ({
+                            key: String(ms),
+                            icon: hostMenuCheck(snap.rotationIntervalMs === ms),
+                            label: `${ms / 1000}s`,
+                          })),
+                        },
+                        { key: "sideList", icon: hostMenuCheck(snap.sideListVisible), label: t("meeting.sideListVisible") },
+                        { key: "layoutSwitch", icon: hostMenuCheck(snap.layoutSwitchAllowed), label: t("meeting.toolLayoutSwitch") },
+                        { key: "danmu", icon: hostMenuCheck(snap.danmuEnabled), label: t("meeting.toolDanmu") },
+                      ],
+                    },
+                    {
+                      type: "group",
+                      label: t("meeting.hostGroupJoin"),
+                      children: [
+                        { key: "waiting", icon: hostMenuCheck(snap.waitingRoomEnabled), label: t("meeting.waitingRoomToggle") },
+                      ],
+                    },
+                  ],
+                  onClick: ({ key }) => {
+                    const room = roomRef.current;
+                    if (!room) return;
+                    // 轮播间隔子菜单叶子节点：key 为毫秒数值
+                    if (/^\d+$/.test(key)) {
+                      room.setRotationInterval(Number(key));
+                      return;
+                    }
+                    switch (key) {
+                      case "lock": room.setLocked(!snap.locked); break;
+                      case "hideCode": room.setHideCode(!snap.hideCode); break;
+                      case "freeChat": room.setChatAllowed(!snap.chatAllowed); break;
+                      case "selfUnmute": room.setSelfUnmuteAllowed(!snap.selfUnmuteAllowed); break;
+                      case "raiseHand": room.setRaiseHandAllowed(!snap.raiseHandAllowed); break;
+                      case "allowShare": room.setSharePermission(!snap.allowShare); break;
+                      case "record": room.setRecordAllowed(!snap.recordAllowed); break;
+                      case "rotation": room.setRotation(!snap.rotationEnabled); break;
+                      case "sideList": room.setSideListVisible(!snap.sideListVisible); break;
+                      case "layoutSwitch": room.setLayoutSwitchAllowed(!snap.layoutSwitchAllowed); break;
+                      case "danmu": room.setDanmuEnabled(!snap.danmuEnabled); break;
+                      case "waiting": room.setWaitingRoom(!snap.waitingRoomEnabled); break;
+                    }
+                  },
+                }}
+              >
+                <button type="button" className="meeting-header-btn meeting-header-btn--ghost" title={t("meeting.hostTools")}>
+                  <span className="meeting-header-btn-full">{t("meeting.hostTools")}</span>
+                  <span className="meeting-header-btn-compact">{t("meeting.hostToolsShort")}</span>
+                  <ToolOutlined className="meeting-header-btn-icon" aria-hidden />
+                  <DownOutlined className="meeting-header-btn-caret" style={{ fontSize: 10, marginLeft: 6 }} aria-hidden />
+                </button>
+              </Dropdown>
+            </ConfigProvider>
           )}
 
 
@@ -988,62 +1143,8 @@ function MeetingPageInner() {
                     ))}
                   </select>
                 </label>
-                {isHost && (
-                  <label className="control-check">
-                    <input
-                      type="checkbox"
-                      checked={snap.rotationEnabled}
-                      onChange={(e) => {
-                        roomRef.current?.setRotation(e.target.checked);
-                      }}
-                    />
-                    {t("meeting.rotationToggle")}
-                  </label>
-                )}
-                <label className="control-select">
-                  {t("meeting.rotationInterval")}
-                  <select
-                    value={rotationIntervalMs}
-                    onChange={(e) => setRotationIntervalMs(Number(e.target.value))}
-                  >
-                    <option value={5000}>5s</option>
-                    <option value={15000}>15s</option>
-                    <option value={30000}>30s</option>
-                  </select>
-                  </label>
-                {isHost && (
-                  <label className="checkbox danmu-toggle-row">
-                    <input
-                      type="checkbox"
-                      checked={snap.sideListVisible}
-                      onChange={(e) => roomRef.current?.setSideListVisible(e.target.checked)}
-                    />
-                    {t("meeting.sideListVisible")}
-                  </label>
-                )}
-                <label className="checkbox danmu-toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={onlyShowSpeakers}
-                    onChange={(e) => {
-                      setOnlyShowSpeakers(e.target.checked);
-                      localStorage.setItem("meeting.onlyShowSpeakers", e.target.checked ? "1" : "0");
-                    }}
-                  />
-                  {t("meeting.onlyShowSpeakers")}
-                </label>
-                <label className="checkbox danmu-toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={danmuEnabled}
-                    onChange={(e) => {
-                      const v = e.target.checked;
-                      setDanmuEnabled(v);
-                      if (!v) setDanmuItems([]);
-                    }}
-                  />
-                  {t("meeting.danmuToggle")}
-                </label>
+                {/* 设备选择与纯个人显示偏好保留在设置中；
+                    主持人开关（轮播/侧栏/布局切换/弹幕/等候室/录制等）已统一移至"主持人工具" */}
                 <label className="checkbox danmu-toggle-row">
                   <input
                     type="checkbox"
@@ -1066,46 +1167,28 @@ function MeetingPageInner() {
                   />
                   {t("meeting.showJoinDuration")}
                 </label>
-                {isHost && (
-                  <label className="checkbox danmu-toggle-row">
-                    <input
-                      type="checkbox"
-                      checked={snap.waitingRoomEnabled}
-                      onChange={(e) => {
-                        roomRef.current?.setWaitingRoom(e.target.checked);
-                      }}
-                    />
-                    {t("meeting.waitingRoomToggle")}
-                  </label>
-                )}
-                {isHost && (
-                  <label className="checkbox danmu-toggle-row">
-                    <input
-                      type="checkbox"
-                      checked={snap.recordAllowed}
-                      onChange={(e) => {
-                        roomRef.current?.setRecordAllowed(e.target.checked);
-                      }}
-                    />
-                    {t("meeting.recordAllowedToggle")}
-                  </label>
-                )}
               </div>
             )}
           </div>
         </div>
       </header>
 
-        {/* 阻断级错误（红）：进不了会 / 人数超限等 */}
-        {snap.error && snap.error !== "reconnect_failed" && (
-          <p className="error">
-            {snap.error === "meeting_locked"
-              ? t("meeting.meetingLockedHint")
-              : snap.error === "online_limit_reached"
-              ? t("meeting.onlineLimitReached")
-              : snap.error}
-          </p>
-        )}
+        {/* 阻断级错误（红）：进不了会 / 人数超限等。
+            锁定 / 人数超限为"无法进入"类错误：渲染带"返回首页"按钮的面板，避免用户卡在本页 */}
+        {snap.error === "meeting_locked" || snap.error === "online_limit_reached" ? (
+          <section className="panel meeting-ended">
+            <h2>
+              {snap.error === "meeting_locked"
+                ? t("meeting.meetingLockedHint")
+                : t("meeting.onlineLimitReached")}
+            </h2>
+            <button type="button" onClick={() => goHome()}>
+              {t("meeting.backHome")}
+            </button>
+          </section>
+        ) : snap.error && snap.error !== "reconnect_failed" ? (
+          <p className="error">{snap.error}</p>
+        ) : null}
 
         {/* 非阻断警示（黄）：媒体消费失败 / 权限受限等，10 秒自动消散，不影响会议继续使用 */}
         {inMeeting && snap.warning && warningDismissed !== snap.warning && (
@@ -1250,9 +1333,9 @@ function MeetingPageInner() {
                 }
                 peerRtt={snap.peerRtt}
                 rotationEnabled={snap.rotationEnabled}
-                rotationIntervalMs={rotationIntervalMs}
+                rotationIntervalMs={snap.rotationIntervalMs}
               />
-              {danmuEnabled && (
+              {snap.danmuEnabled && (
                 <DanmuOverlay
                   items={danmuItems}
                   onExpired={(id) =>
@@ -1270,7 +1353,6 @@ function MeetingPageInner() {
               >
                 <HostControls
                   isHost={isHost}
-                  allowShare={snap.allowShare}
                   allMuted={allMuted}
                   peers={[
                     // 服务端 peers 刻意不含自己；成员列表需展示全部入会人员
@@ -1293,9 +1375,6 @@ function MeetingPageInner() {
                   selfPeerId={snap.peerId}
                   invitations={invitations}
                   onClose={() => closePanel("members")}
-                  onToggleAllowShare={() => {
-                    roomRef.current?.setSharePermission(!snap.allowShare);
-                  }}
                   onToggleMuteAll={() => {
                     if (allMuted) {
                       roomRef.current?.unmuteAll();

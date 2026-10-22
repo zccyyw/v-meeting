@@ -74,6 +74,7 @@ function ControlButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={ariaLabel ?? label}
+      title={ariaLabel ?? label}
       aria-pressed={ariaPressed}
     >
       <span className="control-btn-icon">
