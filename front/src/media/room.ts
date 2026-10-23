@@ -83,6 +83,8 @@ export type MediaRoomSnapshot = {
   danmuEnabled: boolean;
   /** 主持人开关"全体禁言"：开启后入会成员即静音，且无法主动开麦 */
   allMuted: boolean;
+  /** allMuted 最后变更时间戳（ms）：0 表示未知/从未变更 */
+  allMutedAt: number;
   focusPeerId: string | null;
   sharingScreen: boolean;
   canShare: boolean;
@@ -191,6 +193,9 @@ export class MediaRoom {
   private layoutSwitchAllowed = true;
   private danmuEnabled = false;
   private allMuted = false;
+  /** allMuted 最后一次变更的时间戳（ms）：供 UI 判断"true 是否新鲜"，
+   *  广播错过导致的陈旧 true 不拦放开麦（由服务端 pauseProducer 守卫裁决） */
+  private allMutedAt = 0;
   /** 表情反应瞬时事件回调（UI 层设置，用于气泡飘屏） */
   emitReaction?: (peerId: string, emoji: string) => void;
   private rttTimer: ReturnType<typeof setInterval> | null = null;
@@ -262,6 +267,7 @@ export class MediaRoom {
       layoutSwitchAllowed: this.layoutSwitchAllowed,
       danmuEnabled: this.danmuEnabled,
       allMuted: this.allMuted,
+      allMutedAt: this.allMutedAt,
       focusPeerId: this.screenFocusPeerId ?? this.focusPeerId,
       sharingScreen: this.sharingScreen,
       canShare: this.canShare,
@@ -463,13 +469,10 @@ export class MediaRoom {
       this.emit();
     }
   }
-  /** 主持人开关"全体禁言"（服务端校验 host；开启时全员立即静音、入会即静音） */
+  /** 主持人开关"全体禁言"（服务端校验 host；开启时全员立即静音、入会即静音）。
+   *  不本地乐观置位：统一以服务端 allMutedChanged 广播回填，避免两端状态分裂 */
   setAllMuted(muted: boolean): void {
     this.signal.send({ type: "setAllMuted", muted });
-    if (this.allMuted !== muted) {
-      this.allMuted = muted;
-      this.emit();
-    }
   }
 
   /**
@@ -1193,6 +1196,8 @@ export class MediaRoom {
 
       case "allMutedChanged":
         this.allMuted = msg.muted;
+        this.allMutedAt = Date.now();
+        console.log("[media] allMutedChanged", msg.muted);
         this.emit();
         break;
 
@@ -1407,6 +1412,8 @@ export class MediaRoom {
     if (msg.danmuEnabled !== undefined) this.danmuEnabled = msg.danmuEnabled;
     if (msg.allMuted !== undefined) {
       this.allMuted = msg.allMuted;
+      this.allMutedAt = Date.now();
+      console.log("[media] joined allMuted", msg.allMuted);
       // 入会即禁言：本地麦克风初始为静音态（服务端同时会发 forceMute，双保险）
       if (msg.allMuted) this.micEnabled = false;
     }

@@ -1135,9 +1135,10 @@ export function createSignalHandler(db: Db) {
     }
     replayProducersToPeer(state, id);
     // 被主持人强制静音的成员：重新入会/刷新后立即恢复静音状态
-    // 全体禁言开启时，新入会成员（含重连）自动继承静音状态
+    // 全体禁言开启时，新入会成员（含重连）自动静音（只发 forceMute，
+    // 不写 mutedByHost——禁言是会议级总闸，与"被单独静音"标记解耦）
     if (state.allMuted) {
-      state.mutedByHost.add(mutedKey(media));
+      send(ws, { type: "forceMute", audio: true, video: false });
     }
     if (state.mutedByHost.has(mutedKey(media))) {
       send(ws, { type: "forceMute", audio: true, video: false });
@@ -1697,25 +1698,18 @@ export function createSignalHandler(db: Db) {
           }
           ctx.state.allMuted = message.muted;
           if (message.muted) {
-            // 开启：全员（含已入会）立即静音，并记入 mutedByHost
-            // （重连/刷新后仍保持；新入会成员在 join 时继承）
+            // 开启：全员（含已入会）立即静音。只发 forceMute，不写
+            // mutedByHost——那个集合专属表达"被主持人单独静音操作"的标记，
+            // 与全体禁言（会议级总闸）解耦，避免两个开关互相踩。
+            // 新入会/重连成员由 join 处的 allMuted 检查 + joined 快照覆盖。
             for (const p of ctx.state.room.listAdmittedPeers()) {
               if (p.role === "host") continue;
               const m = ctx.state.peers.get(p.peerId);
-              if (m) {
-                ctx.state.mutedByHost.add(mutedKey(m));
-                send(m.ws, { type: "forceMute", audio: true, video: false });
-              }
-            }
-          } else {
-            // 关闭：解除静音并允许成员自行开麦
-            ctx.state.mutedByHost.clear();
-            for (const p of ctx.state.room.listAdmittedPeers()) {
-              if (p.role === "host") continue;
-              const m = ctx.state.peers.get(p.peerId);
-              if (m) send(m.ws, { type: "forceMute", audio: false, video: false });
+              if (m) send(m.ws, { type: "forceMute", audio: true, video: false });
             }
           }
+          // 关闭：仅翻转总闸。绝不清 mutedByHost——主持人单独静音的标记
+          // 必须保留（其可否自解由 selfUnmuteAllowed 管辖，见 pauseProducer 守卫）
           broadcastAdmitted(ctx.state, { type: "allMutedChanged", muted: message.muted });
           break;
         }
@@ -2006,11 +2000,18 @@ export function createSignalHandler(db: Db) {
             producer.kind as "audio" | "video",
             appData0
           );
-          // 全体禁言：成员不得主动开启麦克风（服务端强制，防 devtools 绕过）。
-          // 不执行 resume，并回发 forceMute 让该端本地状态与服务端一致。
-          if (!message.paused && ctx.state.allMuted && source0 === "microphone") {
+          // 麦克风开启的服务端裁决（防 devtools 绕过），两个独立语义：
+          // 1) 全体禁言（allMuted）：会议级总闸，全员禁自开；
+          // 2) 被主持人单独静音（mutedByHost）且"允许自我解除静音"关闭：
+          //    个体级约束，仅拦被静音者（未被静音过的成员不受影响）。
+          if (!message.paused && source0 === "microphone") {
             const peer0 = ctx.state.room.getPeer(ctx.media.peerId);
-            if (peer0 && peer0.role !== "host") {
+            const mutedByHost = ctx.state.mutedByHost.has(mutedKey(ctx.media));
+            const blocked =
+              peer0 != null &&
+              peer0.role !== "host" &&
+              (ctx.state.allMuted || (mutedByHost && !ctx.state.selfUnmuteAllowed));
+            if (blocked) {
               send(ws, { type: "forceMute", audio: true, video: false });
               return;
             }

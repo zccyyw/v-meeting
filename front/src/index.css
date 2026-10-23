@@ -1075,10 +1075,10 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .control-split .control-btn { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; padding-right: 0.1rem; }
 .control-split-caret { align-self: stretch; border: 1px solid transparent; border-left: none; background: transparent; color: var(--meeting-muted); cursor: pointer; padding: 0 0.28rem; display: flex; align-items: center; border-radius: 0 8px 8px 0; transition: background 0.15s ease, color 0.15s ease; }
 .control-split-caret:hover { color: var(--meeting-text); }
-/* 主持人禁用（共享/录制/发言）：icon 右下角红色禁止通行标 */
+/* 主持人禁用（共享/录制/发言）：icon 右下角禁止通行标（淡红，不抢视觉焦点） */
 .control-btn-icon { position: relative; display: inline-flex; }
-.control-ban { position: absolute; right: -5px; bottom: -4px; width: 15px; height: 15px; border: 2px solid #ff4d4f; border-radius: 50%; background: rgba(0, 0, 0, 0.4); }
-.control-ban::after { content: ""; position: absolute; left: 1px; right: 1px; top: 50%; height: 2px; background: #ff4d4f; border-radius: 1px; transform: translateY(-50%) rotate(-45deg); }
+.control-ban { position: absolute; right: -5px; bottom: -4px; width: 15px; height: 15px; border: 2px solid rgba(255, 125, 125, 0.55); border-radius: 50%; background: rgba(0, 0, 0, 0.3); }
+.control-ban::after { content: ""; position: absolute; left: 1px; right: 1px; top: 50%; height: 2px; background: rgba(255, 125, 125, 0.55); border-radius: 1px; transform: translateY(-50%) rotate(-45deg); }
 
 /* —— 浮层玻璃底座（对齐直播弹幕设置面板风格：半透明深色 + 模糊 + 大圆角）—— */
 :root { --meeting-glass-bg: rgba(20, 24, 28, 0.9); --meeting-glass-blur: blur(14px); --meeting-glass-border: rgba(255, 255, 255, 0.1); }
@@ -1133,13 +1133,22 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 
 /* —— 图形化布局选择面板 —— */
 /* —— 布局面板（暗色，与会议页一致；浮层底色由 ConfigProvider 暗色主题提供）—— */
-.layout-panel { width: min(680px, calc(100vw - 2rem)); }
+.layout-panel { width: min(704px, calc(100vw - 2rem)); }
 .layout-panel-lock-hint { margin: 0 0 10px; font-size: 12px; line-height: 1.4; color: #faad14; }
-.layout-panel-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.layout-panel-tabs { display: flex; gap: 12px; margin-bottom: 12px; }
 /* 布局类型标签：纯展示，无点击事件；布局切换由下方卡片驱动。
    宫格布局为内容宽；演讲者布局通栏（flex:1），checkbox 包含其中——合计与卡片区域同宽 */
 .layout-tab-label { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-radius: 8px; background: rgba(255, 255, 255, 0.08); font-size: 13px; line-height: 18px; color: rgba(255, 255, 255, 0.65); user-select: none; }
 .layout-tab-label--grow { flex: 1; min-width: 0; justify-content: space-between; }
+/* 宫格布局标题宽度与下方卡片一致（156px） */
+.layout-panel-tabs .layout-tab-label:not(.layout-tab-label--grow) { flex: none; width: 156px; }
+/* 演讲者标题背景宽 = 三卡片 + 两间隙（156×3 + 12×2 = 504），与下方卡片区精确对齐；
+   面板内容区 = 704 - 24(浮层内边距) = 680 ≥ 672，宽屏放得下 */
+.layout-panel-tabs .layout-tab-label--grow { flex: none; width: calc(156px * 3 + 12px * 2); }
+/* 窄屏（面板被 100vw 压窄）：演讲者标题退回弹性占满，避免固定宽溢出 */
+@media (max-width: 736px) {
+  .layout-panel-tabs .layout-tab-label--grow { flex: 1; width: auto; }
+}
 .layout-tab-label.is-active { background: rgba(18, 120, 255, 0.25); color: #fff; }
 .layout-tab-label.is-active .layout-tab-text { color: #fff; font-weight: 600; }
 .layout-panel-speakers { display: flex; align-items: center; gap: 5px; font-size: 12px; color: rgba(255, 255, 255, 0.65); cursor: pointer; white-space: nowrap; }

@@ -30,7 +30,7 @@ import { useIsNarrow } from "@/hooks/useIsNarrow";
 import { useChromeAutoHide } from "@/hooks/useChromeAutoHide";
 import { useRecorder } from "@/hooks/useRecorder";
 import { SignalClient } from "@/signal/client";
-import { showMessage } from "@/ui/toast";
+import { showMessage, showError, showWarning, showInfo } from "@/ui/toast";
 import type { RecorderSource } from "@/media/recorder";
 import { App as AntApp, ConfigProvider, Dropdown, Popover } from "antd";
 import { MEETING_DARK_OVERLAY_THEME } from "@/theme/meetingOverlayTheme";
@@ -139,6 +139,7 @@ const emptySnapshot: MediaRoomSnapshot = {
   layoutSwitchAllowed: true,
   danmuEnabled: false,
   allMuted: false,
+  allMutedAt: 0,
   recordAllowed: false,
   chatMessages: [],
   error: null,
@@ -239,7 +240,9 @@ function MeetingPageInner() {
   // 布局子型（本地偏好，仅自己生效）
   // 演讲者布局的成员列表形态：房间级（信令广播全员跟随），不再用本地偏好
   const sideListLayout = snap.sideListLayout;
-  const [onlyShowSpeakers, setOnlyShowSpeakers] = useState(
+  // 「只显示说话者」入口临时隐藏（待定）：状态保留（localStorage 旧值/默认 false），
+  // 仅不再提供 UI 切换；恢复入口时改回 useState 双元素并还原布局浮窗注释块
+  const [onlyShowSpeakers] = useState(
     () => localStorage.getItem("meeting.onlyShowSpeakers") === "1",
   );
   // —— 正在讲话检测：本地电平判定 ——
@@ -316,7 +319,7 @@ function MeetingPageInner() {
       if (!prev.has(peerId)) {
         const p = snap.peers.find((x) => x.peerId === peerId);
         const name = p?.displayName ?? t("meeting.peer");
-        showMessage(t("meeting.recordingStartedBy", { name }));
+        showInfo(t("meeting.recordingStartedBy", { name }));
       }
     }
     // 停止录制的
@@ -324,7 +327,7 @@ function MeetingPageInner() {
       if (!current.has(peerId)) {
         const p = snap.peers.find((x) => x.peerId === peerId);
         const name = p?.displayName ?? t("meeting.peer");
-        showMessage(t("meeting.recordingStoppedBy", { name }));
+        showInfo(t("meeting.recordingStoppedBy", { name }));
       }
     }
     lastRecordingPeersRef.current = current;
@@ -339,7 +342,7 @@ function MeetingPageInner() {
     if (snap.status !== "ended") return;
     // Active leave already navigates home; only meeting end / remote end.
     if (snap.endedReason === "left") return;
-    showMessage(t("meeting.ended"));
+    showInfo(t("meeting.ended"));
     goHome({ replace: true });
   }, [snap.status, snap.endedReason, navigate, t]);
 
@@ -392,7 +395,7 @@ function MeetingPageInner() {
           : "";
       // User dismissed the browser picker — stay in meeting quietly.
       if (name === "NotAllowedError" || name === "AbortError") return;
-      showMessage(t("meeting.shareFailed"));
+      showError(t("meeting.shareFailed"));
     });
   }, [wantAutoShare, snap.status, params, navigate, meetingId, t]);
 
@@ -570,15 +573,24 @@ function MeetingPageInner() {
   // 首次进入会议自动全屏。页面加载时无用户手势，requestFullscreen 会被
   // 浏览器拒绝 → 降级为监听首次 pointerdown/keydown（有手势上下文）再请求。
   // Esc 退出后不自动重新拉全屏（退出全屏=普通态，始终显示上下区域）。
+  // 降级监听必须 cleanup：once 监听挂在 document 上，不随组件卸载移除，
+  // 残留在离开会议后的首页等页面会导致"莫名全屏"。
   useEffect(() => {
     if (!inMeeting || document.fullscreenElement) return;
+    let enterFs: (() => void) | null = null;
     document.documentElement.requestFullscreen?.().catch(() => {
-      const enterFs = () => {
+      enterFs = () => {
         document.documentElement.requestFullscreen?.().catch(() => {});
       };
       document.addEventListener("pointerdown", enterFs, { once: true });
       document.addEventListener("keydown", enterFs, { once: true });
     });
+    return () => {
+      if (enterFs) {
+        document.removeEventListener("pointerdown", enterFs);
+        document.removeEventListener("keydown", enterFs);
+      }
+    };
   }, [inMeeting]);
 
   // 入会凭证/会议终结类错误（invalid_token / meeting_ended / room_closed）：
@@ -597,7 +609,7 @@ function MeetingPageInner() {
     }
     if (handledTerminalErrorRef.current === err) return;
     handledTerminalErrorRef.current = err;
-    showMessage(
+    showWarning(
       err === "invalid_token"
         ? t("meeting.invalidTokenHint")
         : t("meeting.meetingEndedHint"),
@@ -709,7 +721,7 @@ function MeetingPageInner() {
 
   const handleToggleRecord = () => {
     if (!recorder.recording && !canRecord) {
-      showMessage(t("meeting.recordDisabledByHost"));
+      showWarning(t("meeting.recordDisabledByHost"));
       return;
     }
     if (recorder.recording) {
@@ -727,7 +739,7 @@ function MeetingPageInner() {
           showMessage(t("meeting.recordingSaved"));
         } catch (err) {
           console.error("upload recording failed", err);
-          showMessage(t("meeting.recordingSaveFailed"));
+          showError(t("meeting.recordingSaveFailed"));
         }
       });
       return;
@@ -737,7 +749,7 @@ function MeetingPageInner() {
       roomRef.current?.notifyRecordingStarted();
       showMessage(t("meeting.recordingStarted"));
     } else {
-      showMessage(t("meeting.recordingStartFailed"));
+      showError(t("meeting.recordingStartFailed"));
     }
   };
   function openPanel(key: "members" | "chat") {
@@ -933,6 +945,9 @@ function MeetingPageInner() {
                   </span>
                   <span className={`layout-tab-label layout-tab-label--grow${snap.layout === "speaker" ? " is-active" : ""}`}>
                     <span className="layout-tab-text">{t("meeting.layoutSpeaker")}</span>
+                    {/* TODO(待定)：「只显示说话者」入口临时隐藏——状态与渲染逻辑保留
+                        （onlyShowSpeakers / onlySpeakers），后续产品确认后再决定恢复或移除。
+                        恢复方式：将下方注释块改回 JSX 即可。
                     <label className={`layout-panel-speakers${layoutLocked ? " is-locked" : ""}`}>
                       <input
                         type="checkbox"
@@ -945,6 +960,7 @@ function MeetingPageInner() {
                       />
                       {t("meeting.onlyShowSpeakers")}
                     </label>
+                    */}
                   </span>
                 </div>
                 <div className="layout-panel-cards">
@@ -1042,7 +1058,7 @@ function MeetingPageInner() {
                         { key: "waiting", icon: hostMenuCheck(snap.waitingRoomEnabled), label: t("meeting.waitingRoomToggle") },
                         { key: "lock", icon: hostMenuCheck(snap.locked), label: t("meeting.toolLock") },
                         { key: "hideCode", icon: hostMenuCheck(snap.hideCode), label: t("meeting.toolHideCode") },
-                        { key: "allMuted", icon: hostMenuCheck(snap.allMuted), label: t("meeting.toolAllMuted") },
+                        { key: "allMuted", icon: hostMenuCheck(snap.allMuted), label: t("meeting.toolAllMuted"), title: t("meeting.allMutedDesc") },
                       ],
                     },
                     {
@@ -1050,7 +1066,7 @@ function MeetingPageInner() {
                       label: <span className="menu-group-title">{t("meeting.hostGroupPermission")}</span>,
                       children: [
                         { key: "freeChat", icon: hostMenuCheck(snap.chatAllowed), label: t("meeting.toolFreeChat") },
-                        { key: "selfUnmute", icon: hostMenuCheck(snap.selfUnmuteAllowed), label: t("meeting.toolSelfUnmute") },
+                        { key: "selfUnmute", icon: hostMenuCheck(snap.selfUnmuteAllowed), label: t("meeting.toolSelfUnmute"), title: t("meeting.selfUnmuteDesc") },
                         { key: "raiseHand", icon: hostMenuCheck(snap.raiseHandAllowed), label: t("meeting.toolRaiseHand") },
                         { key: "layoutSwitch", icon: hostMenuCheck(snap.layoutSwitchAllowed), label: t("meeting.toolLayoutSwitch") },
                       ],
@@ -1434,12 +1450,17 @@ function MeetingPageInner() {
           unreadChat={unreadChat}
           onToggleMic={() => {
 
+            // 全体禁言绝对优先：开启期间一律不允许成员自行开麦（selfUnmute 让位）。
+            // 服务端 pauseProducer 守卫为最终强制（防 devtools 绕过）。
             if (!snap.micEnabled && !isHost && (snap.allMuted || !snap.selfUnmuteAllowed)) {
-
-              showMessage(snap.allMuted ? t("meeting.allMutedHint") : t("meeting.selfUnmuteDisabled"));
-
+              console.log("[meeting] mic blocked", {
+                allMuted: snap.allMuted,
+                allMutedAt: snap.allMutedAt,
+                selfUnmuteAllowed: snap.selfUnmuteAllowed,
+                micEnabled: snap.micEnabled,
+              });
+              showWarning(snap.allMuted ? t("meeting.allMutedHint") : t("meeting.selfUnmuteDisabled"));
               return;
-
             }
 
             void roomRef.current
@@ -1486,7 +1507,8 @@ function MeetingPageInner() {
           onToggleRecord={handleToggleRecord}
           allowShare={snap.allowShare}
           recordAllowed={snap.recordAllowed}
-          micBanned={!isHost && (snap.allMuted || !snap.selfUnmuteAllowed)}
+          // 红禁止标专属"全体禁言"语义；selfUnmute 拦截仅 toast 提示，不挂标
+          micBanned={snap.allMuted}
           micBannedTip={
             snap.allMuted
               ? t("meeting.allMutedHint")
