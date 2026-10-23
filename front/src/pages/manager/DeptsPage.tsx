@@ -206,7 +206,7 @@ export function DeptsPage() {
         rowClassName="editable-row"
       />
 
-      <Modal
+      <Modal forceRender
         open={modalOpen}
         title={modalMode === "create" ? t("dept.create") : t("dept.edit")}
         onCancel={() => setModalOpen(false)}

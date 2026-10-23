@@ -7,7 +7,7 @@
 | 层级 | 技术 | 说明 |
 |------|------|------|
 | 前端 | React 19 + Vite 8 + TypeScript | PWA，Ant Design 6，构建目标 ES2020（兼容国产浏览器老内核） |
-| WebRTC 客户端 | mediasoup-client 3.21 | 与服务端 SFU 配合，支持 VP8 / H264 |
+| WebRTC 客户端 | mediasoup-client 3.25.3 | 与服务端 SFU 配合，支持 VP8 / H264 |
 | 国际化 | i18next + react-i18next | 中英文双语 |
 | 信令服务 | Node.js + ws + mediasoup 3.22 | WebSocket 信令 + SFU 媒体转发 |
 | API 服务 | Fastify 5 + TypeScript | 账号、会议、令牌、用户管理 |
@@ -88,8 +88,8 @@ npm run seed
 # 6. 启动三个服务（API / Realtime / 前端）
 npm run dev
 
-# 7. 本地开发 
-# 7.1 启动音视频
+# 7. 本地开发
+# 7.1 启动音视频容器（api / realtime 跑在容器里，前端 vite 宿主机热更新）
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d api realtime
 npm run dev:front
 或
@@ -97,6 +97,20 @@ npm run dev:local
 ```
 
 浏览器访问 `http://localhost:8081`，默认账号 `admin / 123456`。
+
+> 📌 **代码变更后重新构建容器**（`serve/api`、`serve/realtime` 代码改动必须重建才生效，前端 vite 热更新无需此步）：
+>
+> ```bash
+> docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build api realtime
+> ```
+>
+> 仅改环境变量（如 `MEDIASOUP_ANNOUNCED_IP`）时不用重新构建，recreate 即可：
+>
+> ```bash
+> docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate realtime
+> ```
+>
+> ⚠️ realtime **不要**在 Windows 宿主机直跑（`npm run dev:realtime`）：mediasoup-worker 原生进程在 Windows 上会在建房间时崩溃（访问违例），请使用容器或 WSL2。
 
 ### 全容器验证或演示
 ```bash
@@ -129,28 +143,33 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 - **预约会议（审批流）**：提交申请（时间 / 地点 / 单位数量 / 优先级 高·中·低）→ 授权管理员审批 → 批准后发起会议；快速会议不受此限制
 - 加入会议（会议号 / 历史记录），支持会议号邀请链接
 - 等候室与批准入会（主持人可动态开关）
-- 宫格 / 演讲者 / 培训布局切换
+- 宫格 / 演讲者布局切换（一屏 3/6/9/12 等分）；演讲者布局的成员列表支持**右侧 / 顶部 / 悬浮**三种形态（房间级，全员跟随）
 - **主讲人画面小窗（PIP）**：默认悬浮右下角，可拖动
-- **培训模式**：主画面 + 参会者列表，列表可收缩 / 拖动；仅主持人可切换发言者画面
-- **屏幕共享**：共享全屏时自动不渲染本地预览（避免无限嵌套画面），可开启「沉浸模式」用小窗看参会者
-- 举手、会议录制（Canvas 合成宫格画面上传，主持人可控制参会者录制权限）
+- **屏幕共享**：共享画面 cover 铺满（无黑边）；共享全屏时本地自动显示占位（避免无限嵌套画面）；主持人共享时若为宫格布局自动切演讲者布局
+- **沉浸式界面**：header 与底部操作栏浮化为 overlay，进入会议 5s 后自动隐藏，鼠标移到屏幕顶部/底部唤出、移走 3s 再隐藏
+- 自适应布局：底部操作栏窄屏图标模式、头部信息分级收起，适配不同分辨率
+- 举手、会议录制（Canvas 合成宫格画面上传）
 - 群组管理：一键群组开会、**常用分组置顶**
 
 **音视频**
-- 麦克风 / 摄像头开关，设备切换
+- 麦克风 / 摄像头开关，**设备切换**（底部按钮 caret 菜单，选中 ✓ 跟随）
+- 共享内容声音独立音轨播放/静音
 - 说话指示（绿色声波条动画，基于 Web Audio API）
 - 静音状态同步
 - 默认入会关闭摄像头
 
 **互动**
 - 实时群聊（微信式气泡布局）
-- 弹幕（开关、多轨道防覆盖、悬停暂停）
+- 弹幕（**主持人全局开关**：开启后全员聊天消息以弹幕飘过，多轨道防覆盖、悬停暂停）
 - 未读消息角标
 
 **主持人管控**
-- 全体静音 / 解除静音、移出成员
-- 允许 / 禁止成员共享屏幕
-- 开启 / 关闭参会者录制权限（默认关闭）
+- 主持人工具（分组菜单：会议管控 / 成员权限 / 画面与布局，勾选式）
+- 全体静音 / 解除静音、移出成员、锁定会议（加入弹窗即拦截，含兜底提示面板）
+- 允许 / 禁止成员共享屏幕、允许 / 禁止成员录制（按钮菜单，禁用时成员端按钮上锁 + 提示）
+- 允许成员自我解除静音、允许举手、允许成员切换本地布局（关闭后成员布局浮窗只读）
+- 画面轮播（房间级间隔 5/10/20/30/60s）、成员端列表显示、隐藏会议号、等候室
+- **偏好持久化**：主持人的开关调整跨会议保持（`host_meeting_prefs`）
 - 结束会议
 
 **用户管理与安全合规**
@@ -188,6 +207,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 | **RPM 包** | 银河麒麟 / 中科方德 / openEuler | `rpm -ivh meeting-*.rpm` → `configure.mjs` → `systemctl enable --now ...` | `rpm -Uvh` → 重启服务 |
 | **DEB 包** | 统信 UOS / 方德 DEB 系 / Debian | `dpkg -i meeting-*.deb` → 同上 | `dpkg -i` → 重启服务 |
 | **离线 zip 包** | 无 Docker 的通用 Linux | `unzip` → `sudo ./install.sh` | 解压新包 → `sudo ./install.sh` |
+
+> 使用 compose 源码编排（非离线镜像）时，代码变更后需重新构建镜像：`docker-compose up -d --build`。
 
 > 升级通用原则：先备份（数据库 + `.env`）；配置与数据目录自动保留；服务启动时**自动执行数据库迁移**；升级后按文档检查清单验收。
 
@@ -278,12 +299,12 @@ curl -k https://127.0.0.1/api/healthz
 
 | 用户名 | 密码 | 昵称 | 角色 | 说明 |
 |--------|------|------|------|------|
-| `admin` | `123456` | 管理员 | 超级管理员 (role_id=1) | 拥有所有权限 |
-| `system` | `System@123` | 系统用户 | 超级管理员 (role_id=1) | 隐藏用户，仅用于系统级操作 |
-| `sysadmin` | `Admin@123` | 系统管理员 | 系统管理员 (role_id=3) | 三员之一，管理用户与配置 |
+| `admin` | `123456` | 管理员 | 系统管理员 (role_id=1) | 拥有所有权限（原超级管理员与系统管理员已合并） |
+| `sysadmin` | `Sysadmin@123` | 系统维护 | 系统管理员 (role_id=1) | **隐藏账号**：管理系统专属配置（如合同授权在线人数上限），登录豁免在线人数统计，用户列表不展示 |
 | `authadmin` | `Admin@123` | 授权管理员 | 授权管理员 (role_id=4) | 三员之一，会议 / 用户审批 |
 | `auditadmin` | `Admin@123` | 审计管理员 | 审计管理员 (role_id=5) | 三员之一，仅查看操作日志 |
 | `meeting` | `Admin@123` | 普通用户 | 普通用户 (role_id=2) | 仅会议功能 |
 
-> ⚠️ 生产环境部署后请立即修改所有默认密码。三员分立：系统管理员管用户但不能审批；授权管理员审批但不能直接操作用户；审计管理员仅查看日志。
+> ⚠️ 生产环境部署后请立即修改所有默认密码。三员分立：授权管理员审批但不能直接操作用户；审计管理员仅查看日志。
 > 💡 生产交付包**不再创建** `test1-test5` 测试账号；本地开发需要时可设 `SEED_TEST_USERS=1` 后执行 seed。
+> 💡 原 `system` 隐藏用户已移除（其系统配置管理职责由 `sysadmin` 承担）。

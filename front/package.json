@@ -21,7 +21,7 @@
     "dompurify": "^3.4.17",
     "i18next": "^26.3.6",
     "lucide-react": "^1.26.0",
-    "mediasoup-client": "^3.21.0",
+    "mediasoup-client": "^3.25.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-i18next": "^17.0.11",

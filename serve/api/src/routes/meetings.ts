@@ -336,12 +336,11 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const m = (rows as Record<string, unknown>[])[0];
     if (!m) return reply.code(404).send({ error: "not_found" });
 
-    const [invRows] = await db.query(
-      `SELECT ii.display_name, ii.joined_at, d.dept_name
-       FROM meeting_invitations ii
-       LEFT JOIN sys_dept d ON d.dept_id = ii.dept_id
-       WHERE ii.meeting_id = ? AND ii.status = 'attended'
-       ORDER BY ii.joined_at ASC`,
+    // 实际参会明细：优先取 meeting_attendance（覆盖凭会议号加入/访客/快速会议
+    // 主持人——这些路径不入邀请表）；无记录（历史旧会议/旧版本）回退邀请表
+    const [attRows] = await db.query(
+      `SELECT display_name, joined_at FROM meeting_attendance
+       WHERE meeting_id = ? ORDER BY joined_at ASC`,
       [id],
     );
     const norm = (v: unknown): string | null => {
@@ -349,11 +348,26 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
       if (v instanceof Date) return v.toISOString().slice(0, 19).replace("T", " ");
       return String(v);
     };
-    const attendees = (invRows as { display_name: string | null; dept_name: string | null; joined_at: unknown }[]).map((r) => ({
+    let attendees = (attRows as { display_name: string; joined_at: unknown }[]).map((r) => ({
       name: r.display_name ?? "",
-      deptName: r.dept_name ?? "",
+      deptName: "",
       joinedAt: norm(r.joined_at) ?? "",
     }));
+    if (attendees.length === 0) {
+      const [invRows] = await db.query(
+        `SELECT ii.display_name, ii.joined_at, d.dept_name
+         FROM meeting_invitations ii
+         LEFT JOIN sys_dept d ON d.dept_id = ii.dept_id
+         WHERE ii.meeting_id = ? AND ii.status = 'attended'
+         ORDER BY ii.joined_at ASC`,
+        [id],
+      );
+      attendees = (invRows as { display_name: string | null; dept_name: string | null; joined_at: unknown }[]).map((r) => ({
+        name: r.display_name ?? "",
+        deptName: r.dept_name ?? "",
+        joinedAt: norm(r.joined_at) ?? "",
+      }));
+    }
     const startTime = attendees[0]?.joinedAt || norm(m.created_at) || "";
     const endTime = norm(m.ended_at) ?? "";
     const startMs = startTime ? new Date(startTime.replace(" ", "T")).getTime() : NaN;
@@ -664,8 +678,22 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     // 仅主持人 / 管理后台角色可查看参会者明细
     if (!(await assertMeetingManageAccess(db, reply, user, meetingId))) return;
 
-    // 查询已入会的邀请名单
+    // 查询实际参会者（meeting_attendance 覆盖凭号加入/访客），回退邀请名单
     try {
+      const [attRows] = await db.query(
+        `SELECT display_name FROM meeting_attendance WHERE meeting_id = ? ORDER BY joined_at ASC`,
+        [meetingId],
+      );
+      if ((attRows as any[]).length > 0) {
+        return {
+          items: (attRows as any[]).map((r) => ({
+            peerId: "",
+            displayName: r.display_name,
+            role: "participant",
+            handRaised: false,
+          })),
+        };
+      }
       const [rows] = await db.query(
         `SELECT display_name, status FROM meeting_invitations WHERE meeting_id = ? AND status = 'attended'`,
         [meetingId],
@@ -765,7 +793,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
 
     try {
       const [rows] = await db.query(
-        `SELECT i.display_name, i.status, i.joined_at,
+        `SELECT i.display_name, i.status, i.joined_at, i.user_id,
                 u.dept_id, d.dept_name
          FROM meeting_invitations i
          LEFT JOIN sys_user u ON u.user_id = i.user_id
@@ -781,6 +809,25 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
         deptId: r.dept_id ?? null,
         deptName: r.dept_name ?? null,
       }));
+      // 合并实际参会记录中"凭会议号直接加入"的成员/访客（不在邀请名单里）
+      const [attRows] = await db.query(
+        `SELECT display_name, is_guest, joined_at FROM meeting_attendance WHERE meeting_id = ?`,
+        [meetingId],
+      );
+      const invitedIds = new Set(
+        (rows as any[]).map((r) => (r.user_id == null ? `g:${r.display_name}` : String(r.user_id)))
+      );
+      for (const a of attRows as any[]) {
+        const key = a.user_id == null ? `g:${a.display_name}` : String(a.user_id);
+        if (invitedIds.has(key)) continue;
+        items.push({
+          displayName: a.display_name,
+          status: "attended",
+          joinedAt: a.joined_at ? new Date(a.joined_at).toISOString() : null,
+          deptId: null,
+          deptName: null,
+        });
+      }
       return { items };
     } catch {
       return { items: [] };

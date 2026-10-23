@@ -333,7 +333,7 @@ body.meeting-active {
 /* 兼容：页面中仍使用原生 button 且非 antd 的元素。
    排除项说明：layout-*（布局面板，需保持中性色）、video-sidelist-toggle /
    video-toplist-focus（会议视频区自有样式）不套用默认主色，避免被全局蓝覆盖。 */
-button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus) {
+button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret) {
   font: inherit;
   padding: 0.6rem 1rem;
   border-radius: 8px;
@@ -343,7 +343,7 @@ button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-h
   cursor: pointer;
 }
 
-button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):disabled {
+button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret):disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -466,6 +466,16 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
   .app-content { padding: 16px; }
 }
 
+/* —— 沉浸式全屏：header/controls 浮动 overlay + 自动隐藏 —— */
+.meeting-page.is-immersive .meeting-stage { padding: 0; }
+.meeting-page.is-immersive .meeting-header { position: absolute; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(180deg, rgba(0, 0, 0, 0.62), transparent); transition: opacity 0.25s ease, transform 0.25s ease; }
+.meeting-page.is-immersive .controls { position: absolute; bottom: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(0deg, rgba(0, 0, 0, 0.62), transparent); border-top-color: transparent; transition: opacity 0.25s ease, transform 0.25s ease; }
+.meeting-page.is-immersive.chrome-hidden .meeting-header { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+.meeting-page.is-immersive.chrome-hidden .controls { opacity: 0; transform: translateY(8px); pointer-events: none; }
+/* 沉浸态下成员/聊天浮层与媒体提示提到 overlay 之上，避免被遮 */
+.meeting-page.is-immersive .floating-panel { z-index: 110; }
+.meeting-page.is-immersive .meeting-media-hint { top: 4.2rem; }
+
 /* —— Meeting Page —— */
 .meeting-page {
   --meeting-bg: #1a1d21;
@@ -473,6 +483,9 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
   --meeting-bar-border: rgba(255, 255, 255, 0.08);
   --meeting-text: #f5f6f7;
   --meeting-muted: rgba(255, 255, 255, 0.55);
+  /* —— 沉浸式全屏（跟随浏览器全屏，无独立按钮）—— */
+  /* header/controls 浮化为 overlay（渐变遮罩保证可读），视频区铺满全屏；
+     chrome-hidden 时整体淡出并上/下滑移，pointer-events 让位视频操作 */
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -536,10 +549,13 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .meeting-header-btn.meeting-header-btn--ghost.is-active { border-color: transparent; background: rgba(18, 120, 255, 0.25); color: #fff; }
 
 .meeting-settings { position: relative; }
-.meeting-settings-popover { position: absolute; top: calc(100% + 0.4rem); right: 0; z-index: 1200; /* 高于成员面板(50)/PiP(60)/成员聊天浮窗(80)/邀请浮窗(1000)，仅低于 Modal 遮罩 */ width: min(280px, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 0.75rem; padding: 0.9rem; background: #32353b; border: 1px solid var(--meeting-bar-border); border-radius: 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
+.meeting-settings-popover { position: absolute; top: calc(100% + 0.4rem); right: 0; z-index: 1200; /* 高于成员面板(50)/PiP(60)/成员聊天浮窗(80)/邀请浮窗(1000)，仅低于 Modal 遮罩 */ width: min(280px, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 0.75rem; padding: 0.9rem; background: var(--meeting-glass-bg); backdrop-filter: var(--meeting-glass-blur); -webkit-backdrop-filter: var(--meeting-glass-blur); border: 1px solid var(--meeting-glass-border); border-radius: 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
 .meeting-settings-popover .control-select { flex-direction: column; align-items: stretch; gap: 0.35rem; color: var(--meeting-muted); font-size: 0.8rem; }
 .meeting-settings-popover .control-select select { max-width: none; width: 100%; color: var(--meeting-text); background: rgba(0, 0, 0, 0.25); border-color: var(--meeting-bar-border); }
-.meeting-settings-popover .danmu-toggle-row { justify-content: flex-start; font-size: 0.82rem; color: var(--meeting-text); padding: 0.2rem 0; }
+.meeting-settings-popover .meeting-settings-title { margin: 0 0 0.4rem; font-size: 0.95rem; font-weight: 600; color: #fff; padding-bottom: 0.55rem; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.meeting-settings-popover .danmu-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: 0.82rem; color: var(--meeting-text); padding: 0.3rem 0.1rem; cursor: pointer; border-radius: 8px; }
+.meeting-settings-popover .danmu-toggle-row:hover { background: rgba(255, 255, 255, 0.06); }
+.meeting-settings-popover .danmu-toggle-row input { cursor: pointer; }
 
 /* —— 主持人工具暗色菜单（antd Dropdown + ConfigProvider 暗色主题）—— */
 /* √ 槽位：固定宽度对齐文字，未选中仅隐藏 √ */
@@ -696,7 +712,8 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .video-tile { position: relative; background: #111; border-radius: 16px; overflow: hidden; min-height: 100px; aspect-ratio: 16 / 10; }
 .video-tile video { width: 100%; height: 100%; max-width: none; max-height: none; object-fit: cover; display: block; background: #1a1a1a; }
 /* 屏幕共享画面用 contain 完整显示：窗口/显示器比例与 tile 不同时避免四边被裁 */
-.video-tile--screen video { object-fit: var(--screen-fit, contain); }
+/* 共享画面默认 cover 铺满（原 contain 在 16:10 容器里对 16:9 内容产生上下黑边） */
+.video-tile--screen video { object-fit: var(--screen-fit, cover); }
 .video-tile--screen { background: #000; }
 .video-label { position: absolute; left: 0.5rem; bottom: 0.5rem; padding: 0.2rem 0.5rem; border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 0.8rem; }
 .video-label--cam-off::before { content: "🔒"; font-size: 0.65rem; margin-right: 0.2rem; }
@@ -723,12 +740,14 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 /* 操作簇弹性占位 + 横向滑动；离开按钮为常规弹性项靠右固定——两者不再重叠压盖（原 absolute 布局在窄屏会遮住末尾按钮） */
 .controls-cluster { display: flex; flex-wrap: nowrap; align-items: stretch; justify-content: center; gap: 0.2rem; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
 .controls-leave { flex: 0 0 auto; display: flex; align-items: center; }
-.control-btn { font: inherit; min-width: 3.6rem; max-width: 4.6rem; padding: 0.4rem 0.35rem 0.35rem; border-radius: 8px; border: 1px solid transparent !important; background: transparent !important; color: var(--meeting-text); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.28rem; line-height: 1.15; }
+.control-btn { font: inherit; min-width: 3.6rem; max-width: 4.6rem; padding: 0.4rem 0.35rem 0.35rem; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--meeting-text); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.28rem; line-height: 1.15; }
 .control-btn-icon { position: relative; display: grid; place-items: center; width: 1.5rem; height: 1.5rem; color: rgba(255, 255, 255, 0.92); }
 .control-btn-badge { position: absolute; top: -0.4rem; right: -0.5rem; min-width: 1rem; height: 1rem; padding: 0 0.25rem; border-radius: 999px; background: #ea4335; color: #fff; font-size: 0.62rem; font-weight: 600; line-height: 1rem; text-align: center; pointer-events: none; }
 .control-btn-label { font-size: 0.68rem; color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.control-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
-.control-btn.is-active { background: transparent !important; border-color: transparent !important; }
+/* hover 背景对齐 top 区布局按钮（rgba 0.12）；两段式按钮主区+caret 连成一块 */
+.control-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+.control-split:hover .control-btn:not(:disabled), .control-split:hover .control-split-caret { background: rgba(255, 255, 255, 0.12); }
+.control-btn.is-active { background: transparent; border-color: transparent; }
 .control-btn.is-active .control-btn-icon { color: rgba(255, 255, 255, 0.92); }
 .control-btn.is-off .control-btn-icon { color: #f28b82; }
 /* AntD 无"摄像头关闭"图标：斜线覆盖，模拟 AudioMutedOutlined 的禁用观感 */
@@ -1045,6 +1064,38 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .meeting-title-btn:hover { opacity: 0.8; }
 .meeting-detail-panel { display: flex; flex-direction: column; gap: 10px; min-width: 280px; }
 .meeting-detail-row { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; font-size: 13px; }
+/* 本地媒体降级提示：画面区顶部居中的黄色警示浮条（不挤压视频布局） */
+.meeting-media-hint { position: absolute; top: 0.5rem; left: 50%; transform: translateX(-50%); z-index: 20; display: inline-flex; align-items: center; gap: 0.4rem; max-width: min(560px, 92%); margin: 0; padding: 0.3rem 0.8rem; border-radius: 999px; background: rgba(0, 0, 0, 0.55); font-size: 0.78rem; line-height: 1.4; color: #faad14; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
+.meeting-media-hint .anticon { font-size: 0.9rem; }
+
+/* 两段式控制按钮（对齐腾讯会议）：主操作 + caret 菜单，视觉连体。
+   无缝要点：主区去右边框、caret 去左边框（交界只有 1px 边界），
+   caret 与主区等高（stretch + 同款 border），不使用负边距（会重叠出色带）。 */
+.control-split { display: inline-flex; align-items: center; }
+.control-split .control-btn { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; padding-right: 0.1rem; }
+.control-split-caret { align-self: stretch; border: 1px solid transparent; border-left: none; background: transparent; color: var(--meeting-muted); cursor: pointer; padding: 0 0.28rem; display: flex; align-items: center; border-radius: 0 8px 8px 0; transition: background 0.15s ease, color 0.15s ease; }
+.control-split-caret:hover { color: var(--meeting-text); }
+/* 主持人禁用（共享/录制/发言）：icon 右下角红色禁止通行标 */
+.control-btn-icon { position: relative; display: inline-flex; }
+.control-ban { position: absolute; right: -5px; bottom: -4px; width: 15px; height: 15px; border: 2px solid #ff4d4f; border-radius: 50%; background: rgba(0, 0, 0, 0.4); }
+.control-ban::after { content: ""; position: absolute; left: 1px; right: 1px; top: 50%; height: 2px; background: #ff4d4f; border-radius: 1px; transform: translateY(-50%) rotate(-45deg); }
+
+/* —— 浮层玻璃底座（对齐直播弹幕设置面板风格：半透明深色 + 模糊 + 大圆角）—— */
+:root { --meeting-glass-bg: rgba(20, 24, 28, 0.9); --meeting-glass-blur: blur(14px); --meeting-glass-border: rgba(255, 255, 255, 0.1); }
+
+/* —— 底部按钮设备/选项菜单（暗色精修：分组标题 + 右缘 ✓）—— */
+.meeting-dark-menu .ant-dropdown-menu { min-width: 260px; padding: 6px; border-radius: 12px; background: var(--meeting-glass-bg); backdrop-filter: var(--meeting-glass-blur); -webkit-backdrop-filter: var(--meeting-glass-blur); }
+.meeting-dark-menu .ant-dropdown-menu-item-group-title { padding: 8px 12px 4px; font-size: 12px; line-height: 1.4; color: rgba(255, 255, 255, 0.45); }
+.meeting-dark-menu .ant-dropdown-menu-item { margin: 2px 4px; padding: 7px 10px; border-radius: 8px; font-size: 13px; line-height: 1.45; }
+.meeting-dark-menu .ant-dropdown-menu-item:hover { background: rgba(255, 255, 255, 0.08); }
+.meeting-dark-menu .ant-dropdown-menu-item-divider { margin: 4px 8px; background: rgba(255, 255, 255, 0.08); }
+/* 选项行：文字居左、选中 ✓ 居右（✓ 用白色，主色仅留给主操作强调） */
+.meeting-dark-menu .menu-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.meeting-dark-menu .menu-row .anticon { color: #f5f6f7; }
+/* 分组标题即分割线：标题左对齐，右侧延伸细线 */
+.meeting-dark-menu .menu-group-title { display: flex; align-items: center; gap: 10px; font-size: 12px; color: rgba(255, 255, 255, 0.45); }
+.meeting-dark-menu .menu-group-title::after { content: ""; flex: 1; height: 1px; background: rgba(255, 255, 255, 0.12); }
+
 .meeting-detail-row span:first-child { flex: none; min-width: 76px; color: rgba(255, 255, 255, 0.45); }
 
 /* —— 表情反应（仅接收展示；发送入口已移除）—— */

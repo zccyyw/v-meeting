@@ -52,6 +52,8 @@ type RoomState = {
   rotationEnabled: boolean;
   /** 房间级轮播间隔（ms）：主持人选定，广播全员同步轮播节奏 */
   rotationIntervalMs: number;
+  /** 演讲者布局的成员列表形态（房间级）：host 总是可改，成员需 layoutSwitchAllowed */
+  sideListLayout: "embed" | "top" | "float";
   /** 主持人控制的"成员轮播侧栏对参会者可见"开关（主持人端始终可见） */
   sideListVisible: boolean;
   /** 主持人锁定会议：锁定后禁止新成员加入 */
@@ -70,6 +72,8 @@ type RoomState = {
   layoutSwitchAllowed: boolean;
   /** 主持人开关：弹幕（开启后全员聊天消息以弹幕形式飘过） */
   danmuEnabled: boolean;
+  /** 主持人开关"全体禁言"：开启后入会成员即静音（mutedByHost），且无法主动开麦 */
+  allMuted: boolean;
   /** 会议主持人 userId：开关切换时写入其偏好（host_meeting_prefs） */
   hostUserId: number | null;
 };
@@ -376,6 +380,8 @@ export function createSignalHandler(db: Db) {
           // 实现"本次变动开关后，下次开会保持不变"；无偏好记录时用历史默认值。
           rotationEnabled: hostPrefs?.rotationEnabled ?? true,
           rotationIntervalMs: hostPrefs?.rotationIntervalMs ?? 20_000,
+          // 演讲者布局的成员列表形态：本期仅房间级（每次开会回默认），不进偏好表
+          sideListLayout: "embed",
           sideListVisible: hostPrefs?.sideListVisible ?? true,
           // 锁定状态已落库：恢复而非重置（此前 realtime 重启会丢失主持人锁定动作）
           locked,
@@ -387,6 +393,8 @@ export function createSignalHandler(db: Db) {
           // 本地布局切换默认允许（旧行为）；弹幕默认关闭（原为本地偏好，全局化后由主持人开启）
           layoutSwitchAllowed: hostPrefs?.layoutSwitchAllowed ?? true,
           danmuEnabled: hostPrefs?.danmuEnabled ?? false,
+          // 全体禁言默认关闭（会议级状态，不进主持人偏好表）
+          allMuted: false,
           hostUserId,
         };
         rooms.set(meetingId, state);
@@ -509,10 +517,49 @@ export function createSignalHandler(db: Db) {
   }
 
   /**
+   * 准入成功后记录实际参会者（meeting_attendance）。
+   * 登录用户按 (meeting_id, user_id) 唯一去重（INSERT IGNORE / ON CONFLICT）；
+   * 访客 user_id 为 NULL（唯一键不约束 NULL），由应用层按显示名判重。
+   * 凭会议号直接加入、等候室准入、快速会议主持人等所有路径统一覆盖。
+   * 失败仅记日志，不阻断入会。
+   */
+  async function recordAttendance(
+    meetingId: string,
+    userId: number | null,
+    displayName: string
+  ) {
+    try {
+      const name = displayName.trim() || "Guest";
+      if (userId != null) {
+        const insertSql =
+          db.driver === "mysql"
+            ? `INSERT IGNORE INTO meeting_attendance (meeting_id, user_id, display_name, is_guest) VALUES (?, ?, ?, 0)`
+            : `INSERT INTO meeting_attendance (meeting_id, user_id, display_name, is_guest) VALUES (?, ?, ?, 0) ON CONFLICT (meeting_id, user_id) DO NOTHING`;
+        await db.query(insertSql, [meetingId, userId, name]);
+      } else {
+        const [dup] = await db.query(
+          `SELECT 1 AS ok FROM meeting_attendance
+           WHERE meeting_id = ? AND user_id IS NULL AND display_name = ? LIMIT 1`,
+          [meetingId, name]
+        );
+        if ((dup as unknown[]).length === 0) {
+          await db.query(
+            `INSERT INTO meeting_attendance (meeting_id, user_id, display_name, is_guest) VALUES (?, NULL, ?, 1)`,
+            [meetingId, name]
+          );
+        }
+      }
+    } catch (err) {
+      console.error("record attendance failed", err);
+    }
+  }
+
+  /**
    * 会议结束 → 落一条开会日志（sys_meeting_log，同一会议幂等只落一条）。
    * - meeting_type：创建时带 scheduled_at 为 '2' 预约会议，否则 '1' 快速会议；
-   * - start_time：最早参会记录时间（invitations.joined_at），无参会者退化为 created_at；
-   * - participant_count：按邀请记录 status='attended' 统计（guest 不计入）；
+   * - start_time：最早参会记录时间（优先 attendance.joined_at，覆盖凭号加入）；
+   * - participant_count：实际参会人数（meeting_attendance 计数，覆盖凭号加入与访客）；
+   *   无记录（历史旧会议/旧版本 realtime）时回退邀请表旧口径；
    * - duration_sec：end_time - start_time，写入时算好避免查询时跨库时间函数差异。
    */
   async function writeMeetingLog(meetingId: string) {
@@ -530,7 +577,9 @@ export function createSignalHandler(db: Db) {
       );
       const m = (rows as Record<string, unknown>[])[0];
       if (!m) return;
-      // 参会人数 = 已入会的受邀者 + 主持人（主持人已在名单则去重不重复计）
+      // 参会人数：优先取 meeting_attendance 实际参会记录（覆盖凭会议号加入/
+      // 访客/快速会议主持人——这些路径不入邀请表，旧口径恒为 1）；
+      // 无记录（历史旧会议/旧版本 realtime）时回退邀请表旧口径
       const [invRows] = await db.query(
         `SELECT COUNT(*) AS cnt,
                 COALESCE(SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END), 0) AS host_in_list,
@@ -539,15 +588,25 @@ export function createSignalHandler(db: Db) {
         [m.host_user_id ?? -1, meetingId]
       );
       const inv = (invRows as { cnt: number | string; host_in_list: number | string; first_joined: unknown }[])[0];
+      const [attRows] = await db.query(
+        `SELECT COUNT(*) AS cnt, MIN(joined_at) AS first_joined
+         FROM meeting_attendance WHERE meeting_id = ?`,
+        [meetingId]
+      );
+      const att = (attRows as { cnt: number | string; first_joined: unknown }[])[0];
+      const attendanceCnt = Number(att?.cnt) || 0;
       const participantCount =
-        (Number(inv?.cnt) || 0) + (Number(inv?.host_in_list) > 0 ? 0 : 1);
+        attendanceCnt > 0
+          ? attendanceCnt
+          : (Number(inv?.cnt) || 0) + (Number(inv?.host_in_list) > 0 ? 0 : 1);
       // 驱动可能返回 Date（mysql/pg）或字符串（sqlite），统一转 "YYYY-MM-DD HH:MM:SS"
       const norm = (v: unknown): string | null => {
         if (v == null) return null;
         if (v instanceof Date) return v.toISOString().slice(0, 19).replace("T", " ");
         return String(v);
       };
-      const startTime = norm(inv?.first_joined) ?? norm(m.created_at);
+      const startTime =
+        norm(att?.first_joined) ?? norm(inv?.first_joined) ?? norm(m.created_at);
       const endTime = norm(m.ended_at);
       const startMs = startTime ? new Date(startTime.replace(" ", "T")).getTime() : NaN;
       const endMs = endTime ? new Date(endTime.replace(" ", "T")).getTime() : Date.now();
@@ -805,6 +864,12 @@ export function createSignalHandler(db: Db) {
     const targetMedia = state.peers.get(targetPeerId);
     if (!target || !targetMedia) return false;
     state.room.admit(targetPeerId);
+    // 等候室准入同样计入实际参会记录
+    void recordAttendance(
+      state.room.meetingId,
+      targetMedia.userId,
+      target.displayName
+    );
 
     // ── 准入后更新会议邀请名单状态：已入会 ──
     if (targetMedia.userId != null) {
@@ -831,6 +896,7 @@ export function createSignalHandler(db: Db) {
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
       rotationIntervalMs: state.rotationIntervalMs,
+      sideListLayout: state.sideListLayout,
       sideListVisible: state.sideListVisible,
       allowShare: state.room.allowShareDefault,
       // 主持人控制项快照：后入会者直接同步（缺字段时前端用各自默认值兜底）
@@ -842,6 +908,7 @@ export function createSignalHandler(db: Db) {
       reactionAllowed: state.reactionAllowed,
       layoutSwitchAllowed: state.layoutSwitchAllowed,
       danmuEnabled: state.danmuEnabled,
+      allMuted: state.allMuted,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
       capabilities: { screenAudio: true },
       peers: admittedPeerList(state).filter((p) => p.peerId !== targetPeerId),
@@ -980,6 +1047,12 @@ export function createSignalHandler(db: Db) {
       auth.displayName?.trim() || message.displayName;
     const role = auth.role as UserRole;
     const peer = state.room.addPeer({ peerId: id, displayName, role });
+    // 实际参会记录（所有路径统一：凭号加入/受邀/等候室准入/快速会议主持人）
+    void recordAttendance(
+      auth.meetingId,
+      auth.userId ? Number(auth.userId) : null,
+      displayName
+    );
 
     const media: PeerMedia = {
       peerId: id,
@@ -1033,6 +1106,7 @@ export function createSignalHandler(db: Db) {
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
       rotationIntervalMs: state.rotationIntervalMs,
+      sideListLayout: state.sideListLayout,
       sideListVisible: state.sideListVisible,
       allowShare: state.room.allowShareDefault,
       // 主持人控制项快照：后入会者直接同步（缺字段时前端用各自默认值兜底）
@@ -1044,6 +1118,7 @@ export function createSignalHandler(db: Db) {
       reactionAllowed: state.reactionAllowed,
       layoutSwitchAllowed: state.layoutSwitchAllowed,
       danmuEnabled: state.danmuEnabled,
+      allMuted: state.allMuted,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
       capabilities: { screenAudio: true },
       peers: admittedPeerList(state).filter((p) => p.peerId !== id),
@@ -1060,6 +1135,10 @@ export function createSignalHandler(db: Db) {
     }
     replayProducersToPeer(state, id);
     // 被主持人强制静音的成员：重新入会/刷新后立即恢复静音状态
+    // 全体禁言开启时，新入会成员（含重连）自动继承静音状态
+    if (state.allMuted) {
+      state.mutedByHost.add(mutedKey(media));
+    }
     if (state.mutedByHost.has(mutedKey(media))) {
       send(ws, { type: "forceMute", audio: true, video: false });
     }
@@ -1467,6 +1546,23 @@ export function createSignalHandler(db: Db) {
           break;
         }
 
+        case "setSideListLayout": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer) {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          // host 总是可改；成员需"允许成员切换本地布局"开启
+          if (peer.role !== "host" && !ctx.state.layoutSwitchAllowed) {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.sideListLayout = message.variant;
+          broadcastAdmitted(ctx.state, { type: "sideListLayoutChanged", variant: message.variant });
+          break;
+        }
         case "setSideListVisible": {
           const ctx = requireAdmitted(ws);
           if (!ctx) return;
@@ -1589,6 +1685,38 @@ export function createSignalHandler(db: Db) {
           ctx.state.danmuEnabled = message.enabled;
           saveHostPrefs(db, ctx.state.hostUserId, { danmu_enabled: message.enabled ? 1 : 0 });
           broadcastAdmitted(ctx.state, { type: "danmuEnabledChanged", enabled: message.enabled });
+          break;
+        }
+        case "setAllMuted": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          ctx.state.allMuted = message.muted;
+          if (message.muted) {
+            // 开启：全员（含已入会）立即静音，并记入 mutedByHost
+            // （重连/刷新后仍保持；新入会成员在 join 时继承）
+            for (const p of ctx.state.room.listAdmittedPeers()) {
+              if (p.role === "host") continue;
+              const m = ctx.state.peers.get(p.peerId);
+              if (m) {
+                ctx.state.mutedByHost.add(mutedKey(m));
+                send(m.ws, { type: "forceMute", audio: true, video: false });
+              }
+            }
+          } else {
+            // 关闭：解除静音并允许成员自行开麦
+            ctx.state.mutedByHost.clear();
+            for (const p of ctx.state.room.listAdmittedPeers()) {
+              if (p.role === "host") continue;
+              const m = ctx.state.peers.get(p.peerId);
+              if (m) send(m.ws, { type: "forceMute", audio: false, video: false });
+            }
+          }
+          broadcastAdmitted(ctx.state, { type: "allMutedChanged", muted: message.muted });
           break;
         }
         case "setReaction": {
@@ -1872,6 +2000,20 @@ export function createSignalHandler(db: Db) {
           if (!producer) {
             send(ws, { type: "error", message: "producer_not_found" });
             return;
+          }
+          const appData0 = (producer.appData ?? {}) as Record<string, unknown>;
+          const source0 = producerSource(
+            producer.kind as "audio" | "video",
+            appData0
+          );
+          // 全体禁言：成员不得主动开启麦克风（服务端强制，防 devtools 绕过）。
+          // 不执行 resume，并回发 forceMute 让该端本地状态与服务端一致。
+          if (!message.paused && ctx.state.allMuted && source0 === "microphone") {
+            const peer0 = ctx.state.room.getPeer(ctx.media.peerId);
+            if (peer0 && peer0.role !== "host") {
+              send(ws, { type: "forceMute", audio: true, video: false });
+              return;
+            }
           }
           if (message.paused) await producer.pause();
           else await producer.resume();

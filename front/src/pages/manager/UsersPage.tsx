@@ -561,7 +561,7 @@ export function UsersPage() {
       </div>
 
       {/* 重置密码 Modal */}
-      <Modal
+      <Modal forceRender
         open={resetOpen}
         title={t("users.resetPassword")}
         onCancel={() => setResetOpen(false)}
@@ -599,7 +599,7 @@ export function UsersPage() {
       </Modal>
 
       {/* 导入 Modal */}
-      <Modal
+      <Modal forceRender
         open={importOpen}
         title={t("users.import")}
         onCancel={closeImport}
@@ -712,7 +712,7 @@ export function UsersPage() {
       </Modal>
 
       {/* 新增/编辑 Modal */}
-      <Modal
+      <Modal forceRender
         open={modalOpen}
         title={modalMode === "create" ? t("users.create") : t("users.edit")}
         onCancel={() => setModalOpen(false)}

@@ -260,7 +260,7 @@ export function MenusPage() {
         expandable={{ defaultExpandAllRows: false }}
       />
 
-      <Modal
+      <Modal forceRender
         open={modalOpen}
         title={modalMode === "create" ? t("menu.create") : t("menu.edit")}
         onCancel={() => setModalOpen(false)}

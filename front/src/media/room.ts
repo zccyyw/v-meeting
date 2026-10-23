@@ -62,6 +62,8 @@ export type MediaRoomSnapshot = {
   rotationEnabled: boolean;
   /** 房间级轮播间隔（ms）：主持人选定，全员同步 */
   rotationIntervalMs: number;
+  /** 演讲者布局的成员列表形态（房间级）：全员跟随最新设置 */
+  sideListLayout: "embed" | "top" | "float";
   /** 主持人控制的"成员轮播侧栏对参会者可见"开关（主持人端始终可见） */
   sideListVisible: boolean;  /** 主持人锁定会议：锁定后禁止新成员加入 */
   locked: boolean;
@@ -79,6 +81,8 @@ export type MediaRoomSnapshot = {
   layoutSwitchAllowed: boolean;
   /** 主持人开关：弹幕（开启后全员聊天消息以弹幕形式飘过） */
   danmuEnabled: boolean;
+  /** 主持人开关"全体禁言"：开启后入会成员即静音，且无法主动开麦 */
+  allMuted: boolean;
   focusPeerId: string | null;
   sharingScreen: boolean;
   canShare: boolean;
@@ -148,6 +152,8 @@ export class MediaRoom {
    * 导致本端 hasScreen 恒真、布局被锁在侧栏且主画面卡在黑屏。
    */
   private closedProducerIds = new Set<string>();
+  /** 已因 SDP 无效失败并重试过一次的 producerId（防止无限重试） */
+  private retriedConsumeProducers = new Set<string>();
   /** 是否正在自动重连（防止并发触发多条重连流程） */
   private reconnecting = false;
   /**
@@ -174,6 +180,7 @@ export class MediaRoom {
   private peerRtt = new Map<string, number>();
   private rotationEnabled = false;
   private rotationIntervalMs = 20_000;
+  private sideListLayout: "embed" | "top" | "float" = "embed";
   private sideListVisible = true;
   private locked = false;
   private hideCode = false;
@@ -183,6 +190,7 @@ export class MediaRoom {
   private reactionAllowed = true;
   private layoutSwitchAllowed = true;
   private danmuEnabled = false;
+  private allMuted = false;
   /** 表情反应瞬时事件回调（UI 层设置，用于气泡飘屏） */
   emitReaction?: (peerId: string, emoji: string) => void;
   private rttTimer: ReturnType<typeof setInterval> | null = null;
@@ -244,6 +252,7 @@ export class MediaRoom {
       peerRtt: Object.fromEntries(this.peerRtt),
       rotationEnabled: this.rotationEnabled,
       rotationIntervalMs: this.rotationIntervalMs,
+      sideListLayout: this.sideListLayout,
       sideListVisible: this.sideListVisible,      locked: this.locked,
       hideCode: this.hideCode,
       chatAllowed: this.chatAllowed,
@@ -252,6 +261,7 @@ export class MediaRoom {
       reactionAllowed: this.reactionAllowed,
       layoutSwitchAllowed: this.layoutSwitchAllowed,
       danmuEnabled: this.danmuEnabled,
+      allMuted: this.allMuted,
       focusPeerId: this.screenFocusPeerId ?? this.focusPeerId,
       sharingScreen: this.sharingScreen,
       canShare: this.canShare,
@@ -376,6 +386,14 @@ export class MediaRoom {
       this.emit();
     }
   }
+  /** 设置演讲者布局的成员列表形态（房间级：host 总是可改，成员需授权，全员跟随） */
+  setSideListLayout(variant: "embed" | "top" | "float"): void {
+    this.signal.send({ type: "setSideListLayout", variant });
+    if (this.sideListLayout !== variant) {
+      this.sideListLayout = variant;
+      this.emit();
+    }
+  }
   /** 主持人控制"成员轮播侧栏"对参会者的可见性（主持人端始终可见） */
   setSideListVisible(visible: boolean): void {
     this.signal.send({ type: "setSideListVisible", visible });
@@ -442,6 +460,14 @@ export class MediaRoom {
     this.signal.send({ type: "setDanmuEnabled", enabled });
     if (this.danmuEnabled !== enabled) {
       this.danmuEnabled = enabled;
+      this.emit();
+    }
+  }
+  /** 主持人开关"全体禁言"（服务端校验 host；开启时全员立即静音、入会即静音） */
+  setAllMuted(muted: boolean): void {
+    this.signal.send({ type: "setAllMuted", muted });
+    if (this.allMuted !== muted) {
+      this.allMuted = muted;
       this.emit();
     }
   }
@@ -707,6 +733,12 @@ export class MediaRoom {
     track.onended = () => {
       void this.stopScreenShare();
     };
+    // 共享开始：host 在宫格布局下自动切到演讲者布局（成员列表形态取当前房间
+    // 设置，默认为第一个子型"右侧成员列表"）；成员共享不改变房间布局，由
+    // VideoGrid 的 useSideLayout（hasScreen）在渲染层自动呈现侧栏形态。
+    if (this.role === "host" && this.layout === "grid") {
+      this.setLayout("speaker");
+    }
     this.emit();
   }
 
@@ -1109,6 +1141,11 @@ export class MediaRoom {
         this.emit();
         break;
 
+      case "sideListLayoutChanged":
+        this.sideListLayout = msg.variant;
+        this.emit();
+        break;
+
       case "sideListVisibleChanged":
         this.sideListVisible = msg.visible;
         this.emit();
@@ -1151,6 +1188,11 @@ export class MediaRoom {
 
       case "danmuEnabledChanged":
         this.danmuEnabled = msg.enabled;
+        this.emit();
+        break;
+
+      case "allMutedChanged":
+        this.allMuted = msg.muted;
         this.emit();
         break;
 
@@ -1348,6 +1390,9 @@ export class MediaRoom {
     if (msg.rotationIntervalMs !== undefined) {
       this.rotationIntervalMs = msg.rotationIntervalMs;
     }
+    if (msg.sideListLayout !== undefined) {
+      this.sideListLayout = msg.sideListLayout;
+    }
     if (msg.sideListVisible !== undefined) {
       this.sideListVisible = msg.sideListVisible;
     }
@@ -1360,6 +1405,11 @@ export class MediaRoom {
     if (msg.reactionAllowed !== undefined) this.reactionAllowed = msg.reactionAllowed;
     if (msg.layoutSwitchAllowed !== undefined) this.layoutSwitchAllowed = msg.layoutSwitchAllowed;
     if (msg.danmuEnabled !== undefined) this.danmuEnabled = msg.danmuEnabled;
+    if (msg.allMuted !== undefined) {
+      this.allMuted = msg.allMuted;
+      // 入会即禁言：本地麦克风初始为静音态（服务端同时会发 forceMute，双保险）
+      if (msg.allMuted) this.micEnabled = false;
+    }
     this.status = "joined";
     this.emit();
     await this.setupMedia();
@@ -1640,7 +1690,10 @@ export class MediaRoom {
       this.setConsumeError("consume_not_ready");
       return;
     }
-
+    // 说明：mediasoup-client 的 recvTransport connect 事件是在 consume() 调用链
+    // 内部触发的（handler.receive → setupTransport → @connect），因此不能给消费
+    // 加"connect 完成"前置门控（会死锁）；Firefox 上偶发的 consumer SDP 缺 ICE
+    // 参数问题由下方 retryConsumeOnInvalidSdp 的重试兜底。
     let consumed:
       | Extract<ServerMessage, { type: "consumed" }>
       | Extract<ServerMessage, { type: "error" }>;
@@ -1662,11 +1715,13 @@ export class MediaRoom {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[media] consume request failed", message, msg);
+      this.retryConsumeOnInvalidSdp(message, msg);
       this.setConsumeError(message || "consume_failed");
       return;
     }
     if (consumed.type === "error") {
       console.error("[media] consume rejected by server", consumed.message);
+      this.retryConsumeOnInvalidSdp(consumed.message, msg);
       this.setConsumeError(consumed.message || "consume_failed");
       return;
     }
@@ -1727,6 +1782,22 @@ export class MediaRoom {
     this.signal.send({ type: "resumeConsumer", consumerId: consumer.id });
     await consumer.resume();
     this.emit();
+  }
+
+  /**
+   * SDP 无效（如 "Invalid description, no ice-ufrag attribute"）时延迟重试一次：
+   * 该错误出现在 connect 确认与消费的竞态窗口内，短暂等待后 transport 必已就绪。
+   * 同一 producerId 只重试一次，防止无限循环。
+   */
+  private retryConsumeOnInvalidSdp(message: string | undefined, msg: Extract<ServerMessage, { type: "newProducer" }>): void {
+    if (!message || !/Invalid description|no ice-ufrag|no ice-pwd/i.test(message)) return;
+    if (this.retriedConsumeProducers.has(msg.producerId)) return;
+    this.retriedConsumeProducers.add(msg.producerId);
+    window.setTimeout(() => {
+      void this.consumeProducer(msg).catch((err) => {
+        console.error("consume retry failed", err);
+      });
+    }, 600);
   }
 
   /** 记录媒体消费失败原因，界面可见（不打断会议，仅提示） */

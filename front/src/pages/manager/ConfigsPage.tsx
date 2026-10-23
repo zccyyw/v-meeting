@@ -214,7 +214,7 @@ export function ConfigsPage() {
         scroll={{ x: 900 }}
       />
 
-      <Modal
+      <Modal forceRender
         open={modalOpen}
         title={modalMode === "create" ? t("config.create") : t("config.edit")}
         onCancel={() => setModalOpen(false)}

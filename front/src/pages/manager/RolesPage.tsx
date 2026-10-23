@@ -261,7 +261,7 @@ export function RolesPage() {
         scroll={{ x: 700 }}
       />
 
-      <Modal
+      <Modal forceRender
         open={modalOpen}
         title={modalMode === "create" ? t("role.create") : t("role.edit")}
         onCancel={() => setModalOpen(false)}

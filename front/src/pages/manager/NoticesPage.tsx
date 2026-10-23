@@ -296,7 +296,7 @@ export function NoticesPage() {
         scroll={{ x: 800 }}
       />
 
-      <Modal
+      <Modal forceRender
         open={modalOpen}
         title={modalMode === "create" ? t("notice.create") : t("notice.edit")}
         onCancel={() => setModalOpen(false)}

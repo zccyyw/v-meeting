@@ -48,7 +48,7 @@ export function ChangePasswordModal({ open, onClose }: Props) {
   }
 
   return (
-    <Modal
+    <Modal forceRender
       open={open}
       title={t("account.changePassword")}
       onCancel={handleClose}

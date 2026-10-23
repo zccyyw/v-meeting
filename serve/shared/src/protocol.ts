@@ -78,6 +78,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("setRotationInterval"),
     intervalMs: z.number().int(),
   }),
+  /** 设置演讲者布局的成员列表形态（房间级：host 总是可改；成员需 layoutSwitchAllowed） */
+  z.object({
+    type: z.literal("setSideListLayout"),
+    variant: z.enum(["embed", "top", "float"]),
+  }),
   z.object({
     /** 主持人控制"成员轮播侧栏"是否对其他参会者可见 */
     type: z.literal("setSideListVisible"),
@@ -99,6 +104,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("setLayoutSwitchAllowed"), allowed: z.boolean() }),
   /** 主持人开关"弹幕"：开启后全员聊天消息以弹幕形式飘过（全局生效） */
   z.object({ type: z.literal("setDanmuEnabled"), enabled: z.boolean() }),
+  /** 主持人开关"全体禁言"：开启后入会成员即静音，且无法主动开启麦克风 */
+  z.object({ type: z.literal("setAllMuted"), muted: z.boolean() }),
   /** 成员发表情反应（reactionAllowed 时可用） */
   z.object({
     type: z.literal("setReaction"),
@@ -159,6 +166,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     rotationEnabled: z.boolean().optional(),
     // 房间级轮播间隔（ms）：后入会者直接同步
     rotationIntervalMs: z.number().optional(),
+    // 演讲者布局的成员列表形态：后入会者直接同步
+    sideListLayout: z.enum(["embed", "top", "float"]).optional(),
+    // 主持人开启"全体禁言"：后入会者直接同步（入会即静音）
+    allMuted: z.boolean().optional(),
     // 沉浸模式（主画面全屏 + 浮层控件）与投屏显示模式：后入会者直接同步
     // 主持人控制的"成员轮播侧栏对参会者可见"开关：后入会者直接同步
     sideListVisible: z.boolean().optional(),
@@ -268,6 +279,12 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   }),
 
   z.object({
+    /** 成员列表形态变更后广播全员 */
+    type: z.literal("sideListLayoutChanged"),
+    variant: z.enum(["embed", "top", "float"]),
+  }),
+
+  z.object({
     /** 主持人切换"成员轮播侧栏可见性"后广播全员 */
     type: z.literal("sideListVisibleChanged"),
     visible: z.boolean(),
@@ -282,6 +299,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("layoutSwitchAllowedChanged"), allowed: z.boolean() }),
   /** 主持人切换"弹幕"后广播全员 */
   z.object({ type: z.literal("danmuEnabledChanged"), enabled: z.boolean() }),
+  z.object({ type: z.literal("allMutedChanged"), muted: z.boolean() }),
   z.object({
     type: z.literal("reaction"),
     peerId: z.string(),

@@ -10,6 +10,7 @@ import {
   FullscreenExitOutlined,
   LayoutOutlined,
   ToolOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 import { MeetingApi, RecordingsApi, InvitationApi, type InvitationItem } from "@/api/client";
 import { copyText, formatMeetingCode } from "@/auth/joinPrefs";
@@ -26,11 +27,13 @@ import { InvitationPanel } from "@/components/InvitationPanel";
 import { FloatingPanel } from "@/components/FloatingPanel";
 import { useActiveSpeaker, type ActiveSpeakerSource } from "@/hooks/useActiveSpeaker";
 import { useIsNarrow } from "@/hooks/useIsNarrow";
+import { useChromeAutoHide } from "@/hooks/useChromeAutoHide";
 import { useRecorder } from "@/hooks/useRecorder";
 import { SignalClient } from "@/signal/client";
 import { showMessage } from "@/ui/toast";
 import type { RecorderSource } from "@/media/recorder";
-import { App as AntApp, ConfigProvider, Dropdown, Popover, theme } from "antd";
+import { App as AntApp, ConfigProvider, Dropdown, Popover } from "antd";
+import { MEETING_DARK_OVERLAY_THEME } from "@/theme/meetingOverlayTheme";
 
 /** 宫格布局"一屏N等分"可选档位（对齐腾讯会议：3/6/9/12，默认 9） */
 const GRID_DIVISIONS = [3, 6, 9, 12] as const;
@@ -81,29 +84,6 @@ const joinDurationStore = (() => {
 })();
 
 /**
- * 会议页 antd 浮层（布局选择 / 会议详情）的暗色主题：
- * 会议页整体是自定义暗色（--meeting-*），antd 默认亮色浮层放进去会突兀，
- * 用局部 ConfigProvider 覆写 colorBgElevated 等 token，使浮层底色/箭头/文字
- * 与会议暗黑风格一致（嵌套的等分 Dropdown 菜单一并继承）。
- */
-const MEETING_DARK_OVERLAY_THEME = {
-  algorithm: theme.darkAlgorithm,
-  token: {
-    colorPrimary: "#1278ff",
-    borderRadius: 8,
-    colorBgElevated: "#32353b",
-    colorBgContainer: "#26292e",
-    colorText: "#f5f6f7",
-    colorTextSecondary: "rgba(255, 255, 255, 0.55)",
-    colorBorder: "rgba(255, 255, 255, 0.14)",
-    colorBorderSecondary: "rgba(255, 255, 255, 0.08)",
-    colorFill: "rgba(255, 255, 255, 0.08)",
-    colorFillSecondary: "rgba(255, 255, 255, 0.12)",
-    colorFillTertiary: "rgba(255, 255, 255, 0.06)",
-  },
-};
-
-/**
  * 主持人工具菜单项左侧的"√"槽位：
  * 固定宽度保证勾选/未勾选时文字左缘对齐，未选中仅隐藏 √（占位保留）。
  */
@@ -141,6 +121,7 @@ const emptySnapshot: MediaRoomSnapshot = {
   handRaised: false,
   layout: "grid",
   rotationIntervalMs: 20_000,
+  sideListLayout: "embed",
   focusPeerId: null,
   sharingScreen: false,
   canShare: true,
@@ -157,6 +138,7 @@ const emptySnapshot: MediaRoomSnapshot = {
   reactionAllowed: true,
   layoutSwitchAllowed: true,
   danmuEnabled: false,
+  allMuted: false,
   recordAllowed: false,
   chatMessages: [],
   error: null,
@@ -218,6 +200,10 @@ function MeetingPageInner() {
   // 非阻断警示（黄横幅）10 秒自动消散：记录已隐藏的警示内容，
   // 新内容出现时重新显示；清空时复位
   const [warningDismissed, setWarningDismissed] = useState<string | null>(null);
+  // 沉浸态跟随浏览器全屏：全屏中 header/controls 浮化为 overlay 并自动隐藏；
+  // 退出全屏恢复普通态（始终显示）。首次进入会议自动请求全屏（见下方 effect）。
+  const [isImmersive, setIsImmersive] = useState(false);
+  const chromeVisible = useChromeAutoHide(isImmersive);
   useEffect(() => {
     if (!snap.warning) {
       setWarningDismissed(null);
@@ -227,6 +213,8 @@ function MeetingPageInner() {
     const timer = setTimeout(() => setWarningDismissed(snap.warning), 10_000);
     return () => clearTimeout(timer);
   }, [snap.warning]);
+
+  // 全屏状态同步：进入/退出浏览器全屏时切换沉浸态；退出时强制恢复 chrome 可见
   const [membersOpen, setMembersOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   // 浮窗打开顺序（早→晚）：决定成员/聊天左右排布，先开者在最右；关闭再打开会重新排队
@@ -249,7 +237,8 @@ function MeetingPageInner() {
     () => localStorage.getItem("meeting.showJoinDuration") === "1",
   );
   // 布局子型（本地偏好，仅自己生效）
-  const [sideListLayout, setSideListLayout] = useState<"embed" | "top" | "float">(function (init) { return init === "top" || init === "float" ? init : "embed"; }(localStorage.getItem("meeting.sideListLayout") || "default"));
+  // 演讲者布局的成员列表形态：房间级（信令广播全员跟随），不再用本地偏好
+  const sideListLayout = snap.sideListLayout;
   const [onlyShowSpeakers, setOnlyShowSpeakers] = useState(
     () => localStorage.getItem("meeting.onlyShowSpeakers") === "1",
   );
@@ -393,7 +382,9 @@ function MeetingPageInner() {
       { replace: true },
     );
 
-    void roomRef.current?.startScreenShare().catch((err) => {
+    void roomRef.current
+      ?.startScreenShare()
+      .catch((err) => {
       console.error(err);
       const name =
         err && typeof err === "object" && "name" in err
@@ -568,6 +559,28 @@ function MeetingPageInner() {
   // 否则构成条件钩子（React 规则违规），会导致钩子状态/副作用异常。
   const inMeeting = snap.status === "joined";
 
+  // 沉浸态：跟随浏览器全屏状态
+  useEffect(() => {
+    const onFsChange = () => setIsImmersive(document.fullscreenElement != null);
+    document.addEventListener("fullscreenchange", onFsChange);
+    onFsChange();
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  // 首次进入会议自动全屏。页面加载时无用户手势，requestFullscreen 会被
+  // 浏览器拒绝 → 降级为监听首次 pointerdown/keydown（有手势上下文）再请求。
+  // Esc 退出后不自动重新拉全屏（退出全屏=普通态，始终显示上下区域）。
+  useEffect(() => {
+    if (!inMeeting || document.fullscreenElement) return;
+    document.documentElement.requestFullscreen?.().catch(() => {
+      const enterFs = () => {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+      };
+      document.addEventListener("pointerdown", enterFs, { once: true });
+      document.addEventListener("keydown", enterFs, { once: true });
+    });
+  }, [inMeeting]);
+
   // 参会时长：模块级存储 + useSyncExternalStore（仅追加钩子，不移动既有槽位）
   const joinElapsed = useSyncExternalStore(joinDurationStore.subscribe, joinDurationStore.get);
   useEffect(() => {
@@ -662,6 +675,10 @@ function MeetingPageInner() {
   };
 
   const handleToggleRecord = () => {
+    if (!recorder.recording && !canRecord) {
+      showMessage(t("meeting.recordDisabledByHost"));
+      return;
+    }
     if (recorder.recording) {
       // 停止并上传（先通知信令再停止，顺序与原实现一致）
       roomRef.current?.notifyRecordingStopped();
@@ -774,7 +791,11 @@ function MeetingPageInner() {
   const showChatPanel = chatOpen && (!isNarrow || orderedKeys[0] === "chat");
 
   return (
-    <main className="meeting-page">
+    <main
+      className={`meeting-page${isImmersive ? " is-immersive" : ""}${
+        isImmersive && !chromeVisible ? " chrome-hidden" : ""
+      }`}
+    >
       <div className="meeting-stage">
         {inMeeting && showActiveSpeaker && activeSpeakerName && (
           <div className="active-speaker" role="status">
@@ -946,8 +967,8 @@ function MeetingPageInner() {
                       disabled={layoutLocked}
                       onClick={() => {
                         if (snap.layout !== "speaker" && isHost) roomRef.current?.setLayout("speaker");
-                        setSideListLayout(v);
-                        localStorage.setItem("meeting.sideListLayout", v);
+                        // 房间级：host 总是可改；成员需"允许成员切换本地布局"开启（浮窗已禁用时点不到）
+                        roomRef.current?.setSideListLayout(v);
                       }}
                     >
                       <span className={`layout-thumb ${thumbCls}`}>
@@ -983,26 +1004,27 @@ function MeetingPageInner() {
                   items: [
                     {
                       type: "group",
-                      label: t("meeting.hostGroupMeeting"),
+                      label: <span className="menu-group-title">{t("meeting.hostGroupMeeting")}</span>,
                       children: [
+                        { key: "waiting", icon: hostMenuCheck(snap.waitingRoomEnabled), label: t("meeting.waitingRoomToggle") },
                         { key: "lock", icon: hostMenuCheck(snap.locked), label: t("meeting.toolLock") },
                         { key: "hideCode", icon: hostMenuCheck(snap.hideCode), label: t("meeting.toolHideCode") },
+                        { key: "allMuted", icon: hostMenuCheck(snap.allMuted), label: t("meeting.toolAllMuted") },
                       ],
                     },
                     {
                       type: "group",
-                      label: t("meeting.hostGroupPermission"),
+                      label: <span className="menu-group-title">{t("meeting.hostGroupPermission")}</span>,
                       children: [
                         { key: "freeChat", icon: hostMenuCheck(snap.chatAllowed), label: t("meeting.toolFreeChat") },
                         { key: "selfUnmute", icon: hostMenuCheck(snap.selfUnmuteAllowed), label: t("meeting.toolSelfUnmute") },
                         { key: "raiseHand", icon: hostMenuCheck(snap.raiseHandAllowed), label: t("meeting.toolRaiseHand") },
-                        { key: "allowShare", icon: hostMenuCheck(snap.allowShare), label: t("meeting.toolAllowShare") },
-                        { key: "record", icon: hostMenuCheck(snap.recordAllowed), label: t("meeting.recordToggle") },
+                        { key: "layoutSwitch", icon: hostMenuCheck(snap.layoutSwitchAllowed), label: t("meeting.toolLayoutSwitch") },
                       ],
                     },
                     {
                       type: "group",
-                      label: t("meeting.hostGroupLayout"),
+                      label: <span className="menu-group-title">{t("meeting.hostGroupLayout")}</span>,
                       children: [
                         { key: "rotation", icon: hostMenuCheck(snap.rotationEnabled), label: t("meeting.rotationToggle") },
                         {
@@ -1023,15 +1045,7 @@ function MeetingPageInner() {
                           })),
                         },
                         { key: "sideList", icon: hostMenuCheck(snap.sideListVisible), label: t("meeting.sideListVisible") },
-                        { key: "layoutSwitch", icon: hostMenuCheck(snap.layoutSwitchAllowed), label: t("meeting.toolLayoutSwitch") },
                         { key: "danmu", icon: hostMenuCheck(snap.danmuEnabled), label: t("meeting.toolDanmu") },
-                      ],
-                    },
-                    {
-                      type: "group",
-                      label: t("meeting.hostGroupJoin"),
-                      children: [
-                        { key: "waiting", icon: hostMenuCheck(snap.waitingRoomEnabled), label: t("meeting.waitingRoomToggle") },
                       ],
                     },
                   ],
@@ -1049,9 +1063,8 @@ function MeetingPageInner() {
                       case "freeChat": room.setChatAllowed(!snap.chatAllowed); break;
                       case "selfUnmute": room.setSelfUnmuteAllowed(!snap.selfUnmuteAllowed); break;
                       case "raiseHand": room.setRaiseHandAllowed(!snap.raiseHandAllowed); break;
-                      case "allowShare": room.setSharePermission(!snap.allowShare); break;
-                      case "record": room.setRecordAllowed(!snap.recordAllowed); break;
                       case "rotation": room.setRotation(!snap.rotationEnabled); break;
+                      case "allMuted": room.setAllMuted(!snap.allMuted); break;
                       case "sideList": room.setSideListVisible(!snap.sideListVisible); break;
                       case "layoutSwitch": room.setLayoutSwitchAllowed(!snap.layoutSwitchAllowed); break;
                       case "danmu": room.setDanmuEnabled(!snap.danmuEnabled); break;
@@ -1099,53 +1112,10 @@ function MeetingPageInner() {
             </button>
             {settingsOpen && (
               <div className="meeting-settings-popover" role="dialog">
-                <label className="control-select">
-                  {t("meeting.mic")}
-                  <select
-                    value={audioId}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      setAudioId(id);
-                      void roomRef.current?.switchDevice("audio", id).catch((err) => {
-                        console.warn("[rtc] switch audio device failed:", err);
-                      });
-                    }}
-                  >
-                    {audioInputs.map((d) => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label ||
-                          t("meeting.deviceMicFallback", {
-                            id: d.deviceId.slice(0, 6),
-                          })}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="control-select">
-                  {t("meeting.camera")}
-                  <select
-                    value={videoId}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      setVideoId(id);
-                      void roomRef.current?.switchDevice("video", id).catch((err) => {
-                        console.warn("[rtc] switch video device failed:", err);
-                      });
-                    }}
-                  >
-                    {videoInputs.map((d) => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label ||
-                          t("meeting.deviceCamFallback", {
-                            id: d.deviceId.slice(0, 6),
-                          })}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {/* 设备选择与纯个人显示偏好保留在设置中；
-                    主持人开关（轮播/侧栏/布局切换/弹幕/等候室/录制等）已统一移至"主持人工具" */}
+                <h3 className="meeting-settings-title">{t("meeting.settings")}</h3>
+                {/* 设备选择已迁至底部"静音/摄像头"按钮菜单；此处仅保留纯个人显示偏好 */}
                 <label className="checkbox danmu-toggle-row">
+                  {t("meeting.showActiveSpeaker")}
                   <input
                     type="checkbox"
                     checked={showActiveSpeaker}
@@ -1154,9 +1124,9 @@ function MeetingPageInner() {
                       localStorage.setItem("meeting.showActiveSpeaker", e.target.checked ? "1" : "0");
                     }}
                   />
-                  {t("meeting.showActiveSpeaker")}
                 </label>
                 <label className="checkbox danmu-toggle-row">
+                  {t("meeting.showJoinDuration")}
                   <input
                     type="checkbox"
                     checked={showJoinDuration}
@@ -1165,7 +1135,6 @@ function MeetingPageInner() {
                       localStorage.setItem("meeting.showJoinDuration", e.target.checked ? "1" : "0");
                     }}
                   />
-                  {t("meeting.showJoinDuration")}
                 </label>
               </div>
             )}
@@ -1208,19 +1177,6 @@ function MeetingPageInner() {
               : snap.warning.startsWith("consume_failed:")
               ? `${t("meeting.consumeFailed")}（${snap.warning.slice("consume_failed:".length)}）`
               : snap.warning}
-          </p>
-        )}
-
-        {/* 本地媒体降级提示（非阻断）：无摄像头/无麦克风/权限拒绝时仍可观看他人 */}
-        {inMeeting && snap.localMediaError && (
-          <p className="muted meeting-media-hint">
-            {snap.localMediaError === "no_camera"
-              ? t("meeting.noCameraHint")
-              : snap.localMediaError === "no_media_devices"
-                ? t("meeting.noMediaHint")
-                : snap.localMediaError === "media_permission_denied"
-                  ? t("meeting.mediaPermissionHint")
-                  : t("meeting.mediaCaptureHint")}
           </p>
         )}
 
@@ -1412,6 +1368,23 @@ function MeetingPageInner() {
             )}
           </div>
         )}
+
+        {/* 本地媒体降级提示（非阻断）：无摄像头/无麦克风/权限拒绝时仍可观看他人。
+            浮条置于画面区顶部居中，不挤压视频布局 */}
+        {inMeeting && snap.localMediaError && (
+          <div className="meeting-media-hint" role="status">
+            <WarningOutlined aria-hidden />
+            <span>
+              {snap.localMediaError === "no_camera"
+                ? t("meeting.noCameraHint")
+                : snap.localMediaError === "no_media_devices"
+                  ? t("meeting.noMediaHint")
+                  : snap.localMediaError === "media_permission_denied"
+                    ? t("meeting.mediaPermissionHint")
+                    : t("meeting.mediaCaptureHint")}
+            </span>
+          </div>
+        )}
       </div>
 
       {inMeeting && (
@@ -1428,9 +1401,9 @@ function MeetingPageInner() {
           unreadChat={unreadChat}
           onToggleMic={() => {
 
-            if (!snap.micEnabled && !snap.selfUnmuteAllowed && !isHost) {
+            if (!snap.micEnabled && !isHost && (snap.allMuted || !snap.selfUnmuteAllowed)) {
 
-              showMessage(t("meeting.selfUnmuteDisabled"));
+              showMessage(snap.allMuted ? t("meeting.allMutedHint") : t("meeting.selfUnmuteDisabled"));
 
               return;
 
@@ -1478,6 +1451,36 @@ function MeetingPageInner() {
           recording={recorder.recording}
           canRecord={canRecord}
           onToggleRecord={handleToggleRecord}
+          allowShare={snap.allowShare}
+          recordAllowed={snap.recordAllowed}
+          micBanned={!isHost && (snap.allMuted || !snap.selfUnmuteAllowed)}
+          micBannedTip={
+            snap.allMuted
+              ? t("meeting.allMutedHint")
+              : t("meeting.selfUnmuteDisabled")
+          }
+          onToggleAllowShare={() => {
+            roomRef.current?.setSharePermission(!snap.allowShare);
+          }}
+          onToggleRecordAllowed={() => {
+            roomRef.current?.setRecordAllowed(!snap.recordAllowed);
+          }}
+          audioInputs={audioInputs}
+          videoInputs={videoInputs}
+          audioId={audioId}
+          videoId={videoId}
+          onChangeAudio={(id) => {
+            setAudioId(id);
+            void roomRef.current?.switchDevice("audio", id).catch((err) => {
+              console.warn("[rtc] switch audio device failed:", err);
+            });
+          }}
+          onChangeVideo={(id) => {
+            setVideoId(id);
+            void roomRef.current?.switchDevice("video", id).catch((err) => {
+              console.warn("[rtc] switch video device failed:", err);
+            });
+          }}
           screenAudioAvailable={snap.screenAudioStreams.size > 0}
           screenAudioMuted={screenAudioMuted}
           onToggleScreenAudio={() => setScreenAudioMuted((m) => !m)}

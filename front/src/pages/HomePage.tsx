@@ -698,7 +698,7 @@ export function HomePage() {
       </Row>
 
       {/* Join Meeting Modal */}
-      <Modal
+      <Modal forceRender
         open={modal === "join"}
         title={t("joinModal.title")}
         onCancel={closeModal}
@@ -741,7 +741,7 @@ export function HomePage() {
       </Modal>
 
       {/* Schedule Meeting Modal — 提交会议申请，审批通过后方可发起 */}
-      <Modal
+      <Modal forceRender
         open={modal === "schedule"}
         title={t("scheduleModal.title")}
         onCancel={closeModal}

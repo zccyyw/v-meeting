@@ -202,7 +202,7 @@ if (isMain) {
     .then((r) => {
       console.log(`seeded ${r.seeded.length} users: ${r.seeded.join(", ")}`);
       console.log(`  admin       / 123456     (系统管理员)`);
-      console.log(`  system      / System@123 (系统隐藏用户)`);
+      console.log(`  sysadmin    / Sysadmin@123 (隐藏账号，系统配置管理)`);
       console.log(`  authadmin   / Admin@123  (授权管理员)`);
       console.log(`  auditadmin  / Admin@123  (审计管理员)`);
       console.log(`  meeting     / Admin@123  (普通用户)`);

@@ -49,6 +49,16 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const sid = getSessionId();
   if (sid) headers.set("x-session-id", sid);
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  // 会话失效（服务重启后内存会话丢失 / 被踢）：非登录接口的 401 一律
+  // 清本地会话并强制回登录页。登录接口自身的 401（密码错误）除外，
+  // 避免死循环，交由登录页展示错误。
+  if (res.status === 401 && !path.startsWith("/auth/login")) {
+    for (const key of ["sessionId", "role", "roles", "permissions", "userId", "displayName"]) {
+      localStorage.removeItem(key);
+    }
+    window.location.assign("/login");
+    return undefined as T;
+  }
   if (!res.ok) await throwApiError(res);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
