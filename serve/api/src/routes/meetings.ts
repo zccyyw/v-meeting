@@ -279,10 +279,15 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     const [rows] = await db.query(
       `SELECT m.id, m.code, m.title, m.host_user_id, m.scheduled_at, m.created_at, m.ended_at,
               u.user_name AS host_name,
-              (SELECT COUNT(*) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') + CASE WHEN m.host_user_id IS NULL THEN 0 WHEN EXISTS (SELECT 1 FROM meeting_invitations ii2 WHERE ii2.meeting_id = m.id AND ii2.status = 'attended' AND ii2.user_id = m.host_user_id) THEN 0 ELSE 1 END AS participants,
-              (SELECT MIN(ii.joined_at) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') AS first_joined
+              COALESCE(att.cnt, 0) AS att_cnt,
+              att.first_joined AS att_first_joined,
+              (SELECT COUNT(*) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') + CASE WHEN m.host_user_id IS NULL THEN 0 WHEN EXISTS (SELECT 1 FROM meeting_invitations ii2 WHERE ii2.meeting_id = m.id AND ii2.status = 'attended' AND ii2.user_id = m.host_user_id) THEN 0 ELSE 1 END AS inv_participants,
+              (SELECT MIN(ii.joined_at) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') AS inv_first_joined
        FROM meetings m
        LEFT JOIN sys_user u ON u.user_id = m.host_user_id
+       -- 实际参会记录聚合（021 新增）：覆盖凭会议号加入/访客/快速会议主持人
+       LEFT JOIN (SELECT meeting_id, COUNT(*) AS cnt, MIN(joined_at) AS first_joined
+                  FROM meeting_attendance GROUP BY meeting_id) att ON att.meeting_id = m.id
        WHERE ${vis}
        ORDER BY m.ended_at DESC
        LIMIT ${pageSize} OFFSET ${offset}`,
@@ -293,7 +298,12 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
       return String(v);
     };
     const items = (rows as Record<string, unknown>[]).map((r) => {
-      const startTime = norm(r.first_joined) ?? norm(r.created_at) ?? "";
+      // 参会人数：优先实际参会记录（021，覆盖凭号加入/访客），
+      // 无记录（历史旧会议）回退邀请表口径
+      const attCnt = Number(r.att_cnt) || 0;
+      const invCnt = Number(r.inv_participants) || 0;
+      const startTime =
+        norm(r.att_first_joined) ?? norm(r.inv_first_joined) ?? norm(r.created_at) ?? "";
       const endTime = norm(r.ended_at) ?? "";
       const startMs = startTime ? new Date(startTime.replace(" ", "T")).getTime() : NaN;
       const endMs = endTime ? new Date(endTime.replace(" ", "T")).getTime() : NaN;
@@ -309,7 +319,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
           Number.isFinite(startMs) && Number.isFinite(endMs)
             ? Math.max(0, Math.floor((endMs - startMs) / 1000))
             : 0,
-        participantCount: Number(r.participants) || 0,
+        participantCount: attCnt > 0 ? attCnt : invCnt,
         myRole: Number(r.host_user_id) === uid ? "host" : "participant",
       };
     });

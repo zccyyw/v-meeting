@@ -425,6 +425,8 @@
     "detailTitle": "会议详情",
     "myRole": "我的身份",
     "meetingLockedHint": "会议已锁定，无法加入",
+    "invalidTokenHint": "入会凭证已失效，正在返回首页",
+    "meetingEndedHint": "会议已结束，正在返回首页",
     "handDisabledNote": "主持人已禁止成员举手",
     "hostTools": "主持人工具",
     "hostToolsShort": "工具",

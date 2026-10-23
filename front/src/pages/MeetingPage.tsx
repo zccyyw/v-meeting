@@ -581,6 +581,39 @@ function MeetingPageInner() {
     });
   }, [inMeeting]);
 
+  // 入会凭证/会议终结类错误（invalid_token / meeting_ended / room_closed）：
+  // 自动回首页（replace 防后退回到错误页）。若登录会话也已失效（服务整体
+  // 重启），首页数据请求会触发 401 全局拦截自动跳登录页——两种重启场景
+  // 都落到正确归宿。ref 防同一错误重复弹 toast/跳转。
+  const handledTerminalErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    const err = snap.error;
+    if (
+      err !== "invalid_token" &&
+      err !== "meeting_ended" &&
+      err !== "room_closed"
+    ) {
+      return;
+    }
+    if (handledTerminalErrorRef.current === err) return;
+    handledTerminalErrorRef.current = err;
+    showMessage(
+      err === "invalid_token"
+        ? t("meeting.invalidTokenHint")
+        : t("meeting.meetingEndedHint"),
+    );
+    // 退出全屏（若处于）并以 replace 回首页，防止后退回到错误会议页
+    try {
+      if (document.fullscreenElement) {
+        void document.exitFullscreen?.().catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
+    navigate("/", { replace: true });
+    // ref 防同一错误重复处理；showMessage 为 App 实例稳定引用（不列入）
+  }, [snap.error, navigate, t]);
+
   // 参会时长：模块级存储 + useSyncExternalStore（仅追加钩子，不移动既有槽位）
   const joinElapsed = useSyncExternalStore(joinDurationStore.subscribe, joinDurationStore.get);
   useEffect(() => {

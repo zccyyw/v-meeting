@@ -425,6 +425,8 @@
     "detailTitle": "Meeting Details",
     "myRole": "My Role",
     "meetingLockedHint": "Meeting is locked",
+    "invalidTokenHint": "Meeting credentials expired, returning home",
+    "meetingEndedHint": "Meeting has ended, returning home",
     "handDisabledNote": "Host has disabled hand raising",
     "hostTools": "Host Tools",
     "hostToolsShort": "Tools",
