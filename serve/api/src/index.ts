@@ -26,7 +26,7 @@ import { isForceChangePassword } from "./auth.js";
 import { loadSessionUser } from "./session-user.js";
 import { registerOperLogHook } from "./middleware/oper-log.js";
 import { cleanupExpiredLogs } from "./routes/sys-operlog.js";
-import { ZodError } from "zod";
+import { registerErrorHandler } from "./error-handler.js";
 import { assertProductionCryptoKey } from "./crypto-guard.js";
 
 // 生产环境必须显式配置密码传输加密密钥（缺失/占位值时拒绝启动，详见 crypto-guard.ts）
@@ -58,33 +58,8 @@ try {
   throw err;
 }
 
-// ── 全局错误处理器 ──
-// ZodError → 400 validation_error（原行为保持）；
-// 5xx：记服务端日志，对客户端只回通用 internal_error——
-//   原实现直接 reply.send(err)，会把 err.message（可能含 SQL 语句/驱动内部
-//   细节/文件路径）序列化后发给客户端，属信息泄露；
-// 4xx：业务错误的 message 为受控文案（路由显式构造），保持透传以不破坏
-//   前端 errors.<code> 映射。
-app.setErrorHandler((err, req, reply) => {
-  if (err instanceof ZodError) {
-    return reply.code(400).send({
-      error: "validation_error",
-      details: err.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-        code: i.code,
-      })),
-    });
-  }
-  const statusCode = (err as { statusCode?: number }).statusCode ?? 500;
-  if (statusCode >= 500) {
-    req.log.error({ err }, "unhandled server error");
-    return reply.code(500).send({ error: "internal_error" });
-  }
-  return reply
-    .code(statusCode)
-    .send({ error: (err as { message?: string }).message ?? "error" });
-});
+// ── 全局错误处理器（实现见 error-handler.ts，含单测覆盖）──
+registerErrorHandler(app);
 
 await app.register(cors, { origin: true });
 await app.register(multipart, {

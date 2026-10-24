@@ -211,6 +211,24 @@ export class MediaRoom {
   private warning: string | null = null;
   private localMediaError: string | null = null;
   private endedReason: string | null = null;
+  /**
+   * getSnapshot 集合字段的上次返回引用：内容未变时复用旧引用，
+   * 使 React（setSnap / useSyncExternalStore）按 Object.is 跳过重渲染。
+   * 背景：RTT 广播约 1s/次（signal.ts ensureNetworkRttBroadcast），
+   * 原实现每次 getSnapshot 都 new Map / 拷数组，导致会议页全树每秒
+   * 重渲染一次。内部集合更新均为替换/增删（map/filter/set/delete），
+   * 无"原地改属性不换引用"模式，故逐项 === 比较不会漏检。
+   * 注意：复用引用意味着消费侧不得 mutate 快照中的集合（当前均为只读）。
+   */
+  private snapRefs: {
+    waitingPeers: WaitingPeer[];
+    peers: PeerInfo[];
+    remoteStreams: Map<string, MediaStream>;
+    screenStreams: Map<string, MediaStream>;
+    screenAudioStreams: Map<string, MediaStream>;
+    peerRtt: Record<string, number>;
+    chatMessages: ChatMessage[];
+  } | null = null;
 
   constructor(opts: {
     signal: SignalClient;
@@ -238,23 +256,77 @@ export class MediaRoom {
   }
 
   getSnapshot(): MediaRoomSnapshot {
+    // 集合字段内容未变时返回上次引用（见 snapRefs 注释）：
+    // RTT 等高频广播不再触发会议页全树重渲染。
+    const prev = this.snapRefs;
+    const sameArr = <T,>(a: T[] | undefined, b: T[]): boolean =>
+      a !== undefined && a.length === b.length && a.every((v, i) => v === b[i]);
+    const sameMap = <K, V,>(a: Map<K, V> | undefined, b: Map<K, V>): boolean => {
+      if (a === undefined || a.size !== b.size) return false;
+      for (const [k, v] of b) {
+        if (!a.has(k) || a.get(k) !== v) return false;
+      }
+      return true;
+    };
+    const sameRec = (
+      a: Record<string, number> | undefined,
+      b: Map<string, number>,
+    ): boolean => {
+      if (a === undefined) return false;
+      if (Object.keys(a).length !== b.size) return false;
+      for (const [k, v] of b) {
+        if (a[k] !== v) return false;
+      }
+      return true;
+    };
+
+    const waitingPeers = sameArr(prev?.waitingPeers, this.waitingPeers)
+      ? prev!.waitingPeers
+      : [...this.waitingPeers];
+    const peers = sameArr(prev?.peers, this.peers) ? prev!.peers : [...this.peers];
+    const remoteStreams = sameMap(prev?.remoteStreams, this.remoteStreams)
+      ? prev!.remoteStreams
+      : new Map(this.remoteStreams);
+    const screenStreams = sameMap(prev?.screenStreams, this.screenStreams)
+      ? prev!.screenStreams
+      : new Map(this.screenStreams);
+    const screenAudioStreams = sameMap(prev?.screenAudioStreams, this.screenAudioStreams)
+      ? prev!.screenAudioStreams
+      : new Map(this.screenAudioStreams);
+    const peerRtt = sameRec(prev?.peerRtt, this.peerRtt)
+      ? prev!.peerRtt
+      : Object.fromEntries(this.peerRtt);
+    const chatMessages = sameArr(prev?.chatMessages, this.chatMessages)
+      ? prev!.chatMessages
+      : [...this.chatMessages];
+
+    this.snapRefs = {
+      waitingPeers,
+      peers,
+      remoteStreams,
+      screenStreams,
+      screenAudioStreams,
+      peerRtt,
+      chatMessages,
+    };
+
     return {
       status: this.status,
       peerId: this.peerId,
       role: this.role,
       displayName: this.displayName,
-      waitingPeers: [...this.waitingPeers],
-      peers: [...this.peers],
+      waitingPeers,
+      peers,
       localStream: this.localStream,
       localScreenStream: this.localScreenStream,
-      remoteStreams: new Map(this.remoteStreams),
-      screenStreams: new Map(this.screenStreams),
-      screenAudioStreams: new Map(this.screenAudioStreams),
+      remoteStreams,
+      screenStreams,
+      screenAudioStreams,
       micEnabled: this.micEnabled,
       camEnabled: this.camEnabled,
       handRaised: this.handRaised,
       layout: this.layout,
-      peerRtt: Object.fromEntries(this.peerRtt),
+      peerRtt,
       rotationEnabled: this.rotationEnabled,
       rotationIntervalMs: this.rotationIntervalMs,
       sideListLayout: this.sideListLayout,
@@ -274,7 +346,7 @@ export class MediaRoom {
       allowShare: this.allowShare,
       waitingRoomEnabled: this.waitingRoomEnabled,
       recordAllowed: this.recordAllowed,
-      chatMessages: [...this.chatMessages],
+      chatMessages,
       error: this.error,
       warning: this.warning,
       localMediaError: this.localMediaError,
