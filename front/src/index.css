@@ -698,10 +698,13 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 
 /* 主讲人小窗（PIP）：默认右下角悬浮，可拖动 */
 .video-grid--side { position: relative; }
-.video-pip { position: absolute; right: 1rem; bottom: 1rem; width: clamp(10rem, 22%, 16rem); aspect-ratio: 16 / 10; z-index: 60; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); overflow: hidden; cursor: grab; background: #111; }
+/* 主讲人小窗（PiP）：尺寸较上版缩减（160-256px → 128-176px），不挡主画面。
+   注意：不设 :hover transform——拖拽定位会写 inline transform，CSS 变换会被
+   覆盖且互相混淆；此处仅预留 transition（未来显隐动画用）。 */
+.video-pip { position: absolute; right: 1rem; bottom: 1rem; width: clamp(8rem, 16%, 11rem); aspect-ratio: 16 / 10; z-index: 60; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12); overflow: hidden; cursor: grab; background: #111; }
 .video-pip:active { cursor: grabbing; }
 .video-pip .video-tile { width: 100%; height: 100%; min-height: 0; border-radius: 0; }
-.video-pip .video-label { font-size: 0.7rem; }
+.video-pip .video-label { font-size: 0.65rem; }
 .video-tile--avatar { display: flex; align-items: center; justify-content: center; background: #1a1f27; border: 1px solid rgba(255, 255, 255, 0.06); opacity: 0.75; }
 .video-tile-avatar { width: 3.25rem; height: 3.25rem; border-radius: 50%; display: grid; place-items: center; font-size: 1.25rem; font-weight: 600; color: #fff; background: linear-gradient(145deg, #3d8bfd 0%, #1a5fd0 100%); user-select: none; }
 .video-grid--grid .video-tile-avatar { width: 2rem; height: 2rem; font-size: 0.85rem; }

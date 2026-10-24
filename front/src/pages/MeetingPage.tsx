@@ -139,6 +139,7 @@ const emptySnapshot: MediaRoomSnapshot = {
   reactionAllowed: true,
   layoutSwitchAllowed: true,
   danmuEnabled: false,
+  hostPipEnabled: true,
   allMuted: false,
   allMutedAt: 0,
   recordAllowed: false,
@@ -1094,6 +1095,7 @@ function MeetingPageInner() {
                           })),
                         },
                         { key: "sideList", icon: hostMenuCheck(snap.sideListVisible), label: t("meeting.sideListVisible") },
+                        { key: "hostPip", icon: hostMenuCheck(snap.hostPipEnabled), label: t("meeting.toolHostPip") },
                         { key: "danmu", icon: hostMenuCheck(snap.danmuEnabled), label: t("meeting.toolDanmu") },
                       ],
                     },
@@ -1115,6 +1117,7 @@ function MeetingPageInner() {
                       case "rotation": room.setRotation(!snap.rotationEnabled); break;
                       case "allMuted": room.setAllMuted(!snap.allMuted); break;
                       case "sideList": room.setSideListVisible(!snap.sideListVisible); break;
+                      case "hostPip": room.setHostPipEnabled(!snap.hostPipEnabled); break;
                       case "layoutSwitch": room.setLayoutSwitchAllowed(!snap.layoutSwitchAllowed); break;
                       case "danmu": room.setDanmuEnabled(!snap.danmuEnabled); break;
                       case "waiting": room.setWaitingRoom(!snap.waitingRoomEnabled); break;
@@ -1320,6 +1323,7 @@ function MeetingPageInner() {
                 layout={snap.layout}
                 focusPeerId={snap.focusPeerId}
                 layoutCols={layoutCols}
+                hostPipEnabled={snap.hostPipEnabled}
                 sideListVisible={isHost || snap.sideListVisible}
                 sideVariant={sideListLayout}
                 onlySpeakers={onlyShowSpeakers ? activeSpeakers : null}

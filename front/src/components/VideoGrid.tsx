@@ -66,6 +66,9 @@ type Props = {
   sideVariant?: "embed" | "top" | "float";
   /** "仅显示正在说话的人"：最近 3s 有电平活动的成员集合；null=不过滤 */
   onlySpeakers?: Set<string> | null;
+  /** 主持人开关"开启主讲人小窗"：投屏时观看侧是否显示主讲人小窗（PiP）。
+   *  默认 true（缺字段兜底）；共享者自己视角的轮换 PiP 不受此开关限制 */
+  hostPipEnabled?: boolean;
 };
 
 function hasActiveCamera(stream: MediaStream | null | undefined): boolean {
@@ -688,6 +691,7 @@ export function VideoGrid({
   focusPeerId,
   layoutCols,
   hostPeerId,
+  hostPipEnabled,
   onFocusPeer,
   peerRtt,
   rotationEnabled,
@@ -916,6 +920,9 @@ export function VideoGrid({
     hasScreen &&
     Boolean(pipTile) &&
     focusTile != null &&
+    // 观看侧受主持人开关控制（缺字段兜底 true）；共享者自己视角的
+    // 参会轮换池/自摄小窗是主讲者工具，不受该开关限制
+    (selfSharing || (hostPipEnabled ?? true)) &&
     (selfSharing
       ? Boolean(selfCamTile) || rotationPool.length > 0
       : focusTile.key !== pipTile!.key);

@@ -106,6 +106,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("setDanmuEnabled"), enabled: z.boolean() }),
   /** 主持人开关"全体禁言"：开启后入会成员即静音，且无法主动开启麦克风 */
   z.object({ type: z.literal("setAllMuted"), muted: z.boolean() }),
+  /** 主持人开关"开启主讲人小窗"：投屏时观看侧是否显示主讲人小窗（PiP）；
+   *  会议级内存态（不落 host_meeting_prefs），默认开启 */
+  z.object({ type: z.literal("setHostPipEnabled"), enabled: z.boolean() }),
   /** 成员发表情反应（reactionAllowed 时可用） */
   z.object({
     type: z.literal("setReaction"),
@@ -182,6 +185,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     reactionAllowed: z.boolean().optional(),
     layoutSwitchAllowed: z.boolean().optional(),
     danmuEnabled: z.boolean().optional(),
+    // 缺字段时前端兜底 true（默认开启）：旧服务端广播不含此字段不影响 PiP 显示
+    hostPipEnabled: z.boolean().optional(),
     peers: z.array(
       z.object({
         peerId: z.string(),
@@ -300,6 +305,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   /** 主持人切换"弹幕"后广播全员 */
   z.object({ type: z.literal("danmuEnabledChanged"), enabled: z.boolean() }),
   z.object({ type: z.literal("allMutedChanged"), muted: z.boolean() }),
+  /** 主持人切换"开启主讲人小窗"后广播全员 */
+  z.object({ type: z.literal("hostPipEnabledChanged"), enabled: z.boolean() }),
   z.object({
     type: z.literal("reaction"),
     peerId: z.string(),

@@ -44,3 +44,22 @@ describe("MediaRoom.getSnapshot", () => {
     expect(b).not.toBe(a);
   });
 });
+
+describe("MediaRoom hostPipEnabled (presenter PIP switch)", () => {
+  function createRoom() {
+    return new MediaRoom({ signal: fakeSignal(), token: "t", displayName: "me" });
+  }
+
+  it("defaults to true (old server without the field keeps PIP visible)", () => {
+    const room = createRoom();
+    expect(room.getSnapshot().hostPipEnabled).toBe(true);
+  });
+
+  it("setHostPipEnabled sends signal and updates snapshot", () => {
+    const room = createRoom();
+    room.setHostPipEnabled(false);
+    expect(room.getSnapshot().hostPipEnabled).toBe(false);
+    room.setHostPipEnabled(true);
+    expect(room.getSnapshot().hostPipEnabled).toBe(true);
+  });
+});

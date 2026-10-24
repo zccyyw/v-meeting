@@ -74,6 +74,9 @@ type RoomState = {
   danmuEnabled: boolean;
   /** 主持人开关"全体禁言"：开启后入会成员即静音（mutedByHost），且无法主动开麦 */
   allMuted: boolean;
+  /** 主持人开关"开启主讲人小窗"：投屏时观看侧是否显示主讲人小窗（PiP）。
+   *  会议级内存态（不落 host_meeting_prefs），默认开启，重开会议回默认 */
+  hostPipEnabled: boolean;
   /** 会议主持人 userId：开关切换时写入其偏好（host_meeting_prefs） */
   hostUserId: number | null;
 };
@@ -395,6 +398,8 @@ export function createSignalHandler(db: Db) {
           danmuEnabled: hostPrefs?.danmuEnabled ?? false,
           // 全体禁言默认关闭（会议级状态，不进主持人偏好表）
           allMuted: false,
+          // 主讲人小窗默认开启（会议级内存态，不进主持人偏好表）
+          hostPipEnabled: true,
           hostUserId,
         };
         rooms.set(meetingId, state);
@@ -909,6 +914,7 @@ export function createSignalHandler(db: Db) {
       layoutSwitchAllowed: state.layoutSwitchAllowed,
       danmuEnabled: state.danmuEnabled,
       allMuted: state.allMuted,
+      hostPipEnabled: state.hostPipEnabled,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
       capabilities: { screenAudio: true },
       peers: admittedPeerList(state).filter((p) => p.peerId !== targetPeerId),
@@ -1119,6 +1125,7 @@ export function createSignalHandler(db: Db) {
       layoutSwitchAllowed: state.layoutSwitchAllowed,
       danmuEnabled: state.danmuEnabled,
       allMuted: state.allMuted,
+      hostPipEnabled: state.hostPipEnabled,
       // 服务端能力：客户端据此决定是否发送屏幕共享音频轨（旧服务端无此字段 → 客户端降级）
       capabilities: { screenAudio: true },
       peers: admittedPeerList(state).filter((p) => p.peerId !== id),
@@ -1711,6 +1718,19 @@ export function createSignalHandler(db: Db) {
           // 关闭：仅翻转总闸。绝不清 mutedByHost——主持人单独静音的标记
           // 必须保留（其可否自解由 selfUnmuteAllowed 管辖，见 pauseProducer 守卫）
           broadcastAdmitted(ctx.state, { type: "allMutedChanged", muted: message.muted });
+          break;
+        }
+        case "setHostPipEnabled": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const peer = ctx.state.room.getPeer(ctx.media.peerId);
+          if (!peer || peer.role !== "host") {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          // 内存态：仅置位 + 广播，不写 host_meeting_prefs（重开会议回默认开启）
+          ctx.state.hostPipEnabled = message.enabled;
+          broadcastAdmitted(ctx.state, { type: "hostPipEnabledChanged", enabled: message.enabled });
           break;
         }
         case "setReaction": {

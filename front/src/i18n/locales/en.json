@@ -417,6 +417,7 @@
     "screenFitContain": "Fit (letterbox)",
     "screenFitCover": "Fill (may crop edges)",
     "sideListVisible": "Allow Member-side List",
+    "toolHostPip": "Presenter PIP While Sharing",
     "showActiveSpeaker": "Show Active Speaker",
     "showJoinDuration": "Show Join Duration",
     "activeSpeaker": "Speaking",

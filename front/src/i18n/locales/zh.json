@@ -417,6 +417,7 @@
     "screenFitContain": "完整显示（保留黑边）",
     "screenFitCover": "铺满（可能裁切边缘）",
     "sideListVisible": "允许成员端显示列表",
+    "toolHostPip": "开启主讲人小窗",
     "showActiveSpeaker": "显示当前说话者",
     "showJoinDuration": "显示参会时长",
     "activeSpeaker": "正在讲话",

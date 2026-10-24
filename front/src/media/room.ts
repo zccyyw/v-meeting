@@ -81,6 +81,8 @@ export type MediaRoomSnapshot = {
   layoutSwitchAllowed: boolean;
   /** 主持人开关：弹幕（开启后全员聊天消息以弹幕形式飘过） */
   danmuEnabled: boolean;
+  /** 主持人开关"开启主讲人小窗"：投屏时观看侧是否显示主讲人小窗（默认开） */
+  hostPipEnabled: boolean;
   /** 主持人开关"全体禁言"：开启后入会成员即静音，且无法主动开麦 */
   allMuted: boolean;
   /** allMuted 最后变更时间戳（ms）：0 表示未知/从未变更 */
@@ -192,6 +194,8 @@ export class MediaRoom {
   private reactionAllowed = true;
   private layoutSwitchAllowed = true;
   private danmuEnabled = false;
+  /** 默认开启：旧服务端 joined 快照缺此字段时保持 true，PiP 不消失 */
+  private hostPipEnabled = true;
   private allMuted = false;
   /** allMuted 最后一次变更的时间戳（ms）：供 UI 判断"true 是否新鲜"，
    *  广播错过导致的陈旧 true 不拦放开麦（由服务端 pauseProducer 守卫裁决） */
@@ -338,6 +342,7 @@ export class MediaRoom {
       reactionAllowed: this.reactionAllowed,
       layoutSwitchAllowed: this.layoutSwitchAllowed,
       danmuEnabled: this.danmuEnabled,
+      hostPipEnabled: this.hostPipEnabled,
       allMuted: this.allMuted,
       allMutedAt: this.allMutedAt,
       focusPeerId: this.screenFocusPeerId ?? this.focusPeerId,
@@ -538,6 +543,15 @@ export class MediaRoom {
     this.signal.send({ type: "setDanmuEnabled", enabled });
     if (this.danmuEnabled !== enabled) {
       this.danmuEnabled = enabled;
+      this.emit();
+    }
+  }
+
+  /** 主持人开关"开启主讲人小窗"（投屏时观看侧 PiP 显隐，会议级内存态） */
+  setHostPipEnabled(enabled: boolean): void {
+    this.signal.send({ type: "setHostPipEnabled", enabled });
+    if (this.hostPipEnabled !== enabled) {
+      this.hostPipEnabled = enabled;
       this.emit();
     }
   }
@@ -1266,6 +1280,11 @@ export class MediaRoom {
         this.emit();
         break;
 
+      case "hostPipEnabledChanged":
+        this.hostPipEnabled = msg.enabled;
+        this.emit();
+        break;
+
       case "allMutedChanged":
         this.allMuted = msg.muted;
         this.allMutedAt = Date.now();
@@ -1482,6 +1501,8 @@ export class MediaRoom {
     if (msg.reactionAllowed !== undefined) this.reactionAllowed = msg.reactionAllowed;
     if (msg.layoutSwitchAllowed !== undefined) this.layoutSwitchAllowed = msg.layoutSwitchAllowed;
     if (msg.danmuEnabled !== undefined) this.danmuEnabled = msg.danmuEnabled;
+    // 缺字段兜底：旧服务端不含 hostPipEnabled 时保持默认开启
+    if (msg.hostPipEnabled !== undefined) this.hostPipEnabled = msg.hostPipEnabled;
     if (msg.allMuted !== undefined) {
       this.allMuted = msg.allMuted;
       this.allMutedAt = Date.now();
