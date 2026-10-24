@@ -377,7 +377,7 @@ export const SCHEMA = [
     targets: ["docker"],
     value: "mysql",
     comment: [
-      "mysql（默认，启动 mysql:8.4 容器） | postgres（启动 postgres:12-alpine） | sqlite（零依赖，无数据库容器）",
+      "mysql（默认，启动 mysql:8.4 容器） | postgres（启动 postgres:16-alpine） | sqlite（零依赖，无数据库容器）",
       "只需改这一项，DB_DRIVER 会自动跟随",
     ],
   },

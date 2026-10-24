@@ -59,7 +59,13 @@ if [ "$CMD" = "up" ]; then
   need_app=0
   need_base=0
   docker image inspect meeting-api:latest >/dev/null 2>&1 || need_app=1
-  docker image inspect mysql:8.4 >/dev/null 2>&1 || need_base=1
+  # base 镜像检测与 pack-docker.mjs 同源：从 compose 的 image: 行动态解析
+  # （排除 ${VAR} 形式的自建镜像引用）。曾因只探测 mysql:8.4，升级时旧机
+  # 已加载 mysql 便跳过 load，导致新 tag 的 redis/caddy 未加载、compose
+  # 转而联网拉取（内网必超时）。
+  for img in $(grep -E '^[[:space:]]*image:[[:space:]]*[^[:space:]]+' docker-compose.yml | awk '{print $2}' | grep -v '\${'); do
+    docker image inspect "$img" >/dev/null 2>&1 || need_base=1
+  done
   if [ "$need_app" = 0 ] && [ "$need_base" = 0 ]; then
     echo "-> 镜像已加载，跳过 docker load"
   else
