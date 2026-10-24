@@ -106,13 +106,23 @@ const appTar = `meeting-app-${platformSlug}-${tag}.tar`;
 console.log(`-> docker save ${appTar}`);
 run("docker", ["save", "-o", join(out, appTar), ...saveRefs]);
 
-// 基础镜像打包（离线环境无法 pull）
-const baseImages = [
-  "postgres:12-alpine",
-  "mysql:8.4",
-  "redis:7-alpine",
-  "caddy:2-alpine",
-];
+// 基础镜像清单：从 docker-compose.yml 解析（唯一事实源）。
+// 曾因 compose 将 redis/caddy 钉 minor（7-alpine→7.4-alpine、2-alpine→2.11-alpine）
+// 而此处硬编码未同步，导致离线包 load 后 compose 匹配不到 tag、转而联网拉取
+// （阿里云/内网环境必然超时）。此后 compose 改 tag 离线包自动跟随，杜绝漂移。
+// 排除带 ${VAR} 的引用：meeting-api/realtime/web 为本仓库 build 产物，
+// 不在基础镜像范畴。
+function resolveBaseImages(composePath) {
+  const content = readFileSync(composePath, "utf8");
+  const refs = [...content.matchAll(/^[ \t]*image:[ \t]*(\S+)[ \t]*$/gm)].map((m) => m[1]);
+  const external = [...new Set(refs.filter((r) => !r.includes("${")))];
+  if (external.length === 0) {
+    console.error(`✗ 未能从 ${composePath} 解析到任何基础镜像（image: 行），请检查 compose 文件格式`);
+    process.exit(1);
+  }
+  return external;
+}
+const baseImages = resolveBaseImages(join(root, "docker-compose.yml"));
 console.log(`-> docker pull & save base images`);
 for (const base of baseImages) {
   if (platform) {
