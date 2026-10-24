@@ -10,9 +10,10 @@ import {
   existsSync,
   writeFileSync,
   readFileSync,
+  readdirSync,
   chmodSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -50,9 +51,42 @@ function run(cmd, args, opts = {}) {
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
+/**
+ * 文本扩展名白名单：这些文件入包前统一归一为 LF。
+ * Windows 开发机工作区可能持有 CRLF，直接入包会在 Linux 目标机上
+ * 执行失败（"bad interpreter: /bin/bash^M"）。
+ * node_modules 不在此列——数万文件读一遍太慢，且 npm 包自身管理换行符。
+ */
+const TEXT_EXT = new Set([".sh", ".mjs", ".cjs", ".js", ".json", ".yml", ".yaml", ".conf", ".service", ".env", ".md", ".txt", ".spec"]);
+
 function copy(src, dest) {
   mkdirSync(dirname(dest), { recursive: true });
   cpSync(src, dest, { recursive: true });
+}
+
+/** 拷贝单个文本文件并归一换行符为 LF（用于部署脚本/配置等小文件集合）。 */
+function copyTextLf(src, dest) {
+  const text = readFileSync(src, "utf8").replace(/\r\n/g, "\n");
+  mkdirSync(dirname(dest), { recursive: true });
+  writeFileSync(dest, text);
+}
+
+/** 递归拷贝并对 TEXT_EXT 文件做 LF 归一（跳过 node_modules，性能考虑）。 */
+function copyNormalized(srcDir, destDir) {
+  mkdirSync(destDir, { recursive: true });
+  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+    if (entry.name === "node_modules") continue;
+    const s = join(srcDir, entry.name);
+    const d = join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyNormalized(s, d);
+    } else if (TEXT_EXT.has(extname(entry.name).toLowerCase())) {
+      copyTextLf(s, d);
+    } else {
+      mkdirSync(dirname(d), { recursive: true });
+      cpSync(s, d);
+    }
+  }
 }
 
 if (platform !== "linux") {
@@ -147,11 +181,12 @@ if (payloadTar) {
   }
 }
 
-copy(join(root, "deploy", "native", "bin"), join(bundleDir, "bin"));
-copy(join(root, "deploy", "native", "conf"), join(bundleDir, "conf"));
-copy(join(root, "deploy", "native", "systemd"), join(bundleDir, "systemd"));
-copy(join(root, "deploy", "native", "install.sh"), join(bundleDir, "install.sh"));
-copy(join(root, "deploy", "native", "INSTALL.md"), join(bundleDir, "INSTALL.md"));
+// 部署侧小文件集合：LF 归一入包（bin/conf/systemd/install.sh/INSTALL.md）
+copyNormalized(join(root, "deploy", "native", "bin"), join(bundleDir, "bin"));
+copyNormalized(join(root, "deploy", "native", "conf"), join(bundleDir, "conf"));
+copyNormalized(join(root, "deploy", "native", "systemd"), join(bundleDir, "systemd"));
+copyTextLf(join(root, "deploy", "native", "install.sh"), join(bundleDir, "install.sh"));
+copyTextLf(join(root, "deploy", "native", "INSTALL.md"), join(bundleDir, "INSTALL.md"));
 
 writeFileSync(join(bundleDir, "ARCH.txt"), arch + "\n");
 writeFileSync(join(bundleDir, "VERSION"), version + "\n");

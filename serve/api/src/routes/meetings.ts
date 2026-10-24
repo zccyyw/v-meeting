@@ -539,6 +539,18 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     if (!Number.isFinite(meetingId)) {
       return reply.code(400).send({ error: "invalid_meeting_id" });
     }
+
+    // IP 级频控：防数字 meetingId 枚举骚扰与 guest token 批量签发。
+    // 用读-改-写模拟计数（MemoryRedis 单机模式无 incr，限流无需精确）；
+    // 10 次 / 10 分钟，超限 429。req.ip 经 trustProxy 取真实客户端 IP
+    // （反代部署时见 index.ts 的 trustProxy 配置）。
+    const ipKey = `guest_token_ip:${req.ip}`;
+    const hits = Number((await redis.get(ipKey)) ?? 0) + 1;
+    if (hits > 10) {
+      return reply.code(429).send({ error: "too_many_requests" });
+    }
+    await redis.set(ipKey, String(hits), "EX", 600);
+
     const raw = (req.body as any) ?? {};
     const displayName = zDisplayName.parse(raw.displayName);
     const password =

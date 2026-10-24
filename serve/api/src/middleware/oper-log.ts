@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db.js";
 import type { Redis } from "ioredis";
-import { loadSessionUser } from "../session-user.js";
 import { nowSql } from "../sql-utils.js";
 
 /**
@@ -97,12 +96,12 @@ export function registerOperLogHook(app: FastifyInstance, db: Db, redis: Redis) 
 
     const sid = req.headers["x-session-id"] as string | undefined;
     let userName = "anonymous";
-    try {
-      if (sid) {
-        const user = await loadSessionUser(db, redis, sid);
-        if (user) userName = user.username;
-      }
-    } catch { /* ignore */ }
+    // 复用 preHandler 已挂载的 req.appUser（index.ts 管理面会话统一挂载），
+    // 不再重复 loadSessionUser——原先此处二次 RBAC 查询，且 catch 吞掉真实故障
+    if (sid) {
+      const user = (req as unknown as { appUser?: { username: string } }).appUser;
+      if (user) userName = user.username;
+    }
 
     const statusCode = reply.statusCode;
     const isSuccess = statusCode >= 200 && statusCode < 400;

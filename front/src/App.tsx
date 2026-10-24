@@ -11,6 +11,7 @@ import { setPendingJoinCode } from "@/auth/joinPrefs";
 import { getSessionId, isManager, getRoles } from "@/auth/session";
 import { AppShell } from "@/components/AppShell";
 import { AuthBootstrap } from "@/components/AuthBootstrap";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { HomePage } from "@/pages/HomePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MeetingPage } from "@/pages/MeetingPage";
@@ -107,8 +108,11 @@ function ManagerIndex() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
+    // ErrorBoundary 兜底：渲染期异常或懒加载 chunk 加载失败（内网/离线包场景）
+    // 不再白屏，提供刷新入口与错误详情
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes>
         {/* ── 会议应用入口 ── */}
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
@@ -158,5 +162,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }

@@ -41,6 +41,14 @@ const mediaCodecs: RtpCodecCapability[] = [
 
 let worker: Worker;
 
+/** worker 死亡回调（由 index.ts 注册：通知客户端 + 交还守护进程重启）。 */
+let onDied: ((info: { rooms?: number; clients?: number }) => void) | null = null;
+
+/** 注册 worker died 处理器。 */
+export function onWorkerDied(cb: (info: { rooms?: number; clients?: number }) => void): void {
+  onDied = cb;
+}
+
 /** Lazy-load mediasoup so room unit tests never require the native module. */
 async function loadMediasoup() {
   const mediasoup = await import("mediasoup");
@@ -58,8 +66,19 @@ export async function getWorker() {
       rtcMaxPort: Number(process.env.RTC_MAX_PORT ?? 41000),
     });
     worker.on("died", () => {
-      console.error("mediasoup worker died");
-      process.exit(1);
+      // 不静默 exit：先记录致命现场，再回调上层（关闭所有 WS 连接、
+      // 让客户端收到明确断开原因），最后由 index.ts 退出进程交还
+      // docker/systemd 守护重启。进程内重建 worker 无法复活已随 worker
+      // 死亡的各房间 router（RoomState.router 均持有其引用），故退出重建
+      // 是当前最小可靠恢复路径；worker 池 + router 热重建列入后续优化。
+      console.error("[mediasoup] worker died — notifying clients and exiting for supervisor restart");
+      try {
+        onDied?.({});
+      } catch (cbErr) {
+        console.error("[mediasoup] onDied callback failed", cbErr);
+      }
+      // 回调未在 1s 内触发退出（异常路径）时兜底退出，避免半死状态继续服务
+      setTimeout(() => process.exit(1), 1000).unref();
     });
   }
   return worker;

@@ -31,6 +31,7 @@ import { useChromeAutoHide } from "@/hooks/useChromeAutoHide";
 import { useRecorder } from "@/hooks/useRecorder";
 import { SignalClient } from "@/signal/client";
 import { showMessage, showError, showWarning, showInfo } from "@/ui/toast";
+import { apiErrorMessage } from "@/i18n/errorMessage";
 import type { RecorderSource } from "@/media/recorder";
 import { App as AntApp, ConfigProvider, Dropdown, Popover } from "antd";
 import { MEETING_DARK_OVERLAY_THEME } from "@/theme/meetingOverlayTheme";
@@ -227,7 +228,8 @@ function MeetingPageInner() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteListOpen, setInviteListOpen] = useState(false);
   const [invitations, setInvitations] = useState<InvitationItem[]>([]);
-  const [allMuted, setAllMuted] = useState(false);
+  // allMuted 无本地 state：权威值唯一来源为 snap.allMuted（信令广播回填），
+  // 本地副本曾导致成员面板按钮与他端切换/新入会状态不同步（点击发 !staleValue）
   const [unreadChat, setUnreadChat] = useState(0);
 
   // —— 本地偏好（localStorage 持久化，仅自己生效） ——
@@ -401,8 +403,6 @@ function MeetingPageInner() {
 
   useEffect(() => {
     if (!token) return;
-
-    setAllMuted(false);
 
     const signal = new SignalClient();
     const room = new MediaRoom({
@@ -1205,7 +1205,7 @@ function MeetingPageInner() {
             </button>
           </section>
         ) : snap.error && snap.error !== "reconnect_failed" ? (
-          <p className="error">{snap.error}</p>
+          <p className="error">{apiErrorMessage(t, snap.error)}</p>
         ) : null}
 
         {/* 非阻断警示（黄）：媒体消费失败 / 权限受限等，10 秒自动消散，不影响会议继续使用 */}
@@ -1358,7 +1358,7 @@ function MeetingPageInner() {
               >
                 <HostControls
                   isHost={isHost}
-                  allMuted={allMuted}
+                  allMuted={snap.allMuted}
                   peers={[
                     // 服务端 peers 刻意不含自己；成员列表需展示全部入会人员
                     //（含主持人/自己），此处把本端条目补到最前
@@ -1381,12 +1381,12 @@ function MeetingPageInner() {
                   invitations={invitations}
                   onClose={() => closePanel("members")}
                   onToggleMuteAll={() => {
-                    if (allMuted) {
+                    // 以 snap.allMuted（信令权威值）取反，避免本地陈旧值导致
+                    // 发出与当前实际状态相反的开关指令
+                    if (snap.allMuted) {
                       roomRef.current?.unmuteAll();
-                      setAllMuted(false);
                     } else {
                       roomRef.current?.muteAll();
-                      setAllMuted(true);
                     }
                   }}
                   onMutePeer={(peerId) => {

@@ -615,6 +615,8 @@
     "password_required": "Enter the meeting password",
     "invalid_join_password": "Incorrect meeting password",
     "join_password_too_short": "Password must be at least 4 characters",
+    "too_many_requests": "Too many requests, please try again later",
+    "internal_error": "Internal server error, please try again later",
     "join_password_only_for_scheduled": "Join password is only for scheduled meetings",
     "scheduled_time_required": "Please choose a scheduled time",
     "scheduled_time_in_past": "Scheduled time must be in the future",

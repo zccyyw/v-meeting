@@ -7,7 +7,7 @@
  *   DOCKER_PLATFORM    e.g. linux/amd64 | linux/arm64 (optional)
  *   VITE_API_BASE / VITE_WS_URL / VITE_APP_NAME / VITE_APP_LOGO  front build args
  */
-import { mkdirSync, rmSync, writeFileSync, copyFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -23,6 +23,18 @@ function run(cmd, args, opts = {}) {
     ...opts,
   });
   if (r.status !== 0) process.exit(r.status ?? 1);
+}
+
+/**
+ * 拷贝文本文件并归一换行符为 LF。
+ * Windows 开发机工作区可能持有 CRLF（无 .gitattributes 历史或 autocrlf 开启），
+ * 直接拷贝会把 CRLF 带进离线包 / Docker 构建上下文，Linux 上执行 shell
+ * 脚本即 "bad interpreter: /bin/bash^M"。
+ */
+function copyTextLf(src, dest) {
+  const text = readFileSync(src, "utf8").replace(/\r\n/g, "\n");
+  mkdirSync(dirname(dest), { recursive: true });
+  writeFileSync(dest, text);
 }
 
 const images = [
@@ -138,6 +150,7 @@ run("docker", ["save", "-o", join(out, baseTar), ...baseImages]);
 // docker-compose.yml，使离线包内仅保留单一 docker-compose.yml，
 // 离线执行 `docker-compose up` 不会误触发在线构建（离线包无源码目录必失败）。
 // 仅离线一种部署方式，不再提供含 build 段的在线 compose。
+// 拷贝同时归一换行符为 LF（见 copyTextLf）。
 const composeSrcPath = join(root, "docker-compose.yml");
 if (existsSync(composeSrcPath)) {
   const composeSrc = readFileSync(composeSrcPath, "utf8");
@@ -145,17 +158,18 @@ if (existsSync(composeSrcPath)) {
     /^[ \t]*build:[^\n]*\n(?:^[ \t]{6,}[^\n]*\n)*/gm,
     "",
   );
-  writeFileSync(join(out, "docker-compose.yml"), offlineCompose);
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, "docker-compose.yml"), offlineCompose.replace(/\r\n/g, "\n"));
 }
 
-// Caddyfile 与 .env 模板
+// Caddyfile 与 .env 模板（LF 归一）
 if (existsSync(join(root, "Caddyfile"))) {
-  copyFileSync(join(root, "Caddyfile"), join(out, "Caddyfile"));
+  copyTextLf(join(root, "Caddyfile"), join(out, "Caddyfile"));
 }
 // 注意：命名为 env.example（不带前导点）——以点开头的隐藏文件在
 // scp 通配符拷贝 / 部分解压工具 / 文件管理器中容易被漏掉，导致
 // 用户在目标机找不到环境模板。
-copyFileSync(
+copyTextLf(
   join(root, ".env.production.example"),
   join(out, "env.example"),
 );
@@ -167,10 +181,10 @@ writeFileSync(
   "将 fullchain.pem 与 privkey.pem 放入本目录，或运行 gen-selfsigned.sh 生成自签证书。\n",
 );
 
-// 证书生成脚本
+// 证书生成脚本（LF 归一）
 if (existsSync(join(root, "deploy", "docker", "gen-selfsigned.sh"))) {
   mkdirSync(join(out, "deploy", "docker"), { recursive: true });
-  copyFileSync(
+  copyTextLf(
     join(root, "deploy", "docker", "gen-selfsigned.sh"),
     join(out, "deploy", "docker", "gen-selfsigned.sh"),
   );
@@ -178,7 +192,7 @@ if (existsSync(join(root, "deploy", "docker", "gen-selfsigned.sh"))) {
 
 // 一键部署脚本：加载镜像(按需) + 自动生成 .env（随机密钥/口令）+ docker-compose 启停统一入口
 if (existsSync(join(root, "deploy", "docker", "install.sh"))) {
-  copyFileSync(
+  copyTextLf(
     join(root, "deploy", "docker", "install.sh"),
     join(out, "install.sh"),
   );

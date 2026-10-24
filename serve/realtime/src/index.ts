@@ -2,6 +2,7 @@ import http from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createPool } from "./db.js";
 import { createSignalHandler } from "./signal.js";
+import { onWorkerDied } from "./mediasoup.js";
 
 const port = Number(process.env.WS_PORT ?? 8082);
 const db = await createPool();
@@ -48,6 +49,22 @@ const heartbeat = setInterval(() => {
     }
   }
 }, HEARTBEAT_INTERVAL_MS);
+
+// mediasoup worker 死亡：主动关闭所有连接（带原因码），让客户端立即走
+// 重连而非静默断连；随后退出进程，由 docker restart / systemd Restart 拉起。
+// 重启后各会议房间全新建立，客户端在重连窗口（约 15s）内可恢复。
+onWorkerDied(() => {
+  const clients = wss.clients.size;
+  console.error(`[realtime] worker died, closing ${clients} connection(s) for supervisor restart`);
+  for (const ws of wss.clients) {
+    try {
+      ws.close(1011, "worker_died");
+    } catch {
+      /* ignore closed socket */
+    }
+  }
+  setTimeout(() => process.exit(1), 1000).unref();
+});
 
 server.listen(port, "0.0.0.0", () => {
   console.log(`realtime listening on :${port}`);

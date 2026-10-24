@@ -21,8 +21,9 @@ import { userApprovalRoutes } from "./routes/sys-user-approval.js";
 import { meetingAppRoutes } from "./routes/meeting-applications.js";
 import { meetingGroupRoutes } from "./routes/meeting-groups.js";
 import { caCertRoutes } from "./routes/ca-cert.js";
-import { getConfigInt, getConfigBool } from "./config-cache.js";
+import { getConfigInt } from "./config-cache.js";
 import { isForceChangePassword } from "./auth.js";
+import { loadSessionUser } from "./session-user.js";
 import { registerOperLogHook } from "./middleware/oper-log.js";
 import { cleanupExpiredLogs } from "./routes/sys-operlog.js";
 import { ZodError } from "zod";
@@ -34,7 +35,14 @@ assertProductionCryptoKey();
 // forceCloseConnections：docker stop 时 Fastify 的 app.close() 会等待 keep-alive
 // 空闲连接（浏览器/健康检查留下的）直到宽限超时，实测卡满 stop_grace_period 30s；
 // 开启后 close 前先断开空闲连接，停机从 30s 降到 <2s。
-const app = Fastify({ logger: true, forceCloseConnections: true });
+// trustProxy：经反向代理（Caddy / compose 网关）时 req.ip 取 X-Forwarded-For 末段
+// 真实客户端 IP，用于 IP 级限流；仅信任内网/回环/链路本地上的代理，公网直连
+// 客户端无法伪造 XFF。
+const app = Fastify({
+  logger: true,
+  forceCloseConnections: true,
+  trustProxy: ["127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"],
+});
 const db = await createPool();
 const redis = createRedis();
 
@@ -50,7 +58,13 @@ try {
   throw err;
 }
 
-// ── 全局错误处理器：捕获 ZodError 返回 400，而非默认的 500 ──
+// ── 全局错误处理器 ──
+// ZodError → 400 validation_error（原行为保持）；
+// 5xx：记服务端日志，对客户端只回通用 internal_error——
+//   原实现直接 reply.send(err)，会把 err.message（可能含 SQL 语句/驱动内部
+//   细节/文件路径）序列化后发给客户端，属信息泄露；
+// 4xx：业务错误的 message 为受控文案（路由显式构造），保持透传以不破坏
+//   前端 errors.<code> 映射。
 app.setErrorHandler((err, req, reply) => {
   if (err instanceof ZodError) {
     return reply.code(400).send({
@@ -62,8 +76,14 @@ app.setErrorHandler((err, req, reply) => {
       })),
     });
   }
-  // 其他错误保持 Fastify 默认行为（500）
-  reply.send(err);
+  const statusCode = (err as { statusCode?: number }).statusCode ?? 500;
+  if (statusCode >= 500) {
+    req.log.error({ err }, "unhandled server error");
+    return reply.code(500).send({ error: "internal_error" });
+  }
+  return reply
+    .code(statusCode)
+    .send({ error: (err as { message?: string }).message ?? "error" });
 });
 
 await app.register(cors, { origin: true });
@@ -84,6 +104,26 @@ app.addHook("preHandler", async (req, reply) => {
   if (url.startsWith("/sys-config/public")) return;
   if (await isForceChangePassword(redis, sid)) {
     return reply.code(403).send({ error: "password_change_required" });
+  }
+});
+
+// ── 管理面会话统一挂载（req.appUser 惯例）──
+// /sys- 与 /api/sys- 前缀的请求在此加载一次会话并挂到 req，供路由与
+// oper-log 日志钩子复用，消除「路由内一次 + onResponse 再一次」的重复
+// RBAC 查询。路由侧后续可逐路由迁移到 req.appUser（P3），迁移一个少一次查询。
+// 失败不阻断：路由内的 loadSessionUser 仍各自做权威鉴权。
+app.addHook("preHandler", async (req) => {
+  const url = req.url;
+  if (!url.startsWith("/sys-") && !url.startsWith("/api/sys-")) return;
+  const sid = req.headers["x-session-id"] as string | undefined;
+  if (!sid) return;
+  try {
+    const user = await loadSessionUser(db, redis, sid);
+    if (user) {
+      (req as unknown as { appUser?: { username: string } }).appUser = user;
+    }
+  } catch {
+    /* 挂载失败不影响请求：路由内仍有权威鉴权 */
   }
 });
 

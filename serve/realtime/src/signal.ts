@@ -2038,11 +2038,14 @@ export function createSignalHandler(db: Db) {
           break;
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      // 只记服务端日志，向客户端回固定错误码——
+      // 原实现透传 err.message，mediasoup/DB 内部细节（设备路径/SQL/堆栈片段）
+      // 会直接暴露给 WS 对端
       console.error("signal handler error", err);
       send(ws, {
         type: "error",
-        message: err?.message ? String(err.message) : "internal_error",
+        message: "internal_error",
       });
     }
   }
