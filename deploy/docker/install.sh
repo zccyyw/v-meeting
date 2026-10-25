@@ -69,7 +69,11 @@ esac
 if [ "$CMD" = "up" ]; then
   need_app=0
   need_base=0
-  docker image inspect meeting-api:latest >/dev/null 2>&1 || need_app=1
+  # app 三镜像逐一检测（api/realtime/web 同属 app tar——只查 api 会在
+  # realtime/web 被误删时跳过 load，导致 compose 起不来）
+  for img in meeting-api:latest meeting-realtime:latest meeting-web:latest; do
+    docker image inspect "$img" >/dev/null 2>&1 || need_app=1
+  done
   # base 镜像检测与 pack-docker.mjs 同源：从 compose 的 image: 行动态解析
   # （排除 ${VAR} 形式的自建镜像引用）。曾因只探测 mysql:8.4，升级时旧机
   # 已加载 mysql 便跳过 load，导致新 tag 的 redis/caddy 未加载、compose
@@ -113,13 +117,15 @@ gen_secret() {
   fi
 }
 
-# 幂等写入：删除所有（含注释的）旧行后追加一条真实值
+# 幂等写入：删除所有（含注释的）旧行后追加一条真实值。
+# 注意不用 && 链：grep -v 在"删除后无剩余行"时返回 1，会让 set -e 误判
+# 整个函数失败（新值丢失/脚本退出）
 set_env_value() {
   local key="$1" val="$2"
   if grep -qE "^\s*#?\s*${key}=" "$ENV_FILE"; then
-    grep -vE "^\s*#?\s*${key}=" "$ENV_FILE" > "$ENV_FILE.tmp" \
-      && printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE.tmp" \
-      && mv "$ENV_FILE.tmp" "$ENV_FILE"
+    grep -vE "^\s*#?\s*${key}=" "$ENV_FILE" > "$ENV_FILE.tmp" || true
+    printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE.tmp"
+    mv "$ENV_FILE.tmp" "$ENV_FILE"
   else
     printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE"
   fi
