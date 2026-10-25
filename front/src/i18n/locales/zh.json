@@ -419,6 +419,8 @@
     "sideListVisible": "允许成员端显示列表",
     "toolHostPip": "开启主讲人小窗",
     "memberNotJoined": "未入会",
+    "muteAllOn": "开启静音",
+    "muteAllOff": "关闭静音",
     "showActiveSpeaker": "显示当前说话者",
     "showJoinDuration": "显示参会时长",
     "activeSpeaker": "正在讲话",

@@ -102,6 +102,15 @@ export function HostControls({
     <section className="side-panel host-controls" aria-label={t("meeting.members")}>
       <header className="side-panel-header">
         <h2>{t("meeting.members")}</h2>
+        {isHost && (
+          <button
+            type="button"
+            className="meeting-header-btn meeting-header-btn--ghost host-mute-all"
+            onClick={onToggleMuteAll}
+          >
+            {allMuted ? t("meeting.muteAllOff") : t("meeting.muteAllOn")}
+          </button>
+        )}
         <button
           type="button"
           className="side-panel-close"
@@ -111,14 +120,6 @@ export function HostControls({
           <CloseOutlined aria-hidden />
         </button>
       </header>
-
-      {isHost && (
-        <div className="host-actions">
-          <button type="button" onClick={onToggleMuteAll}>
-            {allMuted ? t("meeting.unmuteAll") : t("meeting.muteAll")}
-          </button>
-        </div>
-      )}
 
       {allMembers.length === 0 ? (
         <p className="muted">{t("meeting.noMembers")}</p>

@@ -1218,30 +1218,9 @@ export function createSignalHandler(db: Db) {
         }
         break;
       }
-      case "muteAll": {
-        for (const p of state.room.listAdmittedPeers()) {
-          if (p.role === "host") continue;
-          const m = state.peers.get(p.peerId);
-          if (m) {
-            // 记录"被主持人静音"：重连/刷新后仍然保持静音
-            state.mutedByHost.add(mutedKey(m));
-            send(m.ws, { type: "forceMute", audio: true, video: false });
-          }
-        }
-        break;
-      }
-      case "unmuteAll": {
-        // 解除全部静音：连同已离场成员的记录一起清掉，
-        // 否则他们回来时会莫名其妙仍是静音状态。
-        state.mutedByHost.clear();
-        for (const p of state.room.listAdmittedPeers()) {
-          if (p.role === "host") continue;
-          const m = state.peers.get(p.peerId);
-          // audio:false → client forces mic on (see MediaRoom forceMute handler)
-          if (m) send(m.ws, { type: "forceMute", audio: false, video: false });
-        }
-        break;
-      }
+      // 全体静音/解除已统一走 setAllMuted（allMuted 总闸：含新入会成员、
+      // 服务端强制、与主持人工具同源）。原 host/muteAll·unmuteAll 只做
+      // 逐人 forceMute 而不更新总闸，与工具菜单状态分裂，已删除。
       case "mutePeer": {
         if (!targetPeerId) {
           send(ws, { type: "error", message: "target_required" });

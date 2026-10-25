@@ -1400,13 +1400,10 @@ function MeetingPageInner() {
                   invitations={invitations}
                   onClose={() => closePanel("members")}
                   onToggleMuteAll={() => {
-                    // 以 snap.allMuted（信令权威值）取反，避免本地陈旧值导致
-                    // 发出与当前实际状态相反的开关指令
-                    if (snap.allMuted) {
-                      roomRef.current?.unmuteAll();
-                    } else {
-                      roomRef.current?.muteAll();
-                    }
+                    // 统一走 setAllMuted（allMuted 总闸，与主持人工具同源）：
+                    // 原 host/muteAll 信令只逐人 forceMute 而不更新总闸，
+                    // 导致按钮状态与实际静音状态分裂（感知为"点击无效"）
+                    roomRef.current?.setAllMuted(!snap.allMuted);
                   }}
                   onMutePeer={(peerId) => {
                     roomRef.current?.mutePeer(peerId);

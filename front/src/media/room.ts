@@ -630,14 +630,6 @@ export class MediaRoom {
     this.signal.send({ type: "recordingStopped" });
   }
 
-  muteAll(): void {
-    this.signal.send({ type: "host", action: "muteAll" });
-  }
-
-  unmuteAll(): void {
-    this.signal.send({ type: "host", action: "unmuteAll" });
-  }
-
   kickPeer(targetPeerId: string): void {
     this.signal.send({ type: "host", action: "kick", targetPeerId });
   }

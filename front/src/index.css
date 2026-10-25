@@ -626,8 +626,11 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .side-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; background: #26292e; border: 1px solid var(--meeting-bar-border); border-radius: 16px; padding: 0.85rem; }
 .side-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.75rem; }
 .side-panel-header h2 { margin: 0; font-size: 0.95rem; }
+/* 关闭按钮：显式透明（覆盖会议暗色主题可能注入的蓝底/边框） */
 .side-panel-close { border: none; background: transparent; color: var(--meeting-muted); font-size: 1.25rem; line-height: 1; padding: 0.15rem 0.35rem; cursor: pointer; border-radius: 8px; }
 .side-panel-close:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+/* 成员面板头部："开启/关闭静音"按钮（ghost 样式与工具栏按钮一致），推至右侧 */
+.host-controls .side-panel-header .host-mute-all { margin-left: auto; font-size: 0.82rem; padding: 0.35rem 0.7rem; }
 .remote-audios { position: absolute; width: 0; height: 0; overflow: hidden; clip: rect(0, 0, 0, 0); pointer-events: none; }
 
 /* —— 视频网格 —— */
@@ -786,8 +789,7 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .waiting-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .waiting-actions { display: flex; gap: 0.4rem; }
 .host-peer-list { margin-top: 0.25rem; overflow-y: auto; min-height: 0; }
-.host-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem; }
-.host-actions button, .side-panel .waiting-actions button, .chat-form button { font-size: 0.82rem; padding: 0.45rem 0.7rem; }
+.side-panel .waiting-actions button, .chat-form button { font-size: 0.82rem; padding: 0.45rem 0.7rem; }
 
 /* —— 统一成员列表（仿 QQ 头像 + 状态小点） —— */
 .member-unified-list { gap: 0.2rem; }

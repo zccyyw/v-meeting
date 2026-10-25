@@ -419,6 +419,8 @@
     "sideListVisible": "Allow Member-side List",
     "toolHostPip": "Presenter PIP While Sharing",
     "memberNotJoined": "Not joined",
+    "muteAllOn": "Mute all",
+    "muteAllOff": "Unmute all",
     "showActiveSpeaker": "Show Active Speaker",
     "showJoinDuration": "Show Join Duration",
     "activeSpeaker": "Speaking",
