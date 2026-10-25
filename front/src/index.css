@@ -809,6 +809,8 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .member-name-row { display: flex; align-items: center; gap: 2px; font-size: 0.85rem; }
 .member-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member-self-tag { flex-shrink: 0; color: #8c8c8c; font-size: 0.72rem; }
+/* 成员列表：邀请名单中尚未上线的成员标记 */
+.member-not-joined { flex-shrink: 0; color: #8c8c8c; font-size: 0.72rem; margin-left: 4px; }
 
 /* 麦克风/摄像头图标行 */
 .member-media-icons { display: flex; gap: 6px; align-items: center; }

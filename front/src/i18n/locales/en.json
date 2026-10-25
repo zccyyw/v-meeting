@@ -418,6 +418,7 @@
     "screenFitCover": "Fill (may crop edges)",
     "sideListVisible": "Allow Member-side List",
     "toolHostPip": "Presenter PIP While Sharing",
+    "memberNotJoined": "Not joined",
     "showActiveSpeaker": "Show Active Speaker",
     "showJoinDuration": "Show Join Duration",
     "activeSpeaker": "Speaking",
@@ -761,6 +762,7 @@
     "detailTitle": "Meeting Detail",
     "meetingInfo": "Meeting Info",
     "attendees": "Attendees",
+    "notJoined": "Not joined",
     "noAttendees": "No attendees"
   }
 }

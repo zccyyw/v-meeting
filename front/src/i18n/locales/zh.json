@@ -418,6 +418,7 @@
     "screenFitCover": "铺满（可能裁切边缘）",
     "sideListVisible": "允许成员端显示列表",
     "toolHostPip": "开启主讲人小窗",
+    "memberNotJoined": "未入会",
     "showActiveSpeaker": "显示当前说话者",
     "showJoinDuration": "显示参会时长",
     "activeSpeaker": "正在讲话",
@@ -761,6 +762,7 @@
     "detailTitle": "会议详情",
     "meetingInfo": "会议信息",
     "attendees": "参会人员",
+    "notJoined": "未入会",
     "noAttendees": "无参会记录"
   }
 }

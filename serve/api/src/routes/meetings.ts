@@ -289,7 +289,8 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
               COALESCE(att.cnt, 0) AS att_cnt,
               att.first_joined AS att_first_joined,
               (SELECT COUNT(*) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') + CASE WHEN m.host_user_id IS NULL THEN 0 WHEN EXISTS (SELECT 1 FROM meeting_invitations ii2 WHERE ii2.meeting_id = m.id AND ii2.status = 'attended' AND ii2.user_id = m.host_user_id) THEN 0 ELSE 1 END AS inv_participants,
-              (SELECT MIN(ii.joined_at) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') AS inv_first_joined
+              (SELECT MIN(ii.joined_at) FROM meeting_invitations ii WHERE ii.meeting_id = m.id AND ii.status = 'attended') AS inv_first_joined,
+              (SELECT COUNT(*) FROM meeting_invitations ii WHERE ii.meeting_id = m.id) AS invited_total
        FROM meetings m
        LEFT JOIN sys_user u ON u.user_id = m.host_user_id
        -- 实际参会记录聚合（021 新增）：覆盖凭会议号加入/访客/快速会议主持人
@@ -327,6 +328,9 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
             ? Math.max(0, Math.floor((endMs - startMs) / 1000))
             : 0,
         participantCount: attCnt > 0 ? attCnt : invCnt,
+        // 受邀总数（群组开会展开的成员数等）：前端展示 "实际/邀请"（如 2/3）；
+        // 无邀请记录（快速会议/凭号加入）时为 0，前端仅显示实际数
+        invitedCount: Number(r.invited_total) || 0,
         myRole: Number(r.host_user_id) === uid ? "host" : "participant",
       };
     });
@@ -343,7 +347,8 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
 
     const [rows] = await db.query(
       `SELECT m.id, m.code, m.title, m.host_user_id, m.scheduled_at, m.created_at, m.ended_at,
-              u.user_name AS host_name
+              u.user_name AS host_name,
+              (SELECT COUNT(*) FROM meeting_invitations ii WHERE ii.meeting_id = m.id) AS invited_total
        FROM meetings m
        LEFT JOIN sys_user u ON u.user_id = m.host_user_id
        WHERE m.id = ? AND ${vis}
@@ -354,9 +359,10 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     if (!m) return reply.code(404).send({ error: "not_found" });
 
     // 实际参会明细：优先取 meeting_attendance（覆盖凭会议号加入/访客/快速会议
-    // 主持人——这些路径不入邀请表）；无记录（历史旧会议/旧版本）回退邀请表
+    // 主持人——这些路径不入邀请表）；无记录（历史旧会议/旧版本）回退邀请表。
+    // 已入会行携带 user_id，用于与下方 pending（未入会）邀请去重
     const [attRows] = await db.query(
-      `SELECT display_name, joined_at FROM meeting_attendance
+      `SELECT user_id, display_name, joined_at FROM meeting_attendance
        WHERE meeting_id = ? ORDER BY joined_at ASC`,
       [id],
     );
@@ -365,25 +371,56 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
       if (v instanceof Date) return v.toISOString().slice(0, 19).replace("T", " ");
       return String(v);
     };
-    let attendees = (attRows as { display_name: string; joined_at: unknown }[]).map((r) => ({
-      name: r.display_name ?? "",
-      deptName: "",
-      joinedAt: norm(r.joined_at) ?? "",
-    }));
+    // 去重键：登录用户按 user_id，访客按显示名（与 recordAttendance 口径一致）
+    const seen = new Set<string>();
+    const dedupeKey = (userId: unknown, name: string) =>
+      userId == null ? `g:${name}` : `u:${userId}`;
+    let attendees = (attRows as { user_id: number | null; display_name: string; joined_at: unknown }[]).map((r) => {
+      seen.add(dedupeKey(r.user_id, r.display_name ?? ""));
+      return {
+        name: r.display_name ?? "",
+        deptName: "",
+        joinedAt: norm(r.joined_at) ?? "",
+        joined: true,
+      };
+    });
     if (attendees.length === 0) {
       const [invRows] = await db.query(
-        `SELECT ii.display_name, ii.joined_at, d.dept_name
+        `SELECT ii.user_id, ii.display_name, ii.joined_at, d.dept_name
          FROM meeting_invitations ii
          LEFT JOIN sys_dept d ON d.dept_id = ii.dept_id
          WHERE ii.meeting_id = ? AND ii.status = 'attended'
          ORDER BY ii.joined_at ASC`,
         [id],
       );
-      attendees = (invRows as { display_name: string | null; dept_name: string | null; joined_at: unknown }[]).map((r) => ({
-        name: r.display_name ?? "",
-        deptName: r.dept_name ?? "",
-        joinedAt: norm(r.joined_at) ?? "",
-      }));
+      attendees = (invRows as { user_id: number | null; display_name: string | null; dept_name: string | null; joined_at: unknown }[]).map((r) => {
+        seen.add(dedupeKey(r.user_id, r.display_name ?? ""));
+        return {
+          name: r.display_name ?? "",
+          deptName: r.dept_name ?? "",
+          joinedAt: norm(r.joined_at) ?? "",
+          joined: true,
+        };
+      });
+    }
+    // 未入会成员（pending 邀请）：群组开会展开但未到会者，平铺展示并标注。
+    // joined=false，前端在名字后渲染"(未入会)"
+    const [pendRows] = await db.query(
+      `SELECT p.user_id, p.display_name, p.invited_at, d.dept_name
+       FROM meeting_invitations p
+       LEFT JOIN sys_dept d ON d.dept_id = p.dept_id
+       WHERE p.meeting_id = ? AND p.status = 'pending'
+       ORDER BY p.invited_at ASC`,
+      [id],
+    );
+    for (const p of pendRows as { user_id: number | null; display_name: string | null; invited_at: unknown; dept_name: string | null }[]) {
+      if (seen.has(dedupeKey(p.user_id, p.display_name ?? ""))) continue;
+      attendees.push({
+        name: p.display_name ?? "",
+        deptName: p.dept_name ?? "",
+        joinedAt: norm(p.invited_at) ?? "",
+        joined: false,
+      });
     }
     const startTime = attendees[0]?.joinedAt || norm(m.created_at) || "";
     const endTime = norm(m.ended_at) ?? "";
@@ -401,7 +438,8 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
         Number.isFinite(startMs) && Number.isFinite(endMs)
           ? Math.max(0, Math.floor((endMs - startMs) / 1000))
           : 0,
-      attendeeCount: attendees.length,
+      attendeeCount: attendees.filter((a) => a.joined !== false).length,
+      invitedCount: Number(m.invited_total) || 0,
       attendees,
     };
   });

@@ -92,7 +92,9 @@ export function HistoryMeetingsPage() {
     },
     {
       title: t("history.participantCount"), dataIndex: "participantCount", width: 100,
-      render: (v: number) => `${v}`,
+      // 有受邀总数时显示 "实际/邀请"（如 2/3）；无邀请记录（快速会议/凭号加入）仅显示实际数
+      render: (v: number, record) =>
+        (record.invitedCount ?? 0) > 0 ? `${v}/${record.invitedCount}` : `${v}`,
     },
     {
       title: t("history.duration"), dataIndex: "durationSec", width: 100,
@@ -176,7 +178,11 @@ export function HistoryMeetingsPage() {
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <span style={{ color: "#8c8c8c", minWidth: 80 }}>{t("history.participantCount")}</span>
-                  <span>{detail.attendeeCount}</span>
+                  <span>
+                    {(detail.invitedCount ?? 0) > 0
+                      ? `${detail.attendeeCount}/${detail.invitedCount}`
+                      : detail.attendeeCount}
+                  </span>
                 </div>
               </div>
             </div>
@@ -197,6 +203,9 @@ export function HistoryMeetingsPage() {
                 >
                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {a.name || "—"}
+                    {a.joined === false && (
+                      <span style={{ color: "#8c8c8c" }}>（{t("history.notJoined")}）</span>
+                    )}
                   </span>
                   {a.deptName && (
                     <span style={{ fontSize: 12, color: "#8c8c8c" }}>{a.deptName}</span>

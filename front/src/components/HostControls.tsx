@@ -149,6 +149,11 @@ export function HostControls({
                     {m.isSelf && (
                       <span className="member-self-tag">({t("meeting.me")})</span>
                     )}
+                    {!m.online && (
+                      <span className="member-not-joined">
+                        {t("meeting.memberNotJoined")}
+                      </span>
+                    )}
                     {m.handRaised && (
                       <HandIcon style={{ marginLeft: 4, color: "#faad14", fontSize: 13 }} />
                     )}

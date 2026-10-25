@@ -541,12 +541,14 @@ export type HistoryMeetingItem = {
   endTime: string;
   durationSec: number;
   participantCount: number;
+  /** 受邀总数（群组展开的成员数等）：>0 时前端展示 "实际/邀请"（如 2/3） */
+  invitedCount?: number;
   myRole: "host" | "participant";
 };
 
 export type HistoryMeetingDetail = HistoryMeetingItem & {
   attendeeCount: number;
-  attendees: { name: string; deptName: string; joinedAt: string }[];
+  attendees: { name: string; deptName: string; joinedAt: string; joined?: boolean }[];
 };
 
 export const MeetingsApiExt = {

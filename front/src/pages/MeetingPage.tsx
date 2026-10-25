@@ -440,12 +440,27 @@ function MeetingPageInner() {
     const fromQuery = params.get("code")?.replace(/\D/g, "") ?? "";
     if (fromQuery.length === 9) {
       setMeetingCode(fromQuery);
-      return;
+      // 不再提前 return：带 code 进入的路径（快速会议/待加入/群组开会/邀请
+      // 链接）仍需向下获取会议标题——原先 return 使 meetingTitle 永远停在
+      // 初始值"会议"，群组开会的自定义名称无法显示
     }
     if (!meetingId) return;
     // 该接口需要登录会话；访客（无会话）请求必然 401 且会议号仅用于展示
-    // （可由 URL ?code= 提供），无会话时直接跳过，避免控制台 401 噪音。
-    if (!getSessionId()) return;
+    // （可由 URL ?code= 提供），无会话时改走免登录的 by-code 兜底拿标题，
+    // 避免控制台 401 噪音。
+    if (!getSessionId()) {
+      if (fromQuery.length === 9) {
+        void MeetingApi.byCode(fromQuery)
+          .then((m) => {
+            if (cancelled) return;
+            if (m.title) setMeetingTitle(m.title);
+          })
+          .catch(() => {
+            /* keep default title */
+          });
+      }
+      return;
+    }
 
     void MeetingApi.get(meetingId)
       .then((m) => {
