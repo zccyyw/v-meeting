@@ -41,7 +41,7 @@
  *   # Docker build with China mirrors:
  *   USE_CN_MIRROR=1 npm run pack:rpm
  */
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync, readdirSync, renameSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -94,7 +94,7 @@ function checkCommand(cmd) {
   return r.status === 0;
 }
 
-console.log(`→ pack-rpm: arch=${arch} node=${nodeVersion} version=${rpmVersion}-${rpmRelease}`);
+console.log(`→ pack-rpm: arch=${arch} node=${nodeVersion} version=${rpmVersion}`);
 if (noDocker) {
   console.log("→ Native build mode (NO_DOCKER=1)");
 }
@@ -272,6 +272,15 @@ writeFileSync(
     "",
   ].join("\n"),
 );
+
+// 产物命名统一不含发布号（release）：容器内 fpm 按 RPM/DEB 规范生成
+// "name-version-release" 文件名（包内部 Release=1 语义保留），此处重命名
+// 为与 CI 产物一致的 "name-version" 形式（如 meeting-0.0.26.glibc217.x86_64.rpm）
+for (const f of readdirSync(outDir)) {
+  if (/-1\.(\w+\.(?:rpm|deb))$/.test(f)) {
+    renameSync(join(outDir, f), join(outDir, f.replace(/-1\.(\w+\.(?:rpm|deb))$/, ".$1")));
+  }
+}
 
 // List output
 console.log("\n✓ RPM package built in dist/rpm/");

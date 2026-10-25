@@ -51,10 +51,6 @@ on:
         description: "版本号（如 0.1）"
         required: true
         default: "0.1"
-      release:
-        description: "发布号（如 1）"
-        required: true
-        default: "1"
 
   # 推送 tag 时自动触发（同时构建 x64 和 arm64 全部包）
   push:
@@ -80,7 +76,6 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       build_type: ${{ steps.set-params.outputs.build_type }}
       version: ${{ steps.set-params.outputs.version }}
-      release: ${{ steps.set-params.outputs.release }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -148,16 +143,17 @@ jobs:
 
       - id: set-params
         run: |
+          # 产物命名已不含发布号（release）：版本号跟 git tag，同 tag 重跑 CI
+          # 即覆盖语义，发布号纯属命名噪音；RPM/DEB 包内部仍保留 Release=1
+          # 字段（包管理器的新旧判断语义不受影响，仅文件名不带）
           if [ "${{ github.event_name }}" = "push" ]; then
             ver="${GITHUB_REF##*/}"
             ver="${ver#v}"
             echo "build_type=all" >> "$GITHUB_OUTPUT"
             echo "version=$ver" >> "$GITHUB_OUTPUT"
-            echo "release=1" >> "$GITHUB_OUTPUT"
           else
             echo "build_type=${{ inputs.build_type }}" >> "$GITHUB_OUTPUT"
             echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "release=${{ inputs.release }}" >> "$GITHUB_OUTPUT"
           fi
 
   # ═══════════════════════════════════════════════════════════════════
@@ -210,7 +206,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: meeting-pack-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          name: meeting-pack-${{ needs.prepare.outputs.version }}
           path: dist/
           retention-days: 30
           if-no-files-found: error
@@ -249,7 +245,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: meeting-docker-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          name: meeting-docker-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}
           path: dist/docker/
           retention-days: 30
           if-no-files-found: error
@@ -280,7 +276,7 @@ jobs:
       - name: Download baseline payload
         uses: actions/download-artifact@v4
         with:
-          name: meeting-payload-${{ matrix.arch }}-${{ matrix.baseline }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          name: meeting-payload-${{ matrix.arch }}-${{ matrix.baseline }}-${{ needs.prepare.outputs.version }}
           path: dist/payload
 
       - name: Build native package (from baseline payload)
@@ -300,7 +296,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: meeting-native-${{ matrix.arch }}-${{ matrix.baseline }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          name: meeting-native-${{ matrix.arch }}-${{ matrix.baseline }}-${{ needs.prepare.outputs.version }}
           path: dist/native/
           retention-days: 30
           if-no-files-found: error
@@ -346,7 +342,7 @@ jobs:
             -v "meeting-build-modules-${{ matrix.arch }}-${{ matrix.baseline }}:/workspace/node_modules" \
             -e TARGET_ARCH=${{ matrix.arch }} \
             -e RPM_VERSION=${{ needs.prepare.outputs.version }} \
-            -e RPM_RELEASE=${{ needs.prepare.outputs.release }} \
+            -e RPM_RELEASE=1 \
             -e USE_SYSTEM_NODE=1 \
             -e BASELINE_GLIBC=${{ matrix.glibc }} \
             -e PAYLOAD_ONLY=1 \
@@ -367,7 +363,7 @@ jobs:
             -v "$PWD/dist/payload:/payload:ro" \
             -e TARGET_ARCH=${{ matrix.arch }} \
             -e RPM_VERSION=${{ needs.prepare.outputs.version }} \
-            -e RPM_RELEASE=${{ needs.prepare.outputs.release }} \
+            -e RPM_RELEASE=1 \
             -e PACKAGE_FROM=/payload/meeting-payload.tar.gz \
             meeting-rpm-builder \
             bash /workspace/deploy/rpm/build-rpm.sh
@@ -404,14 +400,14 @@ jobs:
             arch_tag="x86_64"
           fi
           for f in meeting-*.rpm; do
-            [ -f "$f" ] && mv "$f" "meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.${{ matrix.baseline }}.${arch_tag}.rpm" || true
+            [ -f "$f" ] && mv "$f" "meeting-${{ needs.prepare.outputs.version }}.${{ matrix.baseline }}.${arch_tag}.rpm" || true
           done
           ls -lh
 
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: meeting-rpm-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          name: meeting-rpm-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}
           path: dist/rpm/meeting-*.rpm
           retention-days: 30
           if-no-files-found: error
@@ -419,7 +415,7 @@ jobs:
       - name: Upload baseline payload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: meeting-payload-${{ matrix.arch }}-${{ matrix.baseline }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          name: meeting-payload-${{ matrix.arch }}-${{ matrix.baseline }}-${{ needs.prepare.outputs.version }}
           path: dist/payload/meeting-payload.tar.gz
           retention-days: 7
           if-no-files-found: error
@@ -446,7 +442,7 @@ jobs:
       - name: Download RPM artifact
         uses: actions/download-artifact@v4
         with:
-          name: meeting-rpm-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          name: meeting-rpm-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}
           path: dist/rpm
 
       - name: Build DEB from RPM
@@ -485,10 +481,10 @@ jobs:
                 fpm -s rpm -t deb \
                   -n meeting \
                   -v ${{ needs.prepare.outputs.version }} \
-                  --iteration ${{ needs.prepare.outputs.release }} \
+                  --iteration 1 \
                   --after-install /scripts/post.sh \
                   --before-remove /scripts/prerm.deb.sh \
-                  -p /output/meeting-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}.${{ matrix.baseline }}.${deb_arch}.deb \
+                  -p /output/meeting-${{ needs.prepare.outputs.version }}.${{ matrix.baseline }}.${deb_arch}.deb \
                   \$rpm_file && \
                 deb_file=\$(ls /output/meeting-*.deb | head -1) && \
                 mkdir -p /tmp/deb-ctrl && \
@@ -504,7 +500,7 @@ jobs:
       - name: Upload DEB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: meeting-deb-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+          name: meeting-deb-${{ matrix.arch }}-${{ needs.prepare.outputs.version }}
           path: dist/deb/meeting-*.deb
           retention-days: 30
           if-no-files-found: error
@@ -651,4 +647,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Artifacts 可在 Actions 运行页下载；tag 构建产物同时发布在 Releases 页。" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version**: ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: ${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
