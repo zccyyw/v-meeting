@@ -333,7 +333,7 @@ body.meeting-active {
 /* 兼容：页面中仍使用原生 button 且非 antd 的元素。
    排除项说明：layout-*（布局面板，需保持中性色）、video-sidelist-toggle /
    video-toplist-focus（会议视频区自有样式）不套用默认主色，避免被全局蓝覆盖。 */
-button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret) {
+button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not(.side-panel-close):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret) {
   font: inherit;
   padding: 0.6rem 1rem;
   border-radius: 8px;
@@ -343,7 +343,7 @@ button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-h
   cursor: pointer;
 }
 
-button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret):disabled {
+button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not(.side-panel-close):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret):disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
