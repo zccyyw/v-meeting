@@ -81,9 +81,10 @@ services:
     environment:
       # 数据库驱动跟随 .env 的 DB_DRIVER（本地默认 mysql，与宿主机 db:reset 同库）
       DB_DRIVER: ${DB_DRIVER:-sqlite}
-      # 容器内经 host.docker.internal 访问宿主机 MySQL：
-      # .env 里的 127.0.0.1 在容器内指向容器自身，必须用 host.docker.internal
-      MYSQL_HOST: host.docker.internal
+      # 容器内经 host.docker.internal 访问宿主机 MySQL（开发场景，需
+      # extra_hosts 的 host-gateway 解析，见下方）；离线包默认连包内
+      # mysql 容器（服务名 mysql），开箱即用
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
       MYSQL_PORT: ${MYSQL_PORT:-3306}
       MYSQL_USER: ${MYSQL_USER:-meeting}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
@@ -108,6 +109,10 @@ services:
       RECORDINGS_DIR: ${RECORDINGS_DIR:-/app/data/recordings}
       # 证书目录：用于登录页提供 CA 根证书下载（/api/certs/ca.crt）
       CERT_DIR: /certs
+    extra_hosts:
+      # 宿主机数据库场景（.env 显式配 MYSQL_HOST=host.docker.internal）在
+      # Linux 引擎上的解析支持；默认连包内 mysql 容器（服务名）
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -140,9 +145,10 @@ services:
     environment:
       # 数据库驱动跟随 .env 的 DB_DRIVER（本地默认 mysql，与宿主机 db:reset 同库）
       DB_DRIVER: ${DB_DRIVER:-sqlite}
-      # 容器内经 host.docker.internal 访问宿主机 MySQL：
-      # .env 里的 127.0.0.1 在容器内指向容器自身，必须用 host.docker.internal
-      MYSQL_HOST: host.docker.internal
+      # 容器内经 host.docker.internal 访问宿主机 MySQL（开发场景，需
+      # extra_hosts 的 host-gateway 解析，见下方）；离线包默认连包内
+      # mysql 容器（服务名 mysql），开箱即用
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
       MYSQL_PORT: ${MYSQL_PORT:-3306}
       MYSQL_USER: ${MYSQL_USER:-meeting}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
@@ -162,6 +168,8 @@ services:
       MEETING_EMPTY_ROOM_GRACE_MS: ${MEETING_EMPTY_ROOM_GRACE_MS:-180000}
       MEETING_HOST_RECONNECT_GRACE_MS: ${MEETING_HOST_RECONNECT_GRACE_MS:-300000}
       MEETING_STALE_SWEEP_MS: ${MEETING_STALE_SWEEP_MS:-60000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       mysql:
         condition: service_healthy
