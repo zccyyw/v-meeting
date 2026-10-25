@@ -883,8 +883,10 @@ export function createSignalHandler(db: Db) {
           `UPDATE meeting_invitations SET status = 'attended', joined_at = ${nowSql(db)} WHERE meeting_id = ? AND user_id = ?`,
           [state.room.meetingId, targetMedia.userId]
         );
-      } catch {
-        // 忽略
+      } catch (err) {
+        // 该行是成员历史可见性的依据之一，失败必须留痕（attendance 仍有
+        // 记录兜底，但静默吞掉会让排障无从下手）
+        console.error("mark invitation attended failed (admit)", err);
       }
     }
 
@@ -1092,8 +1094,10 @@ export function createSignalHandler(db: Db) {
           `UPDATE meeting_invitations SET status = 'attended', joined_at = ${nowSql(db)} WHERE meeting_id = ? AND user_id = ?`,
           [auth.meetingId, media.userId],
         );
-      } catch {
-        // 忽略
+      } catch (err) {
+        // 该行是成员历史可见性的依据之一，失败必须留痕（attendance 仍有
+        // 记录兜底，但静默吞掉会让排障无从下手）
+        console.error("mark invitation attended failed (join)", err);
       }
     }
     await touchMeetingActive(auth.meetingId, db);

@@ -256,10 +256,17 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
   });
 
   // ── 历史会议（我主持的 + 我参加过的，已结束）──
+  // 可见性含三条路径：主持人 / 邀请表 attended（兼容 021 前旧会议）/
+  // meeting_attendance 实际参会记录（021 口径，覆盖群组成员、凭会议号加入、
+  // 访客等邀请表覆盖不全的场景——如邀请转 attended 的 UPDATE 被静默吞掉时，
+  // attendance 仍有记录，成员不应因此丢历史）
   const historyVisible = (uid: number) =>
     `m.status = 'ended' AND (m.host_user_id = ${uid} OR EXISTS(
       SELECT 1 FROM meeting_invitations i
       WHERE i.meeting_id = m.id AND i.user_id = ${uid} AND i.status = 'attended'
+    ) OR EXISTS(
+      SELECT 1 FROM meeting_attendance a
+      WHERE a.meeting_id = m.id AND a.user_id = ${uid}
     ))`;
 
   app.get("/meetings/my-history", async (req, reply) => {
