@@ -36,14 +36,25 @@ compose() {
 
 case "$CMD" in
   stop)
-    compose stop
-    echo "OK: 已停止（数据保留；bash install.sh 可再次启动）"
+    if compose stop; then
+      echo "OK: 已停止（数据保留；bash install.sh 可再次启动）"
+    else
+      echo "!! 停止失败，请检查上方报错" >&2
+      exit 1
+    fi
     exit 0
     ;;
   down)
-    if [ $# -gt 1 ]; then shift; fi
-    compose down "$@"
-    echo "OK: 已卸载（未加 -v 时数据卷保留）"
+    shift # 去掉 "down"，其余参数（如 -v）透传给 compose。
+          # 原实现仅在有多参数时 shift——纯 `install.sh down` 会把 "down"
+          # 再传一次变成 `compose down down`（把 down 当服务名），
+          # 实际未卸载却提示成功
+    if compose down "$@"; then
+      echo "OK: 已卸载（未加 -v 时数据卷保留）"
+    else
+      echo "!! 卸载失败，请检查上方报错" >&2
+      exit 1
+    fi
     exit 0
     ;;
   up|--env-only)
