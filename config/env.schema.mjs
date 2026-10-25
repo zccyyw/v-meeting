@@ -85,7 +85,12 @@ export const SCHEMA = [
   },
   {
     key: "MYSQL_HOST",
-    value: "127.0.0.1",
+    value: { dev: "127.0.0.1", host: "127.0.0.1", docker: "mysql" },
+    comment: [
+      "docker 离线包默认连包内 mysql 容器（服务名 mysql）",
+      "dev/host（宿主机直跑/直连）用 127.0.0.1；容器内 127.0.0.1 指向容器自身",
+      "容器里连宿主机 MySQL 用 host.docker.internal（compose 已配 host-gateway）",
+    ],
   },
   { key: "MYSQL_PORT", value: "3306" },
   {
