@@ -173,6 +173,30 @@ echo "   · 局域网/同 VPC 内访问：本机内网 IP（自动探测值通�
 echo "   · 跨 NAT/公网访问：必须改为公网 IP，否则「能进会但无音视频」"
 echo "==============================================================="
 
+# ── 4.5 证书自检：缺失时自动生成 ──
+# Caddyfile 硬编码从挂载的 certs 目录加载 fullchain.pem/privkey.pem，
+# 缺失会导致 caddy 反复报 "no such file or directory" 起不来、443 无入口
+# （首次部署极易漏掉手动生成证书这一步）。
+CERT_DIR_LOCAL="deploy/docker/certs"
+CERT_GENERATED=0
+if [ ! -f "$CERT_DIR_LOCAL/fullchain.pem" ] || [ ! -f "$CERT_DIR_LOCAL/privkey.pem" ]; then
+  GEN="deploy/docker/gen-selfsigned.sh"
+  if [ -f "$GEN" ]; then
+    cert_host="$announced"
+    if [ -z "$cert_host" ] || [ "$cert_host" = "10.0.0.10" ]; then
+      cert_host="$(detect_announced_ip || true)"
+    fi
+    echo "-> 未检测到证书，自动生成自签/CA 证书（ca.crt 需导入参会电脑；正式环境请替换为单位颁发的证书）"
+    if bash "$GEN" --ca "${cert_host:-127.0.0.1}"; then
+      CERT_GENERATED=1
+    else
+      echo "!! 证书生成失败：caddy 将无法提供 HTTPS。请手动执行：bash $GEN --ca <服务器IP>"
+    fi
+  else
+    echo "!! 未找到 $GEN：请手动放置 fullchain.pem/privkey.pem 到 $CERT_DIR_LOCAL"
+  fi
+fi
+
 # ── 5. 启动 ──
 if [ "$CMD" = "--env-only" ]; then
   echo "OK: 环境就绪（未启动）。运行 bash install.sh 启动"
@@ -180,6 +204,12 @@ if [ "$CMD" = "--env-only" ]; then
 fi
 
 compose up -d
+
+# 新生成的证书：bind mount 内容变化不会触发容器重建，需显式重载 caddy
+if [ "$CERT_GENERATED" = "1" ] && docker ps --format '{{.Names}}' | grep -q "caddy"; then
+  compose restart caddy
+  echo "-> 已重载 caddy 加载新生成的证书"
+fi
 echo "OK: 已启动。默认账号 admin/123456（首次登录会要求修改密码）"
 echo "    查看日志: docker-compose -p meeting logs -f   （注意必须带 -p meeting）"
 echo "    停止: bash install.sh stop    卸载: bash install.sh down"

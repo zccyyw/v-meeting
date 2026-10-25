@@ -9,7 +9,7 @@
 #
 # 注意：本文件使用 profiles 与 depends_on.required:false，需要 **Docker Compose v2.20+**。
 # 麒麟 V10 SP1 等自带旧版 Docker 的环境，请使用离线包内附带的 docker-compose v2 二进制，
-# 或改用 RPM / DEB 包部署。详见 docs/项目打包与部署说明.md。
+# 或改用 RPM / DEB 包部署。详见 docs/install/。
 
 services:
   # 数据库/缓存容器仅通过内部网络访问（不向宿主机发布端口）。

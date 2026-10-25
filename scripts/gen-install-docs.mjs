@@ -12,12 +12,27 @@
  *   - `### ` 小节行  → Heading 2
  *   - `#### ` 小节行 → Heading 3
  */
-import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-const require = createRequire("D:/dev.env/nvm/node_global/");
-const docx = require("docx");
+// docx 解析顺序：项目依赖（devDependency）→ 全局安装（npm root -g）。
+// 原实现硬编码作者机器的全局路径（D:/dev.env/nvm/...），换机器即
+// MODULE_NOT_FOUND 且无提示——现改为两级尝试并给出可读指引。
+let docx;
+try {
+  const require = createRequire(import.meta.url);
+  docx = require("docx");
+} catch {
+  try {
+    const { execSync } = await import("node:child_process");
+    const globalRoot = execSync("npm root -g").toString().trim();
+    docx = createRequire(join(globalRoot, "noop.js"))("docx");
+  } catch {
+    console.error("[gen-docs] docx 未安装：请在项目内 `npm i -D docx`，或全局 `npm i -g docx`");
+    process.exit(1);
+  }
+}
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   HeadingLevel, AlignmentType, WidthType, BorderStyle, ShadingType,
@@ -25,8 +40,11 @@ const {
 } = docx;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const srcDir = join(root, "docs", "install");
-const outDir = join(root, "docs", "install", "word");
+// 扫描目录对（源 md → 输出 docx）：install 安装部署 + guide 用户使用手册
+const DOC_DIRS = [
+  { srcDir: join(root, "docs", "install"), outDir: join(root, "docs", "install", "word") },
+  { srcDir: join(root, "docs", "guide"), outDir: join(root, "docs", "guide", "word") },
+];
 
 // ─── 统一字号（half-points）与配色 ───
 const S = {
@@ -190,10 +208,8 @@ function parseMd(md) {
   return paras;
 }
 
-if (!existsSync(srcDir)) {
-  console.error("Source directory not found:", srcDir);
-  process.exit(1);
-}
+for (const { srcDir, outDir } of DOC_DIRS) {
+  if (!existsSync(srcDir)) continue; // guide 未创建时跳过
 
 const files = readdirSync(srcDir).filter(f => f.endsWith(".md"));
 for (const file of files) {
@@ -242,6 +258,8 @@ for (const file of files) {
   const outName = basename(file, ".md") + ".docx";
   const outPath = join(outDir, outName);
   const buffer = await Packer.toBuffer(doc);
+  mkdirSync(outDir, { recursive: true });
   writeFileSync(outPath, buffer);
   console.log(`Generated: ${outPath}`);
+}
 }
