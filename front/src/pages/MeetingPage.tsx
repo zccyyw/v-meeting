@@ -282,6 +282,9 @@ function MeetingPageInner() {
   const [copyHint, setCopyHint] = useState<string | null>(null);
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
+  /** 设备枚举函数句柄：设备浮窗打开时调用（部分驱动插拔不触发 devicechange，
+   *  仅靠事件会导致"先入会后插摄像头"时下拉列表陈旧） */
+  const refreshDevicesRef = useRef<() => void>(() => {});
   /** 共享内容声音本端静音（纯本地状态，不影响其他成员，也不经信令） */
   const [screenAudioMuted, setScreenAudioMuted] = useState(false);
   const [audioId, setAudioId] = useState("");
@@ -501,6 +504,7 @@ function MeetingPageInner() {
     }
 
     void refresh();
+    refreshDevicesRef.current = refresh;
     navigator.mediaDevices.addEventListener?.("devicechange", refresh);
     return () => {
       cancelled = true;
@@ -1540,6 +1544,7 @@ function MeetingPageInner() {
           videoInputs={videoInputs}
           audioId={audioId}
           videoId={videoId}
+          onRefreshDevices={() => refreshDevicesRef.current()}
           onChangeAudio={(id) => {
             setAudioId(id);
             void roomRef.current?.switchDevice("audio", id).catch((err) => {

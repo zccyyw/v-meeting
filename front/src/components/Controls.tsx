@@ -47,6 +47,8 @@ type Props = {
   videoInputs: MediaDeviceInfo[];
   audioId: string;
   videoId: string;
+  /** 麦克风/摄像头设备浮窗打开时触发——重新枚举设备列表（部分驱动插拔不触发 devicechange） */
+  onRefreshDevices?: () => void;
   onChangeAudio: (deviceId: string) => void;
   onChangeVideo: (deviceId: string) => void;
   onToggleMic: () => void;
@@ -134,6 +136,7 @@ function ControlSplitButton({
   hostLockedTip,
   menuItems,
   onMenuClick,
+  onOpenChange,
 }: {
   label: string;
   icon: ReactNode;
@@ -146,6 +149,8 @@ function ControlSplitButton({
   hostLockedTip?: string;
   menuItems?: MenuProps["items"];
   onMenuClick?: (key: string) => void;
+  /** 下拉浮窗打开状态变化——设备列表在 open=true 时触发重新枚举 */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const main = (
     <ControlButton
@@ -169,6 +174,10 @@ function ControlSplitButton({
           trigger={["click"]}
           placement="topRight"
           rootClassName="meeting-dark-menu"
+          // 每次打开设备浮窗时重新枚举（open 变化回调）：
+          // 部分驱动插拔不触发 mediaDevices 的 devicechange 事件，
+          // 仅依赖事件会导致"先入会后插摄像头"时设备列表陈旧
+          onOpenChange={(open) => onOpenChange?.(open)}
           menu={{
             items: menuItems,
             onClick: ({ key }) => onMenuClick?.(key),
@@ -208,6 +217,7 @@ export function Controls({
   videoInputs,
   audioId,
   videoId,
+  onRefreshDevices,
   onChangeAudio,
   onChangeVideo,
   onToggleMic,
@@ -270,6 +280,9 @@ export function Controls({
             },
           ]}
           onMenuClick={(key) => onChangeAudio(key)}
+          onOpenChange={(open) => {
+            if (open) onRefreshDevices?.();
+          }}
         />
         <ControlSplitButton
           label={t("meeting.camera")}
@@ -298,6 +311,9 @@ export function Controls({
             },
           ]}
           onMenuClick={(key) => onChangeVideo(key)}
+          onOpenChange={(open) => {
+            if (open) onRefreshDevices?.();
+          }}
         />
         <ControlSplitButton
           label={t("meeting.shareShort")}
