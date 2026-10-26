@@ -283,8 +283,9 @@ function MeetingPageInner() {
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
   /** 设备枚举函数句柄：设备浮窗打开时调用（部分驱动插拔不触发 devicechange，
-   *  仅靠事件会导致"先入会后插摄像头"时下拉列表陈旧） */
-  const refreshDevicesRef = useRef<() => void>(() => {});
+   *  仅靠事件会导致"先入会后插摄像头"时下拉列表陈旧）。传入类型时先做
+   *  对应权限预触发，解决"未授权时枚举不出新插设备"。 */
+  const refreshDevicesRef = useRef<(kind?: "audio" | "video") => void>(() => {});
   /** 共享内容声音本端静音（纯本地状态，不影响其他成员，也不经信令） */
   const [screenAudioMuted, setScreenAudioMuted] = useState(false);
   const [audioId, setAudioId] = useState("");
@@ -483,8 +484,32 @@ function MeetingPageInner() {
   useEffect(() => {
     let cancelled = false;
 
-    async function refresh() {
+    /** 权限预触发：未授权时 enumerateDevices 只返回占位设备（Chrome 102 上
+     * 新插摄像头根本不在结果里），先跑一次 getUserMedia 触发授权再枚举。
+     * 设备被占用/已拒绝时 getUserMedia 失败不影响枚举本身。 */
+    async function ensurePermission(kind: "audio" | "video") {
+      const gUM = navigator.mediaDevices.getUserMedia?.bind(navigator.mediaDevices);
+      if (!gUM) return;
       try {
+        const name = kind === "video" ? "camera" : "microphone";
+        const status = await navigator.permissions?.query({ name: name as PermissionName });
+        if (status?.state === "granted") return;
+      } catch {
+        /* 老内核不支持 permissions.query → 直接走 getUserMedia 兜底 */
+      }
+      try {
+        const stream = await gUM(
+          kind === "video" ? { video: true } : { audio: true }
+        );
+        for (const t of stream.getTracks()) t.stop();
+      } catch {
+        /* 权限被拒/设备占用：忽略，枚举照常进行 */
+      }
+    }
+
+    async function refresh(kind?: "audio" | "video") {
+      try {
+        if (kind) await ensurePermission(kind);
         const devices = await navigator.mediaDevices.enumerateDevices();
         if (cancelled) return;
         const audios = devices.filter((d) => d.kind === "audioinput");
@@ -505,10 +530,12 @@ function MeetingPageInner() {
 
     void refresh();
     refreshDevicesRef.current = refresh;
-    navigator.mediaDevices.addEventListener?.("devicechange", refresh);
+    // devicechange 不带 kind：直接裸枚举，不做权限预触发
+    const onDeviceChange = () => void refresh();
+    navigator.mediaDevices.addEventListener?.("devicechange", onDeviceChange);
     return () => {
       cancelled = true;
-      navigator.mediaDevices.removeEventListener?.("devicechange", refresh);
+      navigator.mediaDevices.removeEventListener?.("devicechange", onDeviceChange);
     };
   }, []);
 
@@ -1544,7 +1571,7 @@ function MeetingPageInner() {
           videoInputs={videoInputs}
           audioId={audioId}
           videoId={videoId}
-          onRefreshDevices={() => refreshDevicesRef.current()}
+          onRefreshDevices={(kind) => refreshDevicesRef.current(kind)}
           onChangeAudio={(id) => {
             setAudioId(id);
             void roomRef.current?.switchDevice("audio", id).catch((err) => {

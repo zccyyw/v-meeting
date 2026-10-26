@@ -9,6 +9,12 @@ export type Peer = {
   canShare: boolean;
   /** 是否正在录制（内存态；随入会快照下发，供后入会者显示 REC 指示） */
   recording: boolean;
+  /**
+   * 入会时间（ms）：宫格排序依据（主持人第一、自己第二、其余按此正序）。
+   * 非等候室直入者在 addPeer 时刻记录；等候室成员在准入（admit）时刻记录。
+   * 重连换新连接即视为新成员重新计时（产品确认口径）。
+   */
+  joinedAt: number;
 };
 
 export class MeetingRoom {
@@ -38,6 +44,7 @@ export class MeetingRoom {
       this.waitingRoomEnabled && input.role !== "host";
     const peer: Peer = {
       ...input,
+      joinedAt: Date.now(),
       inWaitingRoom,
       handRaised: false,
       canShare: this.allowShareDefault || input.role === "host",
@@ -61,7 +68,11 @@ export class MeetingRoom {
 
   admit(peerId: string) {
     const p = this.peers.get(peerId);
-    if (p) p.inWaitingRoom = false;
+    if (!p) return;
+    // 等候室成员的"入会时间"以主持人准入时刻为准（非连接时刻）；
+    // 非等候室路径不经过这里，时间戳已在 addPeer 记录。
+    if (p.inWaitingRoom) p.joinedAt = Date.now();
+    p.inWaitingRoom = false;
   }
 
   deny(peerId: string) {

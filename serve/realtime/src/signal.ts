@@ -268,6 +268,8 @@ function admittedPeerList(state: RoomState) {
       camEnabled: flags.camEnabled,
       micEnabled: flags.micEnabled,
       recording: p.recording,
+      // 入会时间：宫格排序依据（主持人第一、自己第二、其余按此正序）
+      joinedAt: p.joinedAt,
     };
   });
 }
@@ -929,6 +931,7 @@ export function createSignalHandler(db: Db) {
         peerId: target.peerId,
         displayName: target.displayName,
         role: target.role,
+        joinedAt: target.joinedAt,
       },
       targetPeerId
     );
@@ -1161,6 +1164,7 @@ export function createSignalHandler(db: Db) {
         peerId: id,
         displayName,
         role,
+        joinedAt: state.room.getPeer(id)?.joinedAt ?? Date.now(),
       },
       id
     );
@@ -1961,6 +1965,11 @@ export function createSignalHandler(db: Db) {
             producerId: message.producerId,
             rtpCapabilities,
             paused: true,
+            // 默认取最高 simulcast 层：不设置时消费端会落在低层（100kbps/1/4 分辨率），
+            // 大画面格子放大后发糊。mediasoup 会自动收敛到 producer 实际提供的最大层
+            // （屏幕共享单层、摄像头 3 层），此处给足上限即可。带宽不足时服务端
+            // 仍会按拥塞反馈自动降层。
+            preferredLayers: { spatialLayer: 2, temporalLayer: 2 },
           });
           ctx.media.consumers.set(consumer.id, consumer);
           consumer.on("transportclose", () => {

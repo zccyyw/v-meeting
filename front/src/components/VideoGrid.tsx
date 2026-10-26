@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { AudioMutedOutlined, DesktopOutlined } from "@ant-design/icons";
+import { AudioMutedOutlined, DesktopOutlined, LeftOutlined, RightOutlined } from "@ant-design/icons";
 import { HandIcon } from "@/components/HandIcon";
 import type { MeetingLayout, PeerInfo } from "@/media/room";
 import { useSpeaking } from "@/media/useSpeaking";
@@ -704,6 +704,56 @@ export function VideoGrid({
   const { t } = useTranslation();
   const handTitle = t("meeting.hand");
   const [trackEpoch, setTrackEpoch] = useState(0);
+  /** 宫格分页当前页（0 基）：渲染时按 pageCount 收敛，越界自动回退最后一页 */
+  const [gridPage, setGridPage] = useState(0);
+
+  // 宫格网格规格（提前定义：下方 hook 依赖）
+  // 列数映射：3=3×1、6=3×2、9=3×3、12=4×3。
+  const gridCols = layoutCols === 12 ? 4 : 3;
+  const gridRows = Math.max(1, Math.ceil(layoutCols / gridCols));
+
+  // 宫格格子固定尺寸（产品确认：等分切换只改数量与间距，格子大小不变）：
+  // 格宽 = min(基准宽, 12等分满屏适配宽)。取 12 等分做锚点保证最挤档位放得下；
+  // 小屏放不下基准尺寸时适配约束自动等比缩小（兜底），大屏基准段内尺寸恒定。
+  const TILE_BASE_W = 400; // 基准 400×250（16:10），高由宽推出
+  const TILE_MIN_W = 96;
+  /** 间距封顶：少格数档位剩余空间由"间距吸收+整体居中留白"共同消化，间距不失控 */
+  const GAP_MAX = 48;
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [gridMetrics, setGridMetrics] = useState({ w: 0, h: 0, gx: 0, gy: 0 });
+  // 是否处于宫格可见态（无投屏）：从演讲者布局切回宫格时 stage 节点重新挂载，
+  // 需重跑测量 effect，否则 tile 尺寸停留在初始值
+  const gridMounted =
+    !hasLiveVideo(localScreenStream) &&
+    ![...screenStreams.values()].some((s) => hasLiveVideo(s));
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const REF_GAP = 12; // 满屏适配计算用的参考间距（对应 CSS 兜底 gap 0.75rem）
+    const compute = () => {
+      const { clientWidth, clientHeight } = el;
+      if (!clientWidth || !clientHeight) return;
+      // 12等分（4列×3行）刚好放下的最大格宽——固定尺寸的上限约束
+      const fitW = Math.min(
+        (clientWidth - REF_GAP * (4 - 1)) / 4,
+        ((clientHeight - REF_GAP * (3 - 1)) / 3) * (16 / 10),
+      );
+      const w = Math.floor(Math.max(TILE_MIN_W, Math.min(TILE_BASE_W, fitW)));
+      const h = Math.floor((w * 10) / 16);
+      // 剩余空间转化为间距（封顶），超出封顶的部分由 CSS 居中吸收为整体留白
+      const spreadX = (clientWidth - gridCols * w) / Math.max(1, gridCols - 1);
+      const spreadY = (clientHeight - gridRows * h) / Math.max(1, gridRows - 1);
+      const gx = Math.floor(Math.max(0, Math.min(GAP_MAX, spreadX)));
+      const gy = gridRows > 1 ? Math.floor(Math.max(0, Math.min(GAP_MAX, spreadY))) : 0;
+      setGridMetrics((prev) =>
+        prev.w === w && prev.gx === gx && prev.gy === gy ? prev : { w, h, gx, gy }
+      );
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [gridCols, gridRows, gridMounted]);
 
   useEffect(() => {
     const streams = [
@@ -848,9 +898,8 @@ export function VideoGrid({
 
   void trackEpoch;
   // 以“是否存在存活的共享视频轨”判定投屏态，避免残留流把布局永久锁在侧栏
-  const hasScreen =
-    hasLiveVideo(localScreenStream) ||
-    [...screenStreams.values()].some((s) => hasLiveVideo(s));
+  // （与顶部 gridMounted 同一判定：顶部那份是测量 effect 的重跑依赖）
+  const hasScreen = !gridMounted;
   const remoteAudio = <RemoteAudios streams={remoteStreams} />;
   const screenAudio =
     screenAudioStreams && screenAudioStreams.size > 0 ? (
@@ -1026,58 +1075,105 @@ export function VideoGrid({
     );
   }
 
-  // 宫格"一屏N等分"：前 N 个瓦片等分主区域，超出部分进底部胶片条。
-  // 列数映射：3/6/9→3列、12→4列（9=3×3，12=4×3，6=3×2，3=3×1）。
-  const gridCols = layoutCols === 12 ? 4 : 3;
-  const mainTiles = tiles.slice(0, layoutCols);
-  const overflowTiles = tiles.slice(layoutCols);
-  const gridRows = Math.max(1, Math.ceil(mainTiles.length / gridCols));
+  // 宫格"一屏N等分"：每页 N 个等大格子，超出成员分页显示（不再使用底部胶片条）。
+  // gridCols/gridRows 定义见组件顶部（Hook 依赖需要提前）。
+  // 宫格排序：主持人第一、自己第二、其余按入会时间正序（joinedAt）。
+  // 仅影响宫格分支，演讲者/侧栏维持快照顺序；排序稳定，
+  // 未知 joinedAt（旧服务端快照）的成员保持原顺序、排在新成员之后。
+  const gridTiles = (() => {
+    const rankOf = (tile: Tile) => {
+      if (peers.find((p) => p.peerId === tile.peerId)?.role === "host") return 0;
+      if (tile.key === "local") return 1;
+      return 2;
+    };
+    const joinedAtOf = (tile: Tile) =>
+      peers.find((p) => p.peerId === tile.peerId)?.joinedAt ?? Number.MAX_SAFE_INTEGER;
+    return tiles
+      .map((tile, index) => ({ tile, index }))
+      .sort((a, b) => {
+        const byRank = rankOf(a.tile) - rankOf(b.tile);
+        if (byRank !== 0) return byRank;
+        const byJoin = joinedAtOf(a.tile) - joinedAtOf(b.tile);
+        if (byJoin !== 0) return byJoin;
+        return a.index - b.index;
+      })
+      .map((x) => x.tile);
+  })();
+
+  // 分页：每页 N 人；gridPage 越界（成员退出）时自动收敛到最后一页
+  const pageCount = Math.max(1, Math.ceil(gridTiles.length / layoutCols));
+  const safePage = Math.min(gridPage, pageCount - 1);
+  const pageTiles = gridTiles.slice(safePage * layoutCols, safePage * layoutCols + layoutCols);
 
   return (
     <>
       {remoteAudio}
       {screenAudio}
-      <div
-        className="video-grid video-grid--grid"
-        data-cols={gridCols}
-        style={{ "--grid-rows": gridRows } as React.CSSProperties}
-      >
-        <div className="video-grid-main">
-          {mainTiles.map((tile) => (
-            <VideoTile
-              key={tile.key}
-              stream={tile.stream}
-              label={tile.label}
-              muted={tile.muted}
-              handRaised={tile.handRaised}
-              handTitle={handTitle}
-              showAvatar={!tile.isScreen && tile.forceAvatar}
-              isScreen={tile.isScreen}
-              localSelfScreen={tile.localSelfScreen}
-              rttMs={tile.rttMs}
-              micMuted={tile.micMuted}
-              camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
-            />
-          ))}
+      <div className="video-grid video-grid--grid">
+        <div className="video-grid-stage" ref={stageRef}>
+          <div
+            className="video-grid-main"
+            style={
+              {
+                "--grid-cols": gridCols,
+                "--grid-rows": gridRows,
+                "--tile-w": gridMetrics.w ? `${gridMetrics.w}px` : undefined,
+                "--tile-h": gridMetrics.h ? `${gridMetrics.h}px` : undefined,
+                "--grid-gap-x": gridMetrics.w ? `${gridMetrics.gx}px` : undefined,
+                "--grid-gap-y": gridMetrics.w ? `${gridMetrics.gy}px` : undefined,
+              } as React.CSSProperties
+            }
+          >
+            {pageTiles.map((tile) => (
+              <VideoTile
+                key={tile.key}
+                stream={tile.stream}
+                label={tile.label}
+                muted={tile.muted}
+                handRaised={tile.handRaised}
+                handTitle={handTitle}
+                showAvatar={!tile.isScreen && tile.forceAvatar}
+                isScreen={tile.isScreen}
+                localSelfScreen={tile.localSelfScreen}
+                rttMs={tile.rttMs}
+                micMuted={tile.micMuted}
+                camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
+              />
+            ))}
+          </div>
+          {pageCount > 1 && (
+            <>
+              <button
+                type="button"
+                className="video-grid-nav video-grid-nav--prev"
+                aria-label={t("meeting.prevPage")}
+                onClick={() => setGridPage((safePage - 1 + pageCount) % pageCount)}
+              >
+                <LeftOutlined aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="video-grid-nav video-grid-nav--next"
+                aria-label={t("meeting.nextPage")}
+                onClick={() => setGridPage((safePage + 1) % pageCount)}
+              >
+                <RightOutlined aria-hidden />
+              </button>
+            </>
+          )}
         </div>
-        {overflowTiles.length > 0 && (
-          <div className="video-grid-overflow" role="list">
-            {overflowTiles.map((tile) => (
-              <div key={tile.key} role="listitem" className="video-grid-overflow-item">
-                <VideoTile
-                  stream={tile.stream}
-                  label={tile.label}
-                  muted={tile.muted}
-                  handRaised={tile.handRaised}
-                  handTitle={handTitle}
-                  showAvatar={!tile.isScreen && tile.forceAvatar}
-                  isScreen={tile.isScreen}
-                  localSelfScreen={tile.localSelfScreen}
-                  rttMs={tile.rttMs}
-                  micMuted={tile.micMuted}
-                  camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
-                />
-              </div>
+        {pageCount > 1 && (
+          <div className="video-grid-dots" role="tablist" aria-label={t("meeting.pageIndicator")}>
+            {Array.from({ length: pageCount }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                role="tab"
+                aria-selected={i === safePage}
+                aria-label={t("meeting.pageN", { n: i + 1 })}
+                className={`video-grid-dot${i === safePage ? " is-active" : ""}`}
+                onClick={() => setGridPage(i)}
+              />
             ))}
           </div>
         )}

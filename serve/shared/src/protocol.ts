@@ -198,6 +198,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
         camEnabled: z.boolean().optional(),
         micEnabled: z.boolean().optional(),
         recording: z.boolean().optional(),
+        // 入会时间（ms）：宫格排序依据；旧服务端不下发时前端按快照顺序兜底
+        joinedAt: z.number().optional(),
       })
     ),
   }),
@@ -211,6 +213,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     peerId: z.string(),
     displayName: z.string(),
     role: UserRoleSchema,
+    joinedAt: z.number().optional(),
   }),
   z.object({ type: z.literal("peerLeft"), peerId: z.string() }),
   z.object({

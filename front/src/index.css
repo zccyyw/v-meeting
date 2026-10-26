@@ -633,32 +633,29 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .host-controls .side-panel-header .host-mute-all { margin-left: auto; font-size: 0.82rem; padding: 0.35rem 0.7rem; }
 .remote-audios { position: absolute; width: 0; height: 0; overflow: hidden; clip: rect(0, 0, 0, 0); pointer-events: none; }
 
-/* —— 首页：React Bits PixelTrail 光标轨迹宿主（fixed 全屏，不挡交互）—— */
-.home-pixel-host { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
-
-/* —— 首页功能卡片：hover 动画（图标弹性放大 + 卡片浮起）—— */
-.action-tile { transition: transform 0.2s ease, border-color 0.2s ease; }
-.action-tile:hover, .action-tile:focus-within { transform: translateY(-3px); }
-.action-tile:active { transform: scale(0.97); }
-.action-tile-icon { transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.24s ease; }
-.action-tile:hover .action-tile-icon, .action-tile:focus-within .action-tile-icon { transform: scale(1.12) rotate(-4deg); }
-@media (prefers-reduced-motion: reduce) {
-  .action-tile, .action-tile-icon { transition: none; }
-  .action-tile:hover, .action-tile:focus-within, .action-tile:active { transform: none; }
-  .action-tile:hover .action-tile-icon, .action-tile:focus-within .action-tile-icon { transform: none; }
-}
-
 /* —— 视频网格 —— */
 .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 0.75rem; flex: 1; min-height: 0; height: 100%; margin-bottom: 0; align-content: stretch; grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
-/* 宫格布局"一屏N等分"：前N个进主区域（按列数等宽、行数受视高约束），超出部分进底部胶片条 */
-.video-grid--grid { display: flex; flex-direction: column; gap: 0.75rem; }
-.video-grid-main { flex: 1; min-height: 0; display: flex; flex-wrap: wrap; justify-content: center; align-content: center; gap: 0.75rem; }
-.video-grid-main .video-tile { --tile-w: clamp(200px, 17vw, 320px); width: min(var(--tile-w), calc((100dvh - 14rem) * 16 / (10 * var(--grid-rows, 1)))); aspect-ratio: 16 / 10; min-height: 0; height: auto; flex-shrink: 0; }
-.video-grid--grid[data-cols="3"] .video-grid-main .video-tile { --tile-w: calc((100% - 1.5rem) / 3); }
-.video-grid--grid[data-cols="4"] .video-grid-main .video-tile { --tile-w: calc((100% - 2.25rem) / 4); }
-.video-grid-overflow { flex: none; display: flex; gap: 0.5rem; overflow-x: auto; padding-top: 0.5rem; border-top: 1px solid rgba(255, 255, 255, 0.08); scrollbar-width: thin; }
-.video-grid-overflow .video-tile { width: clamp(110px, 9vw, 160px); aspect-ratio: 16 / 10; min-height: 0; flex-shrink: 0; }
-.video-grid-overflow .video-tile-avatar { width: 2rem; height: 2rem; font-size: 0.85rem; }
+/* 宫格布局"一屏N等分"：每页N个等大格子，超出成员分页显示（圆点+悬停箭头）。
+   注意：尺寸完全由 1fr 网格决定，禁止使用 dvh/dvw——奇安信 Chrome 102（内核108以下）
+   不支持 dvh，整条 width 声明会被丢弃导致格子退化为内容尺寸、大小不一。 */
+.video-grid--grid { display: flex; flex-direction: column; gap: 0.5rem; }
+.video-grid-stage { position: relative; flex: 1; min-height: 0; }
+/* 格子定轨（--tile-w/h 由 JS 注入：固定基准 400×250，12等分放不下时等比缩小）；
+   间距 --grid-gap-x/y 由 JS 按剩余空间动态计算并封顶 48px，剩余留白由
+   justify/align-content 居中吸收；不满页时尾行/尾列同样居中 */
+.video-grid-main { width: 100%; height: 100%; min-height: 0; display: grid; grid-template-columns: repeat(var(--grid-cols, 3), var(--tile-w, 400px)); grid-template-rows: repeat(var(--grid-rows, 3), var(--tile-h, 250px)); column-gap: var(--grid-gap-x, 12px); row-gap: var(--grid-gap-y, 12px); justify-content: center; align-content: center; }
+.video-grid-main .video-tile { width: 100%; height: 100%; min-width: 0; min-height: 0; }
+/* 分页箭头：贴主区域左右居中，悬停 stage 时显现，鼠标静止时淡出 */
+.video-grid-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 20; width: 2.25rem; height: 3.5rem; border: none; border-radius: 10px; background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 1.1rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s, background 0.2s; }
+.video-grid-nav--prev { left: 0.5rem; }
+.video-grid-nav--next { right: 0.5rem; }
+.video-grid-stage:hover .video-grid-nav { opacity: 0.7; }
+.video-grid-stage .video-grid-nav:hover { opacity: 1; background: rgba(0, 0, 0, 0.65); }
+.video-grid-nav:focus-visible { opacity: 1; outline: 2px solid rgba(18, 120, 255, 0.8); }
+/* 页指示器：画面下方正中白色圆点，当前页实心高亮 */
+.video-grid-dots { flex: none; display: flex; justify-content: center; align-items: center; gap: 0.45rem; padding: 0.2rem 0; }
+.video-grid-dot { width: 0.55rem; height: 0.55rem; padding: 0; border: none; border-radius: 50%; background: rgba(255, 255, 255, 0.35); cursor: pointer; transition: background 0.2s, transform 0.2s; }
+.video-grid-dot.is-active { background: #fff; transform: scale(1.2); box-shadow: 0 0 6px rgba(255, 255, 255, 0.65); }
 .video-tile--focusable { cursor: pointer; transition: outline 0.15s, box-shadow 0.15s; outline: 2px solid transparent; }
 .video-tile--focusable:hover { outline-color: rgba(18, 120, 255, 0.6); box-shadow: 0 0 0 2px rgba(18, 120, 255, 0.3); }
 .video-tile--focusable:focus-visible { outline-color: rgba(18, 120, 255, 0.8); }

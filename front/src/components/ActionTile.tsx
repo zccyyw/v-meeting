@@ -18,7 +18,6 @@ export function ActionTile({
   return (
     <Card
       hoverable
-      className="action-tile"
       onClick={onClick}
       style={{
         width: "100%",
@@ -37,7 +36,6 @@ export function ActionTile({
       }}
     >
       <div
-        className="action-tile-icon"
         style={{
           width: 56,
           height: 56,

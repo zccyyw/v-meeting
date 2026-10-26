@@ -46,7 +46,6 @@ import {
 import { getDisplayName } from "@/auth/session";
 import { useInvitationsStream } from "@/hooks/useInvitationsStream";
 import { ActionTile } from "@/components/ActionTile";
-import PixelTrail from "@/components/PixelTrail";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 import { showMessage } from "@/ui/toast";
 
@@ -447,21 +446,6 @@ export function HomePage() {
 
   return (
     <div style={{ width: "100%", maxWidth: 960, margin: "0 auto", padding: "0 16px" }}>
-      {/* React Bits PixelTrail：光标像素轨迹（仅首页挂载；pointer-events:none 不挡交互；
-          WebGL2 不可用时组件内部优雅降级为不渲染） */}
-      <div className="home-pixel-host" aria-hidden>
-        <PixelTrail
-          color={token.colorPrimary}
-          gridSize={50}
-          trailSize={0.08}
-          maxAge={300}
-          gooeyFilter={{ strength: 1.2 }}
-          shape="circle"
-          gap={0.1}
-          shine={0.4}
-          glow={0.3}
-        />
-      </div>
       <Typography.Title level={2} style={{ marginBottom: 24 }}>
         {t("home.greeting", { name: displayName || "—" })}
       </Typography.Title>

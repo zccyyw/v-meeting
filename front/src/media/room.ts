@@ -18,6 +18,9 @@ export type PeerInfo = {
   camEnabled: boolean;
   micEnabled: boolean;
   recording: boolean;
+  /** 入会时间（ms）：宫格排序依据（主持人第一、自己第二、其余按此正序）；
+   *  旧服务端不下发时为 undefined，排序按快照顺序兜底 */
+  joinedAt?: number;
 };
 
 export type MeetingLayout = "grid" | "speaker";
@@ -107,7 +110,8 @@ type Listener = () => void;
 const VIDEO_ENCODINGS = [
   { rid: "r0", maxBitrate: 100_000, scaleResolutionDownBy: 4 },
   { rid: "r1", maxBitrate: 300_000, scaleResolutionDownBy: 2 },
-  { rid: "r2", maxBitrate: 900_000 },
+  // 最高层 2.5Mbps：内网环境按高清算；带宽不足时 WebRTC 拥塞控制仍会自动降级
+  { rid: "r2", maxBitrate: 2_500_000 },
 ];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -773,6 +777,10 @@ export class MediaRoom {
     try {
       this.screenProducer = await this.sendTransport.produce({
         track,
+        // 显式码率与分辨率约束：不传 encodings 时 WebRTC 拥塞控制默认先降分辨率，
+        // 屏幕文字会发糊（共享者本地预览不经编码所以自己看着清晰）。
+        // scaleResolutionDownBy: 1 锁分辨率，拥塞时优先降帧率/码率保文字可读。
+        encodings: [{ maxBitrate: 3_000_000, scaleResolutionDownBy: 1 }],
         appData: { source: "screen" },
       });
     } catch (err) {
@@ -1174,6 +1182,7 @@ export class MediaRoom {
               camEnabled: false,
               micEnabled: false,
               recording: false,
+              joinedAt: msg.joinedAt,
             },
           ];
         }
@@ -1448,6 +1457,7 @@ export class MediaRoom {
       camEnabled: p.camEnabled ?? false,
       micEnabled: p.micEnabled ?? false,
       recording: p.recording ?? false,
+      joinedAt: p.joinedAt,
     }));
     const self = msg.peers.find((p) => p.peerId === msg.peerId);
     this.handRaised = self?.handRaised ?? false;

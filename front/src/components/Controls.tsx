@@ -47,8 +47,9 @@ type Props = {
   videoInputs: MediaDeviceInfo[];
   audioId: string;
   videoId: string;
-  /** 麦克风/摄像头设备浮窗打开时触发——重新枚举设备列表（部分驱动插拔不触发 devicechange） */
-  onRefreshDevices?: () => void;
+  /** 麦克风/摄像头设备浮窗打开时触发——重新枚举设备列表（部分驱动插拔不触发 devicechange）。
+   *  传入对应类型时先做权限预触发（未授权时枚举不出新插设备）。 */
+  onRefreshDevices?: (kind?: "audio" | "video") => void;
   onChangeAudio: (deviceId: string) => void;
   onChangeVideo: (deviceId: string) => void;
   onToggleMic: () => void;
@@ -273,15 +274,24 @@ export function Controls({
               key: "g-mic",
               type: "group",
               label: t("meeting.mic"),
-              children: audioInputs.map((d) => ({
-                key: d.deviceId,
-                label: menuRow(deviceLabel(d), d.deviceId === audioId),
-              })),
+              children:
+                audioInputs.length > 0
+                  ? audioInputs.map((d) => ({
+                      key: d.deviceId,
+                      label: menuRow(deviceLabel(d), d.deviceId === audioId),
+                    }))
+                  : [
+                      {
+                        key: "no-audio-devices",
+                        label: t("meeting.noMicDevices"),
+                        disabled: true,
+                      },
+                    ],
             },
           ]}
           onMenuClick={(key) => onChangeAudio(key)}
           onOpenChange={(open) => {
-            if (open) onRefreshDevices?.();
+            if (open) onRefreshDevices?.("audio");
           }}
         />
         <ControlSplitButton
@@ -304,15 +314,24 @@ export function Controls({
               key: "g-cam",
               type: "group",
               label: t("meeting.camera"),
-              children: videoInputs.map((d) => ({
-                key: d.deviceId,
-                label: menuRow(deviceLabel(d), d.deviceId === videoId),
-              })),
+              children:
+                videoInputs.length > 0
+                  ? videoInputs.map((d) => ({
+                      key: d.deviceId,
+                      label: menuRow(deviceLabel(d), d.deviceId === videoId),
+                    }))
+                  : [
+                      {
+                        key: "no-video-devices",
+                        label: t("meeting.noCameraDevices"),
+                        disabled: true,
+                      },
+                    ],
             },
           ]}
           onMenuClick={(key) => onChangeVideo(key)}
           onOpenChange={(open) => {
-            if (open) onRefreshDevices?.();
+            if (open) onRefreshDevices?.("video");
           }}
         />
         <ControlSplitButton
