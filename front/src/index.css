@@ -633,6 +633,21 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .host-controls .side-panel-header .host-mute-all { margin-left: auto; font-size: 0.82rem; padding: 0.35rem 0.7rem; }
 .remote-audios { position: absolute; width: 0; height: 0; overflow: hidden; clip: rect(0, 0, 0, 0); pointer-events: none; }
 
+/* —— 首页：React Bits PixelTrail 光标轨迹宿主（fixed 全屏，不挡交互）—— */
+.home-pixel-host { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
+
+/* —— 首页功能卡片：hover 动画（图标弹性放大 + 卡片浮起）—— */
+.action-tile { transition: transform 0.2s ease, border-color 0.2s ease; }
+.action-tile:hover, .action-tile:focus-within { transform: translateY(-3px); }
+.action-tile:active { transform: scale(0.97); }
+.action-tile-icon { transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.24s ease; }
+.action-tile:hover .action-tile-icon, .action-tile:focus-within .action-tile-icon { transform: scale(1.12) rotate(-4deg); }
+@media (prefers-reduced-motion: reduce) {
+  .action-tile, .action-tile-icon { transition: none; }
+  .action-tile:hover, .action-tile:focus-within, .action-tile:active { transform: none; }
+  .action-tile:hover .action-tile-icon, .action-tile:focus-within .action-tile-icon { transform: none; }
+}
+
 /* —— 视频网格 —— */
 .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 0.75rem; flex: 1; min-height: 0; height: 100%; margin-bottom: 0; align-content: stretch; grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
 /* 宫格布局"一屏N等分"：前N个进主区域（按列数等宽、行数受视高约束），超出部分进底部胶片条 */
