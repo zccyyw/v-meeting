@@ -640,10 +640,10 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
    不支持 dvh，整条 width 声明会被丢弃导致格子退化为内容尺寸、大小不一。 */
 .video-grid--grid { display: flex; flex-direction: column; gap: 0.5rem; }
 .video-grid-stage { position: relative; flex: 1; min-height: 0; }
-/* 格子定轨（--tile-w/h 由 JS 注入：固定基准 400×250，12等分放不下时等比缩小）；
-   间距 --grid-gap-x/y 由 JS 按剩余空间动态计算并封顶 48px，剩余留白由
-   justify/align-content 居中吸收；不满页时尾行/尾列同样居中 */
-.video-grid-main { width: 100%; height: 100%; min-height: 0; display: grid; grid-template-columns: repeat(var(--grid-cols, 3), var(--tile-w, 400px)); grid-template-rows: repeat(var(--grid-rows, 3), var(--tile-h, 250px)); column-gap: var(--grid-gap-x, 12px); row-gap: var(--grid-gap-y, 12px); justify-content: center; align-content: center; }
+/* 格子定轨（--tile-w/h 由 JS 注入：小窗基准 400×250 封顶，放不下时等比缩小）；
+   列×行由当前页实际人数动态推导，整块网格在 stage 内上下左右居中，
+   不满页时尾行/尾列同样居中；间距固定 */
+.video-grid-main { width: 100%; height: 100%; min-height: 0; display: grid; grid-template-columns: repeat(var(--grid-cols, 3), var(--tile-w, 400px)); grid-template-rows: repeat(var(--grid-rows, 3), var(--tile-h, 250px)); gap: 0.75rem; justify-content: center; align-content: center; }
 .video-grid-main .video-tile { width: 100%; height: 100%; min-width: 0; min-height: 0; }
 /* 分页箭头：贴主区域左右居中，悬停 stage 时显现，鼠标静止时淡出 */
 .video-grid-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 20; width: 2.25rem; height: 3.5rem; border: none; border-radius: 10px; background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 1.1rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s, background 0.2s; }
