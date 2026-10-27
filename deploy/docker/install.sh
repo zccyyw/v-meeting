@@ -264,6 +264,8 @@ if [ "$CERT_GENERATED" = "1" ] && docker ps --format '{{.Names}}' | grep -q "cad
   echo "-> 已重载 caddy 加载新生成的证书"
 fi
 echo "OK: 已启动。默认账号 admin/123456（首次登录会要求修改密码）"
+echo "    安装校验: curl -sk https://127.0.0.1/api/healthz   （返回 ok/JSON 即服务正常；-k 忽略自签证书）"
+echo "    容器状态: docker-compose -p meeting ps"
 echo "    查看日志: docker-compose -p meeting logs -f   （注意必须带 -p meeting）"
 echo "    日志文件: $LOGS_DIR/<服务名>/（按天轮转，保留 ${LOG_RETENTION_DAYS} 天）"
 echo "    停止: bash install.sh stop    卸载: bash install.sh down"
