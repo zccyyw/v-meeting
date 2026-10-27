@@ -23,6 +23,11 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 CMD="${1:-up}"
 
+# 权限自愈：离线包经 Windows 打包/传输后执行位可能丢失（zip 未携带权限元数据时
+# 解压端按 umask 合成）。bash 调用本脚本不依赖 +x，此处自行恢复两个可执行脚本
+# 的权限，后续 `./install.sh`、`deploy/docker/gen-selfsigned.sh` 直接可用。
+chmod 755 "$DIR/install.sh" "$DIR/deploy/docker/gen-selfsigned.sh" 2>/dev/null || true
+
 compose() {
   if command -v docker-compose >/dev/null 2>&1; then
     docker-compose -p meeting "$@"

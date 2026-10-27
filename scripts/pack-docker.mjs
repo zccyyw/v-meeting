@@ -15,10 +15,13 @@ import {
   readFileSync,
   cpSync,
   chmodSync,
+  createWriteStream,
+  readdirSync,
 } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import archiver from "archiver";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "dist", "docker");
@@ -300,52 +303,45 @@ writeFileSync(
 
 writeFileSync(join(out, "PLATFORM.txt"), `${platform || "host"}\n`);
 
-// 一键 zip：命名与 CI Release 资产一致（meeting-docker-<arch>-<version>.zip），
-// zip 内顶层目录与 zip 同名（多文件交付包保持目录结构）。PACK_ZIP=0 跳过。
+// 一键 zip（archiver 显式写入 Unix 权限位）：目录 755、install.sh / gen-selfsigned.sh
+// 755、其余文件 644——Linux 解压（unzip）原样还原权限，避免"无权限元数据 → 解压端按
+// umask 合成 777/666"。命名与 CI Release 资产一致；PACK_ZIP=0 跳过。
 const wantZip = (process.env.PACK_ZIP ?? "1") !== "0";
 if (wantZip) {
   const zipName = `meeting-docker-${platformSlug}-${tag}`;
-  const staging = join(root, "dist", zipName);
   const zipPath = join(root, "dist", `${zipName}.zip`);
-  rmSync(staging, { recursive: true, force: true });
   rmSync(zipPath, { force: true });
-  cpSync(out, staging, { recursive: true });
-  if (process.platform === "win32") {
-    // Windows：优先 System32 自带 bsdtar（-a 按扩展名生成 zip）。
-    // 必须用绝对路径——Git Bash 环境下 PATH 里的 GNU tar 不支持 zip，会遮蔽它；
-    // bsdtar 缺失时退回 PowerShell Compress-Archive。
-    const winTar = join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
-    let r = spawnSync(winTar, ["-a", "-c", "-f", zipPath, "-C", join(root, "dist"), zipName], {
-      encoding: "utf8",
-    });
-    if (r.status !== 0) {
-      console.log("-> tar 不可用，回退 PowerShell Compress-Archive");
-      r = spawnSync(
-        "powershell",
-        [
-          "-NoProfile",
-          "-Command",
-          `Compress-Archive -Path '${staging}' -DestinationPath '${zipPath}' -Force`,
-        ],
-        { encoding: "utf8" },
-      );
-    }
-    if (r.status !== 0) {
-      console.error(`✗ zip 打包失败：${r.stderr || r.stdout || "未知错误"}`);
-      process.exit(r.status ?? 1);
-    }
-  } else {
-    const z = spawnSync("zip", ["-r", "-q", zipPath, zipName], {
-      cwd: join(root, "dist"),
-      shell: true,
-    });
-    if (z.status !== 0) {
-      // zip 命令缺失时退回 python3（多数 Linux 发行版自带）
-      run("python3", ["-m", "zipfile", "-c", zipPath, zipName]);
-    }
-  }
-  rmSync(staging, { recursive: true, force: true });
+  await zipOut(out, zipPath, zipName);
   console.log(`✓ zip -> ${zipPath}`);
+}
+
+/** 递归打包 srcRoot 到 zipPath，顶层目录名为 topDirName；权限显式指定（见上） */
+async function zipOut(srcRoot, zipPath, topDirName) {
+  // 可执行脚本白名单：命中授 755，其余文件 644
+  const SCRIPT_NAMES = new Set(["install.sh", "gen-selfsigned.sh"]);
+  const output = createWriteStream(zipPath);
+  const archive = archiver("zip", { forceLocalTime: true });
+  const done = new Promise((resolve, reject) => {
+    output.on("close", () => resolve());
+    archive.on("error", reject);
+    output.on("error", reject);
+  });
+  archive.pipe(output);
+  const walk = (absDir, relDir) => {
+    archive.append(null, { name: `${relDir}/`, type: "directory", mode: 0o755 });
+    for (const entry of readdirSync(absDir, { withFileTypes: true })) {
+      const rel = `${relDir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        walk(join(absDir, entry.name), rel);
+      } else {
+        const mode = SCRIPT_NAMES.has(entry.name) ? 0o755 : 0o644;
+        archive.file(join(absDir, entry.name), { name: rel, mode });
+      }
+    }
+  };
+  walk(srcRoot, topDirName);
+  await archive.finalize();
+  await done;
 }
 
 console.log(`✓ docker pack -> ${out}/`);
