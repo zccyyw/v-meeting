@@ -231,16 +231,18 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Install pack script dependency (archiver)
+        # pack-docker.mjs 仅需根级 devDependency archiver；
+        # 不做全量 npm ci（会连带安装所有 workspace 依赖，多耗数分钟）
+        run: npm install --no-save archiver@7.0.1
+
       - name: Build Docker offline bundle
         env:
           DOCKER_PLATFORM: ${{ matrix.arch == 'arm64' && 'linux/arm64' || '' }}
           IMAGE_TAG: ${{ needs.prepare.outputs.version }}
-        run: |
-          if [ -n "$DOCKER_PLATFORM" ]; then
-            npm run pack:docker
-          else
-            npm run pack:docker
-          fi
+          # CI 不需要 pack 脚本生成的 zip：release job 会对 dist/docker 统一重打包
+          PACK_ZIP: "0"
+        run: npm run pack:docker
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
