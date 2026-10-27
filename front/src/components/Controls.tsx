@@ -173,7 +173,9 @@ function ControlSplitButton({
       <ConfigProvider theme={MEETING_DARK_OVERLAY_THEME}>
         <Dropdown
           trigger={["click"]}
-          placement="topRight"
+          // 居中于触发按钮上方；视口左右空间不足时 antd autoAdjustOverflow
+          // 自动平移/翻转避让（手机窄屏同样适用）
+          placement="top"
           rootClassName="meeting-dark-menu"
           // 每次打开设备浮窗时重新枚举（open 变化回调）：
           // 部分驱动插拔不触发 mediaDevices 的 devicechange 事件，

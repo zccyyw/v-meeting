@@ -4,6 +4,15 @@
 # IMPORTANT: use https:// (not bare :443) so Caddy actually terminates TLS.
 # With `auto_https off` + `:443`, port 443 may speak plain HTTP → curl TLS alert.
 
+# 全局配置：关闭 HTTP/3（quic-go）。内网场景 HTTP/2 足够，关掉可消除
+# "failed to sufficiently increase receive buffer size" 警告（UDP 缓冲区
+# 需宿主机内核调参，容器内无权限；浏览器自动回退 h1/h2，用户无感知）。
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
 https:// {
 	tls /certs/fullchain.pem /certs/privkey.pem
 

@@ -333,7 +333,7 @@ body.meeting-active {
 /* 兼容：页面中仍使用原生 button 且非 antd 的元素。
    排除项说明：layout-*（布局面板，需保持中性色）、video-sidelist-toggle /
    video-toplist-focus（会议视频区自有样式）不套用默认主色，避免被全局蓝覆盖。 */
-button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not(.side-panel-close):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret) {
+button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not(.side-panel-close):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret):not(.video-grid-nav):not(.video-grid-dot) {
   font: inherit;
   padding: 0.6rem 1rem;
   border-radius: 8px;
@@ -343,7 +343,7 @@ button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-h
   cursor: pointer;
 }
 
-button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not(.side-panel-close):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret):disabled {
+button:not(.ant-btn):not(.ant-btn-icon-only):not([class*="ant-"]):not(.meeting-header-btn):not(.meeting-title-btn):not(.meeting-code-copy):not(.side-panel-close):not([class*="layout-"]):not(.video-sidelist-toggle):not(.video-toplist-focus):not(.control-btn):not(.control-split-caret):not(.video-grid-nav):not(.video-grid-dot):disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -756,9 +756,10 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 /* —— 控制栏 —— */
 .controls { position: relative; display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 0.75rem; flex-shrink: 0; padding: 0.45rem 1rem 0.55rem; margin-top: 0; background: var(--meeting-bar); border-top: 1px solid var(--meeting-bar-border); min-height: 4.25rem; }
 /* 操作簇弹性占位 + 横向滑动；离开按钮为常规弹性项靠右固定——两者不再重叠压盖（原 absolute 布局在窄屏会遮住末尾按钮） */
-.controls-cluster { display: flex; flex-wrap: nowrap; align-items: stretch; justify-content: center; gap: 0.2rem; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.controls-cluster { display: flex; flex-wrap: nowrap; align-items: stretch; justify-content: center; gap: 0.12rem; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.controls-cluster::-webkit-scrollbar { display: none; }
 .controls-leave { flex: 0 0 auto; display: flex; align-items: center; }
-.control-btn { font: inherit; min-width: 3.6rem; max-width: 4.6rem; padding: 0.4rem 0.35rem 0.35rem; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--meeting-text); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.28rem; line-height: 1.15; }
+.control-btn { font: inherit; min-width: 3.2rem; max-width: 4.6rem; padding: 0.4rem 0.35rem 0.35rem; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--meeting-text); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.28rem; line-height: 1.15; }
 .control-btn-icon { position: relative; display: grid; place-items: center; width: 1.5rem; height: 1.5rem; color: rgba(255, 255, 255, 0.92); }
 .control-btn-badge { position: absolute; top: -0.4rem; right: -0.5rem; min-width: 1rem; height: 1rem; padding: 0 0.25rem; border-radius: 999px; background: #ea4335; color: #fff; font-size: 0.62rem; font-weight: 600; line-height: 1rem; text-align: center; pointer-events: none; }
 .control-btn-label { font-size: 0.68rem; color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
@@ -965,7 +966,6 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 
 @media (max-width: 720px) {
   .meeting-main { flex-direction: column; }
-  .controls { flex-wrap: wrap; padding-bottom: 0.55rem; min-height: auto; }
   .controls-cluster { max-width: 100%; }
   .video-grid--side { flex-direction: row; }
   .video-sidelist { max-width: 7.5rem; min-width: 5.5rem; }
@@ -983,10 +983,10 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
   .video-grid--grid .video-tile { width: min(150px, calc((100% - 0.5rem) / 2)) !important; }
   .video-tile { min-height: 120px; border-radius: 8px; }
   .video-label { font-size: 0.72rem; }
-  .controls { flex-wrap: wrap; padding: 0.4rem 0.5rem; padding-bottom: calc(0.4rem + env(safe-area-inset-bottom)); min-height: auto; gap: 0.35rem; }
-  .controls-cluster { max-width: 100%; min-width: 0; gap: 0.1rem; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .controls-leave { width: 100%; display: flex; justify-content: center; }
-  .control-btn { min-width: 3rem; padding: 0.35rem 0.25rem 0.3rem; }
+  /* 手机端单行不折行：图标化压缩 + 溢出横向滚动（cluster 已配置隐藏滚动条） */
+  .controls { padding: 0.4rem 0.5rem; padding-bottom: calc(0.4rem + env(safe-area-inset-bottom)); min-height: 3.4rem; gap: 0.3rem; }
+  .controls-cluster { max-width: 100%; min-width: 0; gap: 0.08rem; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .control-btn { min-width: 2.7rem; padding: 0.35rem 0.2rem 0.3rem; }
   .side-panel { padding: 0.6rem; }
   .video-sidelist { max-width: 7.5rem; min-width: 5.5rem; }
   .member-picker { flex-direction: column; height: auto; max-height: none; }
@@ -995,10 +995,22 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
   .member-picker-cols { gap: 0.3rem; }
 }
 
+/* 手机竖屏（≤420px）：底部控制栏进一步压缩为纯图标单行——
+   8 个主按钮 ≈ 20rem，加上图标化离开按钮，390px 视口可单行容纳 */
+@media (max-width: 420px) {
+  .controls { padding-left: 0.35rem; padding-right: 0.35rem; }
+  .controls-cluster { gap: 0.05rem; justify-content: flex-start; }
+  .control-btn { min-width: 2.4rem; padding: 0.3rem 0.1rem 0.25rem; }
+  .control-btn-icon { width: 1.3rem; height: 1.3rem; }
+  .control-btn-label { font-size: 0.6rem; }
+  .control-split-caret { width: 0.9rem; }
+  .controls-leave .control-btn { min-width: 2.4rem; }
+}
+
 @media (max-width: 380px) {
   .meeting-header-info h1 { font-size: 0.78rem; max-width: 48vw; }
-  .controls { gap: 0.2rem; }
-  .control-btn { min-width: 2.6rem; }
+  .controls { gap: 0.15rem; }
+  .control-btn { min-width: 2.2rem; }
 }
 
 @media (orientation: landscape) and (max-height: 500px) and (max-width: 900px) {
@@ -1090,9 +1102,11 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 /* 两段式控制按钮（对齐腾讯会议）：主操作 + caret 菜单，视觉连体。
    无缝要点：主区去右边框、caret 去左边框（交界只有 1px 边界），
    caret 与主区等高（stretch + 同款 border），不使用负边距（会重叠出色带）。 */
-.control-split { display: inline-flex; align-items: center; }
-.control-split .control-btn { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; padding-right: 0.1rem; }
-.control-split-caret { align-self: stretch; border: 1px solid transparent; border-left: none; background: transparent; color: var(--meeting-muted); cursor: pointer; padding: 0 0.28rem; display: flex; align-items: center; border-radius: 0 8px 8px 0; transition: background 0.15s ease, color 0.15s ease; }
+/* 分体按钮一体化：主按钮 + caret 拼在同一个圆角容器内（overflow hidden 统一裁角），
+   中间 1px 半透明分隔线，hover/active 由 .control-split:hover 整体点亮——观感为一个控件 */
+.control-split { display: inline-flex; align-items: stretch; border-radius: 8px; overflow: hidden; }
+.control-split .control-btn { border-radius: 0; border-right: none; padding-right: 0.15rem; }
+.control-split-caret { align-self: stretch; width: 1.1rem; padding: 0; justify-content: center; border: none; background: transparent; color: var(--meeting-muted); cursor: pointer; display: flex; align-items: center; border-radius: 0; transition: background 0.15s ease, color 0.15s ease; }
 .control-split-caret:hover { color: var(--meeting-text); }
 /* 主持人禁用（共享/录制/发言）：icon 右下角禁止通行标（淡红，不抢视觉焦点） */
 .control-btn-icon { position: relative; display: inline-flex; }
