@@ -7,6 +7,14 @@
 https:// {
 	tls /certs/fullchain.pem /certs/privkey.pem
 
+	# 访问日志落盘到挂载目录（compose 挂载 ./logs/caddy:/var/log/caddy）；
+	# 关闭 caddy 内建滚动（roll），由宿主机 logrotate copytruncate 统一轮转
+	log {
+		output file /var/log/caddy/caddy.log {
+			roll_disabled
+		}
+	}
+
 	handle /api/* {
 		uri strip_prefix /api
 		reverse_proxy api:8080

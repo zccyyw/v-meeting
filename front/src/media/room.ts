@@ -59,6 +59,8 @@ export type MediaRoomSnapshot = {
   camEnabled: boolean;
   handRaised: boolean;
   layout: MeetingLayout;
+  /** 宫格等分档位（每页容量）：房间级，随布局消息/快照全员同步 */
+  gridCols: 3 | 6 | 9 | 12;
   /** 各成员到服务器的网络延迟（ms），由各自客户端上报、服务端汇总广播 */
   peerRtt: Record<string, number>;
   /** 主持人控制的"成员画面轮换"开关（培训/演讲布局右侧面板） */
@@ -110,8 +112,8 @@ type Listener = () => void;
 const VIDEO_ENCODINGS = [
   { rid: "r0", maxBitrate: 100_000, scaleResolutionDownBy: 4 },
   { rid: "r1", maxBitrate: 300_000, scaleResolutionDownBy: 2 },
-  // 最高层 2.5Mbps：内网环境按高清算；带宽不足时 WebRTC 拥塞控制仍会自动降级
-  { rid: "r2", maxBitrate: 2_500_000 },
+  // 最高层 4.5Mbps @ 1080p：内网环境按高清/超清算；带宽不足时 WebRTC 拥塞控制仍会自动降级
+  { rid: "r2", maxBitrate: 4_500_000 },
 ];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -185,6 +187,8 @@ export class MediaRoom {
   private camEnabled = false;
   private handRaised = false;
   private layout: MeetingLayout = "grid";
+  /** 宫格等分档位：房间级（主持人切换后随 layout 消息/快照同步） */
+  private gridCols: 3 | 6 | 9 | 12 = 9;
   private peerRtt = new Map<string, number>();
   private rotationEnabled = false;
   private rotationIntervalMs = 20_000;
@@ -334,6 +338,7 @@ export class MediaRoom {
       camEnabled: this.camEnabled,
       handRaised: this.handRaised,
       layout: this.layout,
+      gridCols: this.gridCols,
       peerRtt,
       rotationEnabled: this.rotationEnabled,
       rotationIntervalMs: this.rotationIntervalMs,
@@ -587,13 +592,17 @@ export class MediaRoom {
     }
   }
 
-  setLayout(layout: MeetingLayout): void {
-    this.signal.send({ type: "setLayout", layout });
+  setLayout(layout: MeetingLayout, gridCols?: 3 | 6 | 9 | 12): void {
+    this.signal.send({ type: "setLayout", layout, gridCols });
     // 立即本地生效：避免因服务端回显延迟/丢失导致“主持人切了、自己的画面却没变”。
     // 服务端随后广播的 layout 仍会以权威值覆盖（并同步清除焦点）。
     if (this.layout !== layout) {
       this.layout = layout;
       this.focusPeerId = null;
+      this.emit();
+    }
+    if (gridCols !== undefined && this.gridCols !== gridCols) {
+      this.gridCols = gridCols;
       this.emit();
     }
   }
@@ -780,7 +789,7 @@ export class MediaRoom {
         // 显式码率与分辨率约束：不传 encodings 时 WebRTC 拥塞控制默认先降分辨率，
         // 屏幕文字会发糊（共享者本地预览不经编码所以自己看着清晰）。
         // scaleResolutionDownBy: 1 锁分辨率，拥塞时优先降帧率/码率保文字可读。
-        encodings: [{ maxBitrate: 3_000_000, scaleResolutionDownBy: 1 }],
+        encodings: [{ maxBitrate: 6_000_000, scaleResolutionDownBy: 1 }],
         appData: { source: "screen" },
       });
     } catch (err) {
@@ -906,7 +915,7 @@ export class MediaRoom {
       const constraints: MediaStreamConstraints =
         kind === "audio"
           ? { audio: true, video: false }
-          : { audio: false, video: { width: { ideal: 1280 }, height: { ideal: 720 } } };
+          : { audio: false, video: { width: { ideal: 1920 }, height: { ideal: 1080 } } };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       const next = (kind === "audio" ? stream.getAudioTracks() : stream.getVideoTracks())[0];
       if (!next) throw new Error("no track");
@@ -1209,6 +1218,13 @@ export class MediaRoom {
 
       case "layout":
         this.layout = msg.layout;
+        // 协议类型为 number，用字面量比较收窄到合法档位（非法值忽略保持现状）
+        if (
+          msg.gridCols === 3 || msg.gridCols === 6 ||
+          msg.gridCols === 9 || msg.gridCols === 12
+        ) {
+          this.gridCols = msg.gridCols;
+        }
         this.focusPeerId = msg.focusPeerId;
         this.emit();
         break;
@@ -1479,6 +1495,12 @@ export class MediaRoom {
     if (msg.layout !== undefined) {
       this.layout = msg.layout;
     }
+    if (
+      msg.gridCols === 3 || msg.gridCols === 6 ||
+      msg.gridCols === 9 || msg.gridCols === 12
+    ) {
+      this.gridCols = msg.gridCols;
+    }
     if (msg.focusPeerId !== undefined) {
       this.focusPeerId = msg.focusPeerId;
     }
@@ -1625,7 +1647,7 @@ export class MediaRoom {
       return {
         stream: await gUM({
           audio: true,
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
         }),
         localMediaError: null,
       };

@@ -782,6 +782,7 @@ export function createSignalHandler(db: Db) {
     broadcastAdmitted(state, {
       type: "layout",
       layout: state.room.layout,
+      gridCols: state.room.gridCols,
       focusPeerId: null,
     });
   }
@@ -902,6 +903,7 @@ export function createSignalHandler(db: Db) {
       recordAllowed: state.room.recordAllowed,
       // 等待室准入后入会同样同步当前布局/焦点/共享权限
       layout: state.room.layout,
+      gridCols: state.room.gridCols,
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
       rotationIntervalMs: state.rotationIntervalMs,
@@ -1116,6 +1118,7 @@ export function createSignalHandler(db: Db) {
       // 带上当前布局/焦点/共享权限：主持人已切到演讲者或培训、或已关闭共享时，
       // 后入会者直接同步，而不是停留在前端默认值
       layout: state.room.layout,
+      gridCols: state.room.gridCols,
       focusPeerId: state.room.focusPeerId,
       rotationEnabled: state.rotationEnabled,
       rotationIntervalMs: state.rotationIntervalMs,
@@ -1470,17 +1473,30 @@ export function createSignalHandler(db: Db) {
           const ctx = requireAdmitted(ws);
           if (!ctx) return;
           const peer = ctx.state.room.getPeer(ctx.media.peerId);
-          if (!peer || peer.role !== "host") {
+          if (!peer) {
             send(ws, { type: "error", message: "forbidden" });
             return;
           }
-          ctx.state.room.layout = message.layout;
-          // 切换布局即清除焦点：避免培训模式里点过的焦点残留，
-          // 导致切回演讲者布局仍显示旧焦点画面（表现如"卡在培训模式"）。
-          ctx.state.room.focusPeerId = null;
+          // 权限分级：host 可改布局模式 + 等分；成员仅在 layoutSwitchAllowed
+          // 开启时可改等分（布局模式仍 host-only，成员发来的 layout 忽略）
+          const isHost = peer.role === "host";
+          if (!isHost && !ctx.state.layoutSwitchAllowed) {
+            send(ws, { type: "error", message: "forbidden" });
+            return;
+          }
+          if (isHost) {
+            ctx.state.room.layout = message.layout;
+            // 切换布局即清除焦点：避免培训模式里点过的焦点残留，
+            // 导致切回演讲者布局仍显示旧焦点画面（表现如"卡在培训模式"）。
+            ctx.state.room.focusPeerId = null;
+          }
+          if (message.gridCols !== undefined) {
+            ctx.state.room.setGridCols(message.gridCols);
+          }
           broadcastAdmitted(ctx.state, {
             type: "layout",
-            layout: message.layout,
+            layout: ctx.state.room.layout,
+            gridCols: ctx.state.room.gridCols,
             focusPeerId: ctx.state.room.focusPeerId,
           });
           break;
@@ -1498,6 +1514,7 @@ export function createSignalHandler(db: Db) {
           broadcastAdmitted(ctx.state, {
             type: "layout",
             layout: ctx.state.room.layout,
+            gridCols: ctx.state.room.gridCols,
             focusPeerId: message.peerId,
           });
           break;

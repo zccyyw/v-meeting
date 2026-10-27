@@ -214,6 +214,42 @@ if [ ! -f "$CERT_DIR_LOCAL/fullchain.pem" ] || [ ! -f "$CERT_DIR_LOCAL/privkey.p
   fi
 fi
 
+# ── 4.8 日志目录与轮转 ──
+# 各容器日志统一落盘到 ./logs/<service>/（compose 绑定挂载），
+# 由宿主机 logrotate 按天滚动、保留 LOG_RETENTION_DAYS 天（可配）。
+LOGS_DIR="$DIR/logs"
+mkdir -p "$LOGS_DIR"/api "$LOGS_DIR"/realtime "$LOGS_DIR"/web "$LOGS_DIR"/caddy \
+         "$LOGS_DIR"/mysql "$LOGS_DIR"/redis "$LOGS_DIR"/postgres
+# 容器内降权用户的 uid（官方镜像固定）：mysql/redis=999、postgres(alpine)=70；
+# api/realtime/web/caddy 以 root 写，无需处理。目录不可写会导致对应容器起不来。
+if [ "$(id -u)" = "0" ]; then
+  chown -R 999:999 "$LOGS_DIR/mysql" "$LOGS_DIR/redis" 2>/dev/null || true
+  chown -R 70:70 "$LOGS_DIR/postgres" 2>/dev/null || true
+else
+  chmod -R a+rwx "$LOGS_DIR" 2>/dev/null || true
+fi
+# logrotate 配置：copytruncate 必不可少——容器进程持有文件句柄，rename 后不会重开
+LOG_RETENTION_DAYS="$(get_env_value LOG_RETENTION_DAYS)"
+LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-15}"
+LOG_MAX_SIZE="$(get_env_value LOG_MAX_SIZE)"
+LOG_MAX_SIZE="${LOG_MAX_SIZE:-200M}"
+if [ -d /etc/logrotate.d ] && [ "$(id -u)" = "0" ]; then
+  cat > /etc/logrotate.d/meeting-logs <<EOF
+"$LOGS_DIR"/*/*.log {
+    daily
+    rotate $LOG_RETENTION_DAYS
+    maxsize $LOG_MAX_SIZE
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    dateext
+}
+EOF
+  echo "-> 已配置日志轮转（按天滚动、保留 ${LOG_RETENTION_DAYS} 天、单文件上限 ${LOG_MAX_SIZE}）"
+fi
+
 # ── 5. 启动 ──
 if [ "$CMD" = "--env-only" ]; then
   echo "OK: 环境就绪（未启动）。运行 bash install.sh 启动"
@@ -229,5 +265,6 @@ if [ "$CERT_GENERATED" = "1" ] && docker ps --format '{{.Names}}' | grep -q "cad
 fi
 echo "OK: 已启动。默认账号 admin/123456（首次登录会要求修改密码）"
 echo "    查看日志: docker-compose -p meeting logs -f   （注意必须带 -p meeting）"
+echo "    日志文件: $LOGS_DIR/<服务名>/（按天轮转，保留 ${LOG_RETENTION_DAYS} 天）"
 echo "    停止: bash install.sh stop    卸载: bash install.sh down"
 echo "    443 HTTPS 需要证书：bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>"

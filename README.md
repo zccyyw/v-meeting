@@ -122,6 +122,27 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 > Windows 也可用 `powershell scripts/dev.ps1` 一键启动。
 
+## 打包 Docker 离线包（本地）
+
+> 前提：本机 Docker Desktop / Engine 已启动；构建需联网拉取基础镜像（国内请配置镜像加速）。
+> 产物与 CI Release 的 `meeting-docker-<arch>-<版本>.zip` 同构：compose 已剥离 build 段，
+> 含 `install.sh` 一键部署入口、`env.example` 与镜像 tar（app + 基础镜像）。
+
+```bash
+# 打当前 git tag 版本（未打 tag 回退 latest），产物：dist/meeting-docker-<arch>-<版本>.zip
+npm run pack:docker
+
+# 指定版本号 / 目标架构（ARM 需显式指定，Windows 本地默认产出 linux/amd64）
+IMAGE_TAG=0.0.33 npm run pack:docker
+DOCKER_PLATFORM=linux/arm64 npm run pack:docker
+
+# 只要散装目录（dist/docker/），不打 zip
+PACK_ZIP=0 npm run pack:docker
+```
+
+- 部署：解压后在目标机 `bash install.sh`（自动加载镜像、生成 .env、`up -d`），详见包内 README.txt；
+- 定位：现场紧急修复 / 验证用；**正式发版仍以 CI Release 包为准**（CI 附加 env 模板一致性等门禁检查）。
+
 ### 端口说明
 
 | 服务 | 默认端口 | 环境变量 |

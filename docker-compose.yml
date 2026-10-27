@@ -11,6 +11,15 @@
 # 麒麟 V10 SP1 等自带旧版 Docker 的环境，请使用离线包内附带的 docker-compose v2 二进制，
 # 或改用 RPM / DEB 包部署。详见 docs/install/。
 
+# 统一日志轮转：docker 自带 json-file 日志同样封顶（50MB×3），
+# 防止 /var/lib/docker 被撑爆；宿主机文件日志见各服务 ./logs/* 挂载与
+# install.sh 生成的 logrotate 配置（logs/ 目录按天轮转、默认保留 15 天）。
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   # 数据库/缓存容器仅通过内部网络访问（不向宿主机发布端口）。
   # 需要宿主机直连调试时再显式取消注释对应 ports。
@@ -18,6 +27,7 @@ services:
     image: mysql:8.4
     profiles: ["mysql"]
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
@@ -25,7 +35,10 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
     volumes:
       - mysql-data:/var/lib/mysql
-    command: ["--character-set-server=utf8mb4"]
+      - ./logs/mysql:/var/log/mysql
+    # 错误日志落盘到挂载目录（宿主机 logs/mysql/error.log）；目录属主由
+    # install.sh chown 999:999（容器内 mysqld 以 mysql 用户写）
+    command: ["--character-set-server=utf8mb4", "--log-error=/var/log/mysql/error.log"]
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD='${MYSQL_ROOT_PASSWORD:-rootpass}' mysqladmin ping -h 127.0.0.1 -uroot"]
       interval: 5s
@@ -37,12 +50,22 @@ services:
     image: postgres:16-alpine
     profiles: ["postgres"]
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-meeting}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meetingpass}
       POSTGRES_DB: ${POSTGRES_DB:-meeting}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./logs/postgres:/var/log/postgresql
+    # 日志收集器落盘到挂载目录（单文件追加，宿主机 logrotate copytruncate 滚动）；
+    # 目录属主由 install.sh chown 70:70（alpine 镜像 postgres 用户）
+    command:
+      [
+        "-c", "logging_collector=on",
+        "-c", "log_directory=/var/log/postgresql",
+        "-c", "log_filename=postgresql.log",
+      ]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-meeting} -d ${POSTGRES_DB:-meeting}"]
       interval: 5s
@@ -54,12 +77,19 @@ services:
     # 钉 minor：本 dev 实际运行 7.4.11；Redis 8 许可证有变暂不跟
     image: redis:7.4-alpine
     restart: unless-stopped
+    logging: *default-logging
     # REDIS_PASSWORD 留空 = 不启用认证（不能传空的 --requirepass，redis-server 会异常）；
-    # 非空时作为 requirepass，需与 api 侧 REDIS_PASSWORD 保持一致
+    # 非空时作为 requirepass，需与 api 侧 REDIS_PASSWORD 保持一致。
+    # 日志落盘到挂载目录（install.sh chown 999:999，容器内以 redis 用户写）
     command:
-      ["sh", "-c", "exec redis-server ${REDIS_PASSWORD:+--requirepass \"$REDIS_PASSWORD\"}"]
+      [
+        "sh",
+        "-c",
+        "exec redis-server ${REDIS_PASSWORD:+--requirepass \"$REDIS_PASSWORD\"} --logfile /var/log/redis/redis.log",
+      ]
     volumes:
       - redis-data:/data
+      - ./logs/redis:/var/log/redis
     healthcheck:
       test:
         [
@@ -76,6 +106,7 @@ services:
       dockerfile: serve/api/Dockerfile
     image: ${MEETING_API_IMAGE:-meeting-api:latest}
     restart: unless-stopped
+    logging: *default-logging
     # 优雅停机：给 API 30s 完成进行中的请求（含录制上传）后再 SIGKILL
     stop_grace_period: 30s
     environment:
@@ -134,6 +165,15 @@ services:
     volumes:
       - meeting-data:/app/data
       - ./deploy/docker/certs:/certs:ro
+      - ./logs/api:/app/logs
+    # 日志落盘（stdout+stderr → 宿主机 logs/api/api.log）；exec 保证 node 接管
+    # PID 1 以正常接收 SIGTERM 优雅停机（迁移/种子阶段输出一并进文件）
+    command:
+      [
+        "sh",
+        "-c",
+        "{ node dist/migrate.js && node dist/seed-admin.js && exec node dist/index.js; } >> /app/logs/api.log 2>&1",
+      ]
 
   realtime:
     build:
@@ -141,6 +181,7 @@ services:
       dockerfile: serve/realtime/Dockerfile
     image: ${MEETING_REALTIME_IMAGE:-meeting-realtime:latest}
     restart: unless-stopped
+    logging: *default-logging
     stop_grace_period: 30s
     environment:
       # 数据库驱动跟随 .env 的 DB_DRIVER（本地默认 mysql，与宿主机 db:reset 同库）
@@ -189,6 +230,10 @@ services:
       - "8082"
     volumes:
       - meeting-data:/app/data
+      - ./logs/realtime:/app/logs
+    # 日志落盘（stdout+stderr → 宿主机 logs/realtime/realtime.log）；
+    # exec 保证 node 接管 PID 1 以正常接收 SIGTERM 优雅停机
+    command: ["sh", "-c", "exec node dist/index.js >> /app/logs/realtime.log 2>&1"]
 
   web:
     build:
@@ -203,6 +248,7 @@ services:
         VITE_PWA_ENABLED: ${VITE_PWA_ENABLED:-0}
     image: ${MEETING_WEB_IMAGE:-meeting-web:latest}
     restart: unless-stopped
+    logging: *default-logging
     # nginx 的 proxy_pass 在启动时解析 upstream 主机名，realtime 未启动会
     # emerg 退出（host not found in upstream "realtime"）。强制先起 realtime。
     depends_on:
@@ -217,6 +263,8 @@ services:
     volumes:
       # logo 定制：把客户的 favicon.svg / favicon.ico 放进 ./branding/ 后 `up -d` 重建 web 生效
       - ./branding:/branding:ro
+      # 访问/错误日志落盘（nginx.conf 显式指定路径，官方镜像的 /dev/stdout 软链被挂载覆盖）
+      - ./logs/web:/var/log/nginx
     # CentOS 7 (kernel 3.10) overlayfs pwrite() bug causes nginx PID write to
     # fail with EPERM. Mount /run as tmpfs to bypass the overlay filesystem.
     tmpfs:
@@ -233,6 +281,7 @@ services:
     # 钉 minor：浮动 2-alpine 已漂到 2.11.x（本 dev 实际运行 v2.11.7）
     image: caddy:2.11-alpine
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -241,6 +290,8 @@ services:
       - ./deploy/docker/certs:/certs:ro
       - caddy-data:/data
       - caddy-config:/config
+      # 访问日志落盘（Caddyfile log.output file；关闭 caddy 内建滚动，由宿主机 logrotate 统一）
+      - ./logs/caddy:/var/log/caddy
     depends_on:
       api:
         condition: service_healthy

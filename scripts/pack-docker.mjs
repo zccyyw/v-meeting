@@ -7,8 +7,16 @@
  *   DOCKER_PLATFORM    e.g. linux/amd64 | linux/arm64 (optional)
  *   VITE_API_BASE / VITE_WS_URL / VITE_APP_NAME / VITE_APP_LOGO  front build args
  */
-import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import {
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+  cpSync,
+  chmodSync,
+} from "node:fs";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -46,7 +54,27 @@ const images = [
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-const tag = process.env.IMAGE_TAG || "latest";
+// 前置校验：fail fast，避免构建到最后一步才失败
+run("docker", ["info", "--format", "{{.ServerVersion}}"]);
+for (const f of ["docker-compose.yml", ".env.production.example"]) {
+  if (!existsSync(join(root, f))) {
+    console.error(`✗ 缺少 ${f}，请在仓库根目录运行`);
+    process.exit(1);
+  }
+}
+
+// 版本号：显式 IMAGE_TAG 优先；否则取最近 git tag（去 v 前缀）对齐 CI 产物命名；
+// 无 tag（如首次打包）回退 latest
+const explicitTag = (process.env.IMAGE_TAG || "").trim();
+let tag = explicitTag || "latest";
+if (!explicitTag) {
+  const g = spawnSync("git", ["describe", "--tags", "--abbrev=0"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  const t = (g.stdout || "").trim();
+  if (g.status === 0 && t) tag = t.replace(/^v/, "");
+}
 const platform = (process.env.DOCKER_PLATFORM || "").trim();
 // 产物命名：显式平台取平台名（linux/arm64 -> arm64）；未指定时取宿主架构
 // （x64 构建机 -> x64），避免出现不自解释的 "host"，并与 arm64 命名风格一致。
@@ -135,13 +163,43 @@ function resolveBaseImages(composePath) {
   return external;
 }
 const baseImages = resolveBaseImages(join(root, "docker-compose.yml"));
-console.log(`-> docker pull & save base images`);
+console.log("-> 基础镜像：本地已存在且架构匹配则复用，否则拉取（FORCE_PULL=1 强制重拉）");
+// 目标架构：DOCKER_PLATFORM 指定时取其平台；未指定时与镜像构建一致（宿主引擎架构）
+const targetArch = platform
+  ? platform.split("/")[1]
+  : process.arch === "arm64"
+    ? "arm64"
+    : "amd64";
 for (const base of baseImages) {
-  if (platform) {
-    run("docker", ["pull", "--platform", platform, base]);
+  // 本地命中判定：镜像存在且 Architecture 与目标一致 → 跳过 pull。
+  // 每次 pull 在内网/弱网环境可能耗时数分钟，本地镜像可复用时无需重复下载。
+  let needPull = process.env.FORCE_PULL === "1";
+  if (!needPull) {
+    const inspect = spawnSync("docker", ["image", "inspect", base], { encoding: "utf8" });
+    if (inspect.status !== 0) {
+      console.log(`   ${base}: 本地不存在，拉取`);
+      needPull = true;
+    } else {
+      try {
+        const localArch = JSON.parse(inspect.stdout)[0]?.Architecture ?? "";
+        if (localArch !== targetArch) {
+          console.log(`   ${base}: 本地架构 ${localArch} ≠ 目标 ${targetArch}，重新拉取`);
+          needPull = true;
+        } else {
+          console.log(`   ${base}: 复用本地镜像（arch=${localArch}）`);
+        }
+      } catch {
+        needPull = true; // inspect 输出异常，按不存在处理
+      }
+    }
   } else {
-    run("docker", ["pull", base]);
+    console.log(`   ${base}: FORCE_PULL=1，强制拉取`);
   }
+  if (!needPull) continue;
+  const args = ["pull"];
+  if (platform) args.push("--platform", platform);
+  args.push(base);
+  run("docker", args);
 }
 const baseTar = `meeting-base-${platformSlug}-${tag}.tar`;
 run("docker", ["save", "-o", join(out, baseTar), ...baseImages]);
@@ -198,6 +256,11 @@ if (existsSync(join(root, "deploy", "docker", "install.sh"))) {
   );
 }
 
+// 仅对两个可执行脚本授 755（zip 在 Linux 上解压后保留该权限位）；
+// 其余文件保持默认权限，不需要也不应整体放权
+chmodSync(join(out, "install.sh"), 0o755);
+chmodSync(join(out, "deploy", "docker", "gen-selfsigned.sh"), 0o755);
+
 // 离线包说明
 writeFileSync(
   join(out, "README.txt"),
@@ -236,6 +299,55 @@ writeFileSync(
 );
 
 writeFileSync(join(out, "PLATFORM.txt"), `${platform || "host"}\n`);
+
+// 一键 zip：命名与 CI Release 资产一致（meeting-docker-<arch>-<version>.zip），
+// zip 内顶层目录与 zip 同名（多文件交付包保持目录结构）。PACK_ZIP=0 跳过。
+const wantZip = (process.env.PACK_ZIP ?? "1") !== "0";
+if (wantZip) {
+  const zipName = `meeting-docker-${platformSlug}-${tag}`;
+  const staging = join(root, "dist", zipName);
+  const zipPath = join(root, "dist", `${zipName}.zip`);
+  rmSync(staging, { recursive: true, force: true });
+  rmSync(zipPath, { force: true });
+  cpSync(out, staging, { recursive: true });
+  if (process.platform === "win32") {
+    // Windows：优先 System32 自带 bsdtar（-a 按扩展名生成 zip）。
+    // 必须用绝对路径——Git Bash 环境下 PATH 里的 GNU tar 不支持 zip，会遮蔽它；
+    // bsdtar 缺失时退回 PowerShell Compress-Archive。
+    const winTar = join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+    let r = spawnSync(winTar, ["-a", "-c", "-f", zipPath, "-C", join(root, "dist"), zipName], {
+      encoding: "utf8",
+    });
+    if (r.status !== 0) {
+      console.log("-> tar 不可用，回退 PowerShell Compress-Archive");
+      r = spawnSync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `Compress-Archive -Path '${staging}' -DestinationPath '${zipPath}' -Force`,
+        ],
+        { encoding: "utf8" },
+      );
+    }
+    if (r.status !== 0) {
+      console.error(`✗ zip 打包失败：${r.stderr || r.stdout || "未知错误"}`);
+      process.exit(r.status ?? 1);
+    }
+  } else {
+    const z = spawnSync("zip", ["-r", "-q", zipPath, zipName], {
+      cwd: join(root, "dist"),
+      shell: true,
+    });
+    if (z.status !== 0) {
+      // zip 命令缺失时退回 python3（多数 Linux 发行版自带）
+      run("python3", ["-m", "zipfile", "-c", zipPath, zipName]);
+    }
+  }
+  rmSync(staging, { recursive: true, force: true });
+  console.log(`✓ zip -> ${zipPath}`);
+}
+
 console.log(`✓ docker pack -> ${out}/`);
 console.log(`  - ${appTar}`);
 console.log(`  - ${baseTar}`);

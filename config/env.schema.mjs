@@ -103,6 +103,21 @@ export const SCHEMA = [
     comment: ["生产环境务必修改"],
   },
   { key: "MYSQL_DATABASE", value: "meeting" },
+
+  { section: "Logs（容器日志落盘与轮转）" },
+  {
+    key: "LOG_RETENTION_DAYS",
+    value: "15",
+    comment: [
+      "宿主机 logs/ 目录日志保留天数（logrotate 按天滚动），最小 1",
+      "由 install.sh 生成 /etc/logrotate.d/meeting-logs 时注入",
+    ],
+  },
+  {
+    key: "LOG_MAX_SIZE",
+    value: "200M",
+    comment: ["单文件超过该大小立即触发轮转（logrotate maxsize），防异常刷屏撑爆磁盘"],
+  },
   {
     key: "MYSQL_ROOT_PASSWORD",
     targets: ["docker"],

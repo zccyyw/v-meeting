@@ -23,7 +23,13 @@ export class MeetingRoom {
   allowShareDefault: boolean;
   recordAllowed: boolean;
   layout: "grid" | "speaker" = "grid";
+  /** 宫格布局等分档位（每页容量）：房间级，主持人切换后全员跟随（3/6/9/12） */
+  gridCols: 3 | 6 | 9 | 12 = 9;
   focusPeerId: string | null = null;
+  /** 设置等分档位：仅接受合法值（3/6/9/12），非法值忽略（保持现状） */
+  setGridCols(n: number): void {
+    if (n === 3 || n === 6 || n === 9 || n === 12) this.gridCols = n;
+  }
   ended = false;
   private peers = new Map<string, Peer>();
 

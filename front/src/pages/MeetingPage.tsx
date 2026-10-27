@@ -121,6 +121,7 @@ const emptySnapshot: MediaRoomSnapshot = {
   camEnabled: false,
   handRaised: false,
   layout: "grid",
+  gridCols: 9,
   rotationIntervalMs: 20_000,
   sideListLayout: "embed",
   focusPeerId: null,
@@ -262,11 +263,9 @@ function MeetingPageInner() {
       ? displayName
       : snap.peers.find((p) => p.peerId === activeSpeakerId)?.displayName ?? null;
   // 弹幕全局化：开关在主持人工具中，由信令广播（snap.danmuEnabled），不再有本地开关
-  // 宫格"一屏N等分"：本地偏好，仅自己生效（localStorage 持久化）
-  const [layoutCols, setLayoutCols] = useState<LayoutCols>(function (init) {
-    const n = Number(init);
-    return n === 3 || n === 6 || n === 12 ? (n as LayoutCols) : 9;
-  }(localStorage.getItem("meeting.layoutCols") || "9"));
+  // 宫格"一屏N等分"：房间级状态（snap.gridCols），主持人/被授权成员切换后全员跟随；
+  // 旧服务端不下发该字段时回退默认 9
+  const layoutCols: LayoutCols = snap.gridCols ?? 9;
   const [danmuItems, setDanmuItems] = useState<
     { id: number; text: string; self: boolean }[]
   >([]);
@@ -1038,10 +1037,9 @@ function MeetingPageInner() {
                         selectedKeys: [String(layoutCols)],
                         onClick: ({ key }) => {
                           const n = Number(key) as LayoutCols;
-                          setLayoutCols(n);
-                          localStorage.setItem("meeting.layoutCols", key);
-                          // 切换等分时联动切换会议布局（当前在演讲者布局则切回宫格）
-                          if (isHost && snap.layout !== "grid") roomRef.current?.setLayout("grid");
+                          // 等分为房间级状态：走信令全员同步（host 改布局+等分；
+                          // 成员仅改等分，需 layoutSwitchAllowed，服务端校验）
+                          roomRef.current?.setLayout("grid", n);
                         },
                       }}
                     >
