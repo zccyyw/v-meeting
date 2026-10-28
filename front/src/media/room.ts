@@ -258,6 +258,9 @@ export class MediaRoom {
     this.signal.setUnexpectedCloseHandler(() => {
       void this.handleDisconnect();
     });
+    // 现场排查句柄：控制台执行 __meetingDebug() 打印音视频质量数据
+    (window as unknown as { __meetingDebug?: () => Promise<void> }).__meetingDebug =
+      () => this.debugStats();
   }
 
   subscribe(listener: Listener): () => void {
@@ -592,6 +595,116 @@ export class MediaRoom {
     }
   }
 
+  /**
+   * 现场排查：控制台执行 __meetingDebug() 打印音视频质量数据。
+   * 采样 1 秒计算码率；字段全部防御式读取（不同内核 stats 结构有差异）。
+   * 判读要点：
+   *  - 摄像头"设备输出"低于 1920 → 设备硬件上限（换 1080p 摄像头）；
+   *  - 发送分辨率正常但接收偏低 → 传输链路（层切换/带宽估计）；
+   *  - 码率远低于编码目标 → 带宽估计被压制或 CPU 编码跟不上。
+   */
+  async debugStats(): Promise<void> {
+    const tag = "[MeetingDebug]";
+    const log = console.log.bind(console, tag);
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    const pickVideo = (
+      report: RTCStatsReport,
+      type: "outbound-rtp" | "inbound-rtp",
+    ): Record<string, any> | null => {
+      let found: Record<string, any> | null = null;
+      report.forEach((s: any) => {
+        if (s.type === type && (s.kind === "video" || s.mediaType === "video") && !s.isRemote) {
+          found = s;
+        }
+      });
+      return found;
+    };
+    const kbps = (b1: number, b2: number) =>
+      b2 >= b1 ? Math.round(((b2 - b1) * 8) / 1000) : 0;
+    const peerName = (peerId: string) =>
+      this.peers.find((p) => p.peerId === peerId)?.displayName ?? peerId.slice(0, 8);
+
+    // 本地设备实际输出分辨率（回答"摄像头到底给没给 1080p"）
+    const camTrack = this.localStream?.getVideoTracks()[0];
+    const camOut = camTrack?.getSettings?.() ?? {};
+    const scrTrack = this.localScreenStream?.getVideoTracks()[0];
+    const scrOut = scrTrack?.getSettings?.() ?? {};
+
+    const videoConsumers: { label: string; consumer: Consumer }[] = [];
+    for (const [id, consumer] of this.consumers) {
+      if (consumer.kind !== "video") continue;
+      const meta = this.consumerMeta.get(id);
+      const label =
+        meta?.source === "screen"
+          ? `${peerName(meta?.peerId ?? "")}·共享`
+          : `${peerName(meta?.peerId ?? "")}·摄像头`;
+      videoConsumers.push({ label, consumer });
+    }
+
+    const sample = async () => {
+      const send: { camera: Record<string, any> | null; screen: Record<string, any> | null } = {
+        camera: null,
+        screen: null,
+      };
+      if (this.videoProducer) {
+        send.camera = pickVideo(await this.videoProducer.getStats(), "outbound-rtp");
+      }
+      if (this.screenProducer) {
+        send.screen = pickVideo(await this.screenProducer.getStats(), "outbound-rtp");
+      }
+      const recv: Record<string, Record<string, any>> = {};
+      for (const { label, consumer } of videoConsumers) {
+        const s = pickVideo(await consumer.getStats(), "inbound-rtp");
+        if (s) recv[label] = s;
+      }
+      return { send, recv };
+    };
+
+    try {
+      log("── 正在采样 1 秒，请稍候… ──");
+      const s1 = await sample();
+      await sleep(1000);
+      const s2 = await sample();
+
+      const printSend = (
+        name: string,
+        a: Record<string, any> | null,
+        b: Record<string, any> | null,
+        devOut: Record<string, any>,
+      ) => {
+        const cur = b ?? a;
+        if (!cur) return log(`${name}: 未开启`);
+        const target = cur.targetBitrate != null ? ` | 编码目标 ${Math.round(cur.targetBitrate / 1000)}kbps` : "";
+        const rate = kbps(a?.bytesSent ?? 0, b?.bytesSent ?? 0);
+        log(
+          `${name}: 设备输出 ${devOut.width ?? "?"}x${devOut.height ?? "?"} | 发送 ${cur.frameWidth ?? "?"}x${cur.frameHeight ?? "?"} @${Math.round(cur.framesPerSecond ?? 0)}fps | 码率 ${rate}kbps${target}`,
+        );
+      };
+
+      log("── 本端发送 ──");
+      printSend("摄像头", s1.send.camera, s2.send.camera, camOut as Record<string, any>);
+      printSend("共享", s1.send.screen, s2.send.screen, scrOut as Record<string, any>);
+
+      log("── 接收 ──");
+      if (videoConsumers.length === 0) log("（当前无远端视频）");
+      for (const { label } of videoConsumers) {
+        const a = s1.recv[label];
+        const b = s2.recv[label];
+        const cur = b ?? a;
+        if (!cur) continue;
+        const rate = kbps(a?.bytesReceived ?? 0, b?.bytesReceived ?? 0);
+        const lost = cur.packetsLost ?? 0;
+        const jitter = Math.round((cur.jitter ?? 0) * 1000);
+        log(
+          `${label}: ${cur.frameWidth ?? "?"}x${cur.frameHeight ?? "?"} @${Math.round(cur.framesPerSecond ?? 0)}fps | 码率 ${rate}kbps | 丢包 ${lost} 包 | 抖动 ${jitter}ms`,
+        );
+      }
+      log("── 判读：摄像头发送/设备输出 <1920 多为设备上限；接收低于发送多为层切换或带宽压制 ──");
+    } catch (err) {
+      log(`采样失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   setLayout(layout: MeetingLayout, gridCols?: 3 | 6 | 9 | 12): void {
     this.signal.send({ type: "setLayout", layout, gridCols });
     // 立即本地生效：避免因服务端回显延迟/丢失导致“主持人切了、自己的画面却没变”。
@@ -790,6 +903,9 @@ export class MediaRoom {
         // 屏幕文字会发糊（共享者本地预览不经编码所以自己看着清晰）。
         // scaleResolutionDownBy: 1 锁分辨率，拥塞时优先降帧率/码率保文字可读。
         encodings: [{ maxBitrate: 6_000_000, scaleResolutionDownBy: 1 }],
+        // 起步码率=目标码率：消除共享开始后 ~1s 的"模糊→清晰"爬坡期
+        // （libwebrtc 默认起步 ~300k，靠带宽估计数秒爬升）
+        codecOptions: { videoGoogleStartBitrate: 6000 },
         appData: { source: "screen" },
       });
     } catch (err) {
@@ -1504,6 +1620,10 @@ export class MediaRoom {
     if (msg.focusPeerId !== undefined) {
       this.focusPeerId = msg.focusPeerId;
     }
+    // 排查提示：告知运维/开发控制台可一键查看音视频质量数据
+    console.info(
+      "[MeetingDebug] 排查画质问题时，在控制台执行 __meetingDebug() 可查看摄像头/共享的分辨率、码率、帧率、丢包",
+    );
     if (msg.rotationEnabled !== undefined) {
       this.rotationEnabled = msg.rotationEnabled;
     }
@@ -1612,7 +1732,9 @@ export class MediaRoom {
       this.videoProducer = await this.sendTransport.produce({
         track: videoTrack,
         encodings: VIDEO_ENCODINGS,
-        codecOptions: { videoGoogleStartBitrate: 1000 },
+        // 起步码率=目标码率（4.5M@1080p）：不设时 libwebrtc 默认从 ~300k 按带宽
+        // 估计爬升，开播后数秒内画面偏糊；内网带宽充足，起步即高清档
+        codecOptions: { videoGoogleStartBitrate: 4500 },
       });
       if (!this.camEnabled) {
         this.videoProducer.pause();
