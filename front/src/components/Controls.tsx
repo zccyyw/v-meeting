@@ -18,6 +18,7 @@ import {
   CheckOutlined,
 } from "@ant-design/icons";
 import { HandIcon } from "@/components/HandIcon";
+import type { ScreenContentType } from "@/media/room";
 import { MEETING_DARK_OVERLAY_THEME } from "@/theme/meetingOverlayTheme";
 
 const ICON_STYLE = { fontSize: 22 } as const;
@@ -44,6 +45,9 @@ type Props = {
   micBannedTip?: string;
   /** 麦克风/摄像头设备枚举与当前选中（设备菜单数据源） */
   audioInputs: MediaDeviceInfo[];
+  /** 屏幕共享内容类型：detail=文档清晰优先；motion=视频流畅优先（默认） */
+  screenContentType?: ScreenContentType;
+  onScreenContentTypeChange?: (v: ScreenContentType) => void;
   videoInputs: MediaDeviceInfo[];
   audioId: string;
   videoId: string;
@@ -214,6 +218,8 @@ export function Controls({
   canRecord,
   allowShare,
   recordAllowed,
+  screenContentType,
+  onScreenContentTypeChange,
   micBanned = false,
   micBannedTip,
   audioInputs,
@@ -345,17 +351,29 @@ export function Controls({
           ariaPressed={sharingScreen}
           hostLocked={!sharingScreen && !canShare}
           hostLockedTip={t("meeting.shareDisabledByHost")}
-          menuItems={
-            isHost
+          menuItems={[
+            {
+              key: "content-doc",
+              label: menuRow(t("meeting.shareContentDoc"), screenContentType === "detail"),
+            },
+            {
+              key: "content-motion",
+              label: menuRow(t("meeting.shareContentMotion"), screenContentType !== "detail"),
+            },
+            ...(isHost
               ? [
                   {
                     key: "allowShare",
                     label: menuRow(t("meeting.toolAllowShare"), allowShare),
                   },
                 ]
-              : undefined
-          }
-          onMenuClick={() => onToggleAllowShare()}
+              : []),
+          ]}
+          onMenuClick={(key) => {
+            if (key === "content-doc") onScreenContentTypeChange?.("detail");
+            else if (key === "content-motion") onScreenContentTypeChange?.("motion");
+            else onToggleAllowShare();
+          }}
         />
         <ControlButton
           label={t("meeting.invite")}

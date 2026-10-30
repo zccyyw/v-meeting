@@ -10,6 +10,9 @@ import type { SignalClient } from "@/signal/client";
 
 export type WaitingPeer = { peerId: string; displayName: string };
 
+/** 屏幕共享内容类型：detail=文字/幻灯片优先清晰；motion=视频/动态优先流畅（默认） */
+export type ScreenContentType = "detail" | "motion";
+
 export type PeerInfo = {
   peerId: string;
   displayName: string;
@@ -259,8 +262,11 @@ export class MediaRoom {
       void this.handleDisconnect();
     });
     // 现场排查句柄：控制台执行 __meetingDebug() 打印音视频质量数据
-    (window as unknown as { __meetingDebug?: () => Promise<void> }).__meetingDebug =
-      () => this.debugStats();
+    // （Node 测试环境无 window，需守卫，否则 room.test.ts 全挂）
+    if (typeof window !== "undefined") {
+      (window as unknown as { __meetingDebug?: () => Promise<void> }).__meetingDebug =
+        () => this.debugStats();
+    }
   }
 
   subscribe(listener: Listener): () => void {
@@ -863,7 +869,7 @@ export class MediaRoom {
     }
   }
 
-  async startScreenShare(): Promise<void> {
+  async startScreenShare(contentType: ScreenContentType = "motion"): Promise<void> {
     if (!this.sendTransport || this.closed) return;
     if (!this.canShare) {
       this.warning = "share_not_allowed";
@@ -877,7 +883,8 @@ export class MediaRoom {
       // audio:true：共享「标签页」并在浏览器弹窗勾选「共享标签页音频」时才有音频轨；
       // 共享窗口/整屏在多数平台无音频轨（此时不会创建屏幕音频轨）
       stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+        // 采集侧即限制帧率（P0）：屏幕共享 15fps 足够清晰，从源头降低编码压力
+        video: { frameRate: { ideal: 15 } },
         audio: true,
       });
     } catch (err) {
@@ -894,15 +901,21 @@ export class MediaRoom {
       for (const t of stream.getTracks()) t.stop();
       return;
     }
-    track.contentHint = "detail";
+    // detail=文字/幻灯片优先清晰；motion=视频/动态优先流畅（默认），缓解共享卡顿
+    track.contentHint = contentType;
 
     try {
       this.screenProducer = await this.sendTransport.produce({
         track,
-        // 显式码率与分辨率约束：不传 encodings 时 WebRTC 拥塞控制默认先降分辨率，
-        // 屏幕文字会发糊（共享者本地预览不经编码所以自己看着清晰）。
-        // scaleResolutionDownBy: 1 锁分辨率，拥塞时优先降帧率/码率保文字可读。
-        encodings: [{ maxBitrate: 6_000_000, scaleResolutionDownBy: 1 }],
+        // P0+P1：原屏幕共享是单层 6Mbps「全有或全无」，弱机/弱网只能整路卡顿。
+        // 改为两层 Simulcast（顶层满分辨率 + ÷2 降级层），并把编码帧率锁到 15fps：
+        // - 限帧率直接砍掉一半编码负载，缓解发送端掉帧（卡顿主因）；
+        // - ÷2 层让弱机/弱网自动降分辨率而非卡死，文字常态仍走满分辨率层保持锐利；
+        // - VP8 默认协商自带时间层，接收端 CPU 过载时浏览器还会自动降帧率。
+        encodings: [
+          { rid: "s0", maxBitrate: 6_000_000, scaleResolutionDownBy: 1, maxFramerate: 15 },
+          { rid: "s1", maxBitrate: 2_500_000, scaleResolutionDownBy: 2, maxFramerate: 15 },
+        ],
         // 起步码率=目标码率：消除共享开始后 ~1s 的"模糊→清晰"爬坡期
         // （libwebrtc 默认起步 ~300k，靠带宽估计数秒爬升）
         codecOptions: { videoGoogleStartBitrate: 6000 },
@@ -954,6 +967,12 @@ export class MediaRoom {
       this.setLayout("speaker");
     }
     this.emit();
+  }
+
+  /** 共享进行中实时切换内容类型（无需停止再共享）：detail=清晰优先，motion=流畅优先 */
+  setScreenContentType(contentType: ScreenContentType): void {
+    const track = this.localScreenStream?.getVideoTracks()[0];
+    if (track) track.contentHint = contentType;
   }
 
   async stopScreenShare(): Promise<void> {

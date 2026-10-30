@@ -22,7 +22,7 @@ import { HostControls } from "@/components/HostControls";
 import { Modal } from "@/components/Modal";
 import { VideoGrid, type LayoutCols } from "@/components/VideoGrid";
 import { WaitingRoom } from "@/components/WaitingRoom";
-import { MediaRoom, type MediaRoomSnapshot } from "@/media/room";
+import { MediaRoom, type MediaRoomSnapshot, type ScreenContentType } from "@/media/room";
 import { InvitationPanel } from "@/components/InvitationPanel";
 import { FloatingPanel } from "@/components/FloatingPanel";
 import { useActiveSpeaker, type ActiveSpeakerSource } from "@/hooks/useActiveSpeaker";
@@ -207,6 +207,10 @@ function MeetingPageInner() {
   // 沉浸态跟随浏览器全屏：全屏中 header/controls 浮化为 overlay 并自动隐藏；
   // 退出全屏恢复普通态（始终显示）。首次进入会议自动请求全屏（见下方 effect）。
   const [isImmersive, setIsImmersive] = useState(false);
+  // 屏幕共享内容类型：默认"视频(流畅优先)"，缓解共享卡顿；文档场景可切"清晰优先"
+  const [screenContentType, setScreenContentType] = useState<ScreenContentType>("motion");
+  // 共享预览态（方案A）：共享中点击成员小窗，主画面临时切到该成员摄像头（本地 UI 态）
+  const [sharePreviewPeerId, setSharePreviewPeerId] = useState<string | null>(null);
   const chromeVisible = useChromeAutoHide(isImmersive);
   useEffect(() => {
     if (!snap.warning) {
@@ -615,6 +619,17 @@ function MeetingPageInner() {
     onFsChange();
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
+
+  // 预览态自动复位：预览对象停止共享（stream 移除）即退出预览
+  useEffect(() => {
+    setSharePreviewPeerId((prev) =>
+      prev != null && snap.screenStreams.has(prev) ? prev : null,
+    );
+  }, [snap.screenStreams]);
+  // 布局切换时退出预览（grid 布局无"主画面"概念，避免回到 speaker 后残留）
+  useEffect(() => {
+    setSharePreviewPeerId(null);
+  }, [snap.layout]);
 
   // 首次进入会议自动全屏。页面加载时无用户手势，requestFullscreen 会被
   // 浏览器拒绝 → 降级为监听首次 pointerdown/keydown（有手势上下文）再请求。
@@ -1366,6 +1381,8 @@ function MeetingPageInner() {
                 peers={snap.peers}
                 layout={snap.layout}
                 focusPeerId={snap.focusPeerId}
+                sharePreviewPeerId={sharePreviewPeerId}
+                onSharePreviewChange={setSharePreviewPeerId}
                 layoutCols={layoutCols}
                 hostPipEnabled={snap.hostPipEnabled}
                 sideListVisible={isHost || snap.sideListVisible}
@@ -1490,6 +1507,12 @@ function MeetingPageInner() {
           sharingScreen={snap.sharingScreen}
           canShare={snap.canShare}
           isHost={isHost}
+          screenContentType={screenContentType}
+          onScreenContentTypeChange={(v) => {
+            setScreenContentType(v);
+            // 共享进行中实时应用到轨道，无需停止再共享
+            roomRef.current?.setScreenContentType(v);
+          }}
           membersOpen={membersOpen}
           chatOpen={chatOpen}
           unreadChat={unreadChat}
@@ -1529,7 +1552,7 @@ function MeetingPageInner() {
                       .catch((err) => console.warn("[rtc] stop screen share failed:", err));
             } else {
               void roomRef.current
-                      ?.startScreenShare()
+                      ?.startScreenShare(screenContentType)
                       .catch((err) => console.warn("[rtc] start screen share failed:", err));
             }
           }}

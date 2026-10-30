@@ -52,6 +52,9 @@ type Props = {
    * (speaker mode, host only).
    */
   onFocusPeer?: (peerId: string | null) => void;
+  /** 共享预览态（方案A）：主画面临时显示该成员摄像头（null=回到共享画面）。纯本地 UI 态 */
+  sharePreviewPeerId?: string | null;
+  onSharePreviewChange?: (peerId: string | null) => void;
   /** 各成员网络延迟（ms），key=peerId；驱动画面右上角延迟角标 */
   peerRtt?: Record<string, number>;
   /** 主持人控制的"成员画面轮换"开关 */
@@ -693,6 +696,8 @@ export function VideoGrid({
   hostPeerId,
   hostPipEnabled,
   onFocusPeer,
+  sharePreviewPeerId,
+  onSharePreviewChange,
   peerRtt,
   rotationEnabled,
   rotationIntervalMs,
@@ -965,8 +970,31 @@ export function VideoGrid({
   const explicitFocus =
     focusPeerId != null && tiles.some((t) => t.peerId === focusPeerId && !t.isScreen);
 
+  // 预览态（方案A）：共享进行中点击成员小窗，主画面临时切到该成员摄像头。
+  // 纯本地渲染层切换（所有摄像头流本端已全量订阅），不涉及信令与房间状态。
+  const previewEnabled = hasScreen && onSharePreviewChange != null;
+  const previewTile =
+    sharePreviewPeerId != null && previewEnabled
+      ? (tiles.find((t) => t.peerId === sharePreviewPeerId && !t.isScreen) ?? null)
+      : null;
+  // 侧栏统一点击处理：成员 → 切换预览（再点同一人退出预览）；
+  // 共享画面小窗 → 仅退出预览回到共享；演讲者布局下保留原"点选焦点成员"行为
+  const handleStripFocus = (peerId: string | null) => {
+    if (peerId != null && tiles.some((t) => t.isScreen && t.peerId === peerId)) {
+      onSharePreviewChange?.(null);
+      return;
+    }
+    if (peerId != null && focusEnabled && onFocusPeer) onFocusPeer(peerId);
+    if (previewEnabled) {
+      onSharePreviewChange?.(
+        peerId != null && sharePreviewPeerId === peerId ? null : peerId,
+      );
+    }
+  };
+
   const focusTile = useSideLayout
-    ? (screenTile ??
+    ? (previewTile ??
+      screenTile ??
       tiles.find((t) => t.peerId === resolvedFocusPeer && !t.isScreen) ??
       tiles[0])
     : null;
@@ -1007,8 +1035,13 @@ export function VideoGrid({
       : focusTile.key !== pipTile!.key);
 
   // 右侧成员显示全部人员（含主持人/自己），仅排除共享画面 tile；
-  // 点击不同成员（含主持人）即可切换主画面
-  const stripTiles = useSideLayout ? tiles.filter((t) => !t.isScreen) : tiles;
+  // 点击不同成员（含主持人）即可切换主画面。
+  // 预览态例外：共享画面移入侧栏（主画面被成员占据），点击可返回共享。
+  const stripTiles = useSideLayout
+    ? previewTile && screenTile
+      ? [...tiles.filter((t) => !t.isScreen), screenTile]
+      : tiles.filter((t) => !t.isScreen)
+    : tiles;
     // “仅显示正在说话的人”：本地 tile 的 peerId 映射为 "local"（与电平检测的 key 空间一致）
     const shownStripTiles = onlySpeakers
       ? stripTiles.filter((t) => onlySpeakers.has(t.peerId === localPeerId ? "local" : t.peerId))
@@ -1052,10 +1085,14 @@ export function VideoGrid({
                     micMuted={tile.micMuted}
                     localSelfScreen={tile.localSelfScreen}
                     rttMs={peerRtt?.[tile.peerId]}
-                    focused={focusPeerId === tile.peerId}
-                    focusable={focusEnabled}
+                    focused={
+                      previewTile ? previewTile.peerId === tile.peerId : focusPeerId === tile.peerId
+                    }
+                    focusable={focusEnabled || previewEnabled}
                     onClick={
-                      focusEnabled && onFocusPeer ? () => onFocusPeer(tile.peerId) : undefined
+                      focusEnabled || previewEnabled
+                        ? () => handleStripFocus(tile.peerId)
+                        : undefined
                     }
                   />
                 </div>
@@ -1064,7 +1101,16 @@ export function VideoGrid({
           )}
 
 
-          <div className="video-side-main">
+          <div className={`video-side-main${previewTile ? " video-side-main--preview" : ""}`}>
+            {previewTile && (
+              <button
+                type="button"
+                className="video-preview-banner"
+                onClick={() => onSharePreviewChange?.(null)}
+              >
+                {t("meeting.previewBanner", { name: previewTile.label })}
+              </button>
+            )}
             <VideoTile
               stream={focusTile.stream}
               label={focusTile.label}
@@ -1081,10 +1127,12 @@ export function VideoGrid({
           {showSideList && sideVariant !== "top" && (
             <DraggableSideList
               tiles={shownStripTiles}
-              focusEnabled={focusEnabled}
-              focusedPeerId={explicitFocus ? focusPeerId : null}
+              focusEnabled={focusEnabled || previewEnabled}
+              focusedPeerId={
+                previewTile ? previewTile.peerId : explicitFocus ? focusPeerId : null
+              }
               handTitle={handTitle}
-              onFocusPeer={onFocusPeer}
+              onFocusPeer={previewEnabled ? handleStripFocus : onFocusPeer}
               variant={sideVariant === "float" ? "float" : "embed"}
               rttByPeer={peerRtt}
               rotationEnabled={rotationEnabled}

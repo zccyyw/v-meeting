@@ -662,6 +662,23 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 .video-tile--focus.video-tile--focusable { outline-color: rgba(18, 120, 255, 0.7); box-shadow: 0 0 0 3px rgba(18, 120, 255, 0.25); }
 .video-grid--side { display: flex; flex-direction: row; gap: 0.75rem; flex: 1; min-height: 0; overflow: hidden; align-content: stretch; }
 .video-side-main { flex: 3 1 0; min-width: 0; min-height: 0; display: flex; }
+/* 共享预览态：主画面顶部悬浮"返回共享"提示条，容器切换为纵向排列 */
+.video-side-main--preview { flex-direction: column; }
+.video-side-main--preview .video-tile { height: auto; }
+.video-preview-banner {
+  flex-shrink: 0;
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  background: rgba(22, 24, 28, 0.88);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.video-preview-banner:hover { background: rgba(38, 41, 46, 0.95); }
 .video-side-main .video-tile { flex: 1; min-height: 0; aspect-ratio: auto; height: 100%; }
 .video-sidelist { flex: 1 1 0; min-width: 7.5rem; max-width: 14rem; display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
 .video-sidelist .video-tile, .video-tile--compact { min-height: 5.5rem; aspect-ratio: 16 / 10; flex-shrink: 0; }

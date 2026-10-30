@@ -1982,10 +1982,9 @@ export function createSignalHandler(db: Db) {
             producerId: message.producerId,
             rtpCapabilities,
             paused: true,
-            // 默认取最高 simulcast 层：不设置时消费端会落在低层（100kbps/1/4 分辨率），
-            // 大画面格子放大后发糊。mediasoup 会自动收敛到 producer 实际提供的最大层
-            // （屏幕共享单层、摄像头 3 层），此处给足上限即可。带宽不足时服务端
-            // 仍会按拥塞反馈自动降层。
+            // 请求最高层即可：mediasoup 会自动钳制到生产者实际提供的最大层
+            // （摄像头 3 层→2，屏幕共享 2 层→1），无需按生产者计算层号。
+            // 不设置时消费端会落在低层（100kbps/1/4 分辨率），大画面放大后发糊。
             preferredLayers: { spatialLayer: 2, temporalLayer: 2 },
           });
           ctx.media.consumers.set(consumer.id, consumer);
