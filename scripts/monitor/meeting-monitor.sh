@@ -119,6 +119,8 @@ collect_disks_json() { # → 逗号分隔的多分区 JSON 片段
   local out="" m total avail pct sep=""
   while IFS='|' read -r m total avail pct; do
     [ -z "$m" ] && continue
+    # 脏输入防御：total/avail/pct 必须为纯数字，否则跳过该分区（防坏 JSON 落盘）
+    case "$total$avail$pct" in ''|*[!0-9]*) continue ;; esac
     out="$out$sep{\"m\":\"$(json_escape "$m")\",\"total_kb\":$total,\"avail_kb\":$avail,\"used_pct\":$pct,\"inode_pct\":$(inode_pct_for "$m")}"
     sep=","
   done < <(get_disks)
@@ -148,7 +150,8 @@ collect_docker_json() { # → JSON 数组；docker 不可用输出 null（降级
     out="$out$sep{\"name\":\"$(json_escape "$name")\",\"cpu_pct\":\"$cpu\",\"mem_pct\":\"$mempct\",\"restarts\":$rc,\"oom_killed\":$oom,\"state\":\"$state\"}"
     sep=","
     any=1
-  done < <(docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemPerc}}' 2>/dev/null)
+  # tr -d '\r'：Windows/Docker Desktop 下 stats 输出为 CRLF，\r 混入 JSON 字符串致其非法
+  done < <(docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemPerc}}' 2>/dev/null | tr -d '\r')
   [ "$any" -eq 0 ] && { echo "null"; return; }
   echo "$out]"
 }
@@ -204,6 +207,8 @@ evaluate_thresholds() {
   handle_alert "$mem_state" "mem" "{\"avail_kb\":$MEM_AVAIL_KB,\"total_kb\":$MEM_TOTAL_KB,\"load1\":$LOAD1}"
   while IFS='|' read -r m total avail pct; do
     [ -z "$m" ] && continue
+    # 脏输入防御：非数字（如异常 df 输出被路径空格拆碎）直接跳过，不产坏 JSON
+    case "$total$avail$pct" in ''|*[!0-9-]*) continue ;; esac
     disk_state="$(classify_disk_state "$avail" "$total")"
     handle_alert "$disk_state" "disk" "{\"mount\":\"$(json_escape "$m")\",\"avail_kb\":$avail,\"total_kb\":$total,\"used_pct\":$pct}"
   done < <(get_disks)
