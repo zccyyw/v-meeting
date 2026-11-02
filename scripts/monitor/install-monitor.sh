@@ -21,8 +21,9 @@ sed "s|@WORKDIR@|$WORKDIR|" \
 
 systemctl daemon-reload
 systemctl enable --now meeting-monitor
-# 升级路径：enable --now 对已运行单元不做任何事，显式重启使新脚本/单元生效（失败不阻断）
-systemctl try-restart meeting-monitor 2>/dev/null || true
+# 升级路径：enable --now 对已运行单元不做任何事，显式重启使新脚本/单元生效；
+# 仅在已运行时重启（新装不重复跑启动事件；失败不阻断）
+systemctl is-active --quiet meeting-monitor && systemctl try-restart meeting-monitor 2>/dev/null || true
 echo "OK: meeting-monitor 已安装并启动；数据目录：$WORKDIR/logs/monitor/"
 echo "    查看状态: systemctl status meeting-monitor"
 echo "    查看数据: ls $WORKDIR/logs/monitor/"
