@@ -286,3 +286,4 @@ echo "    查看日志: docker-compose -p meeting logs -f   （注意必须带 -
 echo "    日志文件: $LOGS_DIR/<服务名>/（按天轮转，保留 ${LOG_RETENTION_DAYS} 天）"
 echo "    停止: bash install.sh stop    卸载: bash install.sh down"
 echo "    443 HTTPS 需要证书：bash deploy/docker/gen-selfsigned.sh --ca <服务器IP>"
+echo "    容器资源占用快照: docker stats --no-stream"
