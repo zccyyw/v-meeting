@@ -51,6 +51,7 @@ const NAV_ICON_MAP: Record<string, React.ReactNode> = {
   menu: <AppstoreOutlined />,
   dept: <BarsOutlined />,
   config: <SettingOutlined />,
+  "site-settings": <SettingOutlined />,
   notice: <BellOutlined />,
   log: <FileTextOutlined />,
   operlog: <FileTextOutlined />,
