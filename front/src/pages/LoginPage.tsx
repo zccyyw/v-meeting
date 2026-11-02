@@ -17,6 +17,8 @@ import { setPendingJoinCode } from "@/auth/joinPrefs";
 import { persistSession } from "@/auth/session";
 import { apiErrorMessage } from "@/i18n/errorMessage";
 import { ThemeToggle } from "@/theme/ThemeToggle";
+import { SiteFooter } from "@/site/SiteFooter";
+import { useSiteSettings } from "@/site/SiteSettingsContext";
 
 type FormValues = {
   username: string;
@@ -28,8 +30,12 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { message } = AntApp.useApp();
+  const settings = useSiteSettings();
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm<FormValues>();
+
+  /** 项目名称取自「站点设置」（未配置时回退到内置默认名称）。 */
+  const siteName = settings?.name?.trim() || t("app.name");
 
   useEffect(() => {
     const join = searchParams.get("join")?.replace(/\D/g, "") ?? "";
@@ -105,15 +111,15 @@ export function LoginPage() {
       </div>
 
       <div style={{
+        flex: 1,
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
-        minHeight: "100vh",
         width: "100%",
       }}>
         <Card style={{ width: "100%", maxWidth: 400, border: "1px solid var(--ant-color-border)" }}>
           <Typography.Title level={2} style={{ textAlign: "center", marginBottom: 8, color: "var(--ant-color-primary)" }}>
-            {t("app.name")}
+            {siteName}
           </Typography.Title>
           <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 24 }}>
             {t("login.hint")}
@@ -162,6 +168,10 @@ export function LoginPage() {
           </Form>
         </Card>
       </div>
+
+      <Layout.Footer style={{ background: "transparent", padding: 0 }}>
+        <SiteFooter />
+      </Layout.Footer>
     </Layout>
   );
 }

@@ -333,16 +333,21 @@ function ManagerShellInner() {
         </Sider>
 
         {/* 右侧主内容 */}
-        <Content
-          style={{
-            padding: 20,
-            margin: 0,
-            minHeight: "calc(100vh - 56px)",
-            background: token.colorBgLayout,
-          }}
-        >
-          <Outlet />
-        </Content>
+        <Layout style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <Content
+            style={{
+              flex: 1,
+              padding: 20,
+              margin: 0,
+              background: token.colorBgLayout,
+            }}
+          >
+            <Outlet />
+          </Content>
+          <Layout.Footer style={{ background: "transparent", padding: 0 }}>
+            <SiteFooter />
+          </Layout.Footer>
+        </Layout>
       </Layout>
 
       <ChangePasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} />
@@ -357,10 +362,6 @@ function ManagerShellInner() {
       >
         <p>{t("idle.warningText", { seconds: remainingSec })}</p>
       </Modal>
-
-      <Layout.Footer style={{ background: "transparent", padding: 0 }}>
-        <SiteFooter />
-      </Layout.Footer>
     </Layout>
   );
 }

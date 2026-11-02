@@ -9,12 +9,21 @@ import { SiteBrand } from "@/site/SiteBrand";
 import { SiteFooter } from "@/site/SiteFooter";
 import { resolveLogoUrl } from "@/site/SiteSettingsContext";
 
+// 与后端 MAX_BYTES 保持一致（serve/api/src/routes/site-settings.ts）。
+// 超过该值后端会返回 413，这里在前端先拦截，避免无谓请求与“报错”体验。
+const MAX_LOGO_BYTES = 600 * 1024;
+
+function formatKb(bytes: number): string {
+  return `${Math.ceil(bytes / 1024)}KB`;
+}
+
 export function SiteSettingsPage() {
   const { t } = useTranslation();
   const { message } = AntApp.useApp();
   const [form] = Form.useForm<SiteSettings>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [logoUrl, setLogoUrl] = useState("");
 
   useEffect(() => {
@@ -28,6 +37,7 @@ export function SiteSettingsPage() {
   }, [form, message, t]);
 
   async function onLogo(file: File) {
+    setUploading(true);
     try {
       const { url } = await SiteSettingsApi.uploadLogo(file);
       setLogoUrl(url);
@@ -35,14 +45,33 @@ export function SiteSettingsPage() {
       message.success(t("common.uploadSuccess"));
     } catch (e) {
       message.error(apiErrorMessage(t, e));
+    } finally {
+      setUploading(false);
     }
+  }
+
+  /** 前端拦截：超过 600KB 只弹警告并拒绝上传，不发请求、不报错。 */
+  function beforeLogoUpload(file: File) {
+    if (file.size > MAX_LOGO_BYTES) {
+      message.warning(
+        t("site.logoTooLarge", {
+          size: formatKb(MAX_LOGO_BYTES),
+          current: formatKb(file.size),
+        }),
+      );
+      return Upload.LIST_IGNORE;
+    }
+    void onLogo(file);
+    return false;
   }
 
   async function onSave() {
     const values = await form.validateFields();
     setSaving(true);
     try {
-      await SiteSettingsApi.update(values);
+      // logo 未绑定 Form.Item，validateFields() 不包含该字段，需显式补上，
+      // 否则后端 Zod 校验（必填 logo）失败返回 400。
+      await SiteSettingsApi.update({ ...values, logo: logoUrl });
       message.success(t("common.updateSuccess"));
       // 保存后刷新整页，确保全局 provider 与页签/favicon 立即生效
       window.location.reload();
@@ -64,7 +93,9 @@ export function SiteSettingsPage() {
       <Card style={{ marginTop: 16, maxWidth: 720 }} loading={loading}>
         <Form
           form={form}
-          layout="vertical"
+          layout="horizontal"
+          labelCol={{ flex: "120px" }}
+          wrapperCol={{ flex: 1 }}
           initialValues={{ footerShowVersion: false, tabShowName: true }}
         >
           <Form.Item
@@ -72,11 +103,11 @@ export function SiteSettingsPage() {
             label={t("site.name")}
             rules={[{ required: true, message: t("site.nameRequired") }]}
           >
-            <Input maxLength={100} />
+            <Input maxLength={100} placeholder={t("site.namePlaceholder")} />
           </Form.Item>
 
           <Form.Item label={t("site.logo")}>
-            <Space align="center">
+            <Space align="center" wrap>
               <img
                 src={previewLogo}
                 alt="logo"
@@ -89,14 +120,13 @@ export function SiteSettingsPage() {
                 }}
               />
               <Upload
-                beforeUpload={(f) => {
-                  void onLogo(f as File);
-                  return false;
-                }}
+                beforeUpload={beforeLogoUpload}
                 showUploadList={false}
                 accept=".png,.jpg,.jpeg,.svg"
               >
-                <Button icon={<UploadOutlined />}>{t("site.uploadLogo")}</Button>
+                <Button icon={<UploadOutlined />} loading={uploading}>
+                  {t("site.uploadLogo")}
+                </Button>
               </Upload>
               <span style={{ color: "rgba(0,0,0,0.45)", fontSize: 12 }}>
                 {t("site.logoHint")}
@@ -105,7 +135,7 @@ export function SiteSettingsPage() {
           </Form.Item>
 
           <Form.Item name="version" label={t("site.version")}>
-            <Input placeholder={APP_VERSION} maxLength={50} />
+            <Input placeholder={t("site.versionHint", { version: APP_VERSION })} maxLength={50} />
           </Form.Item>
 
           <Form.Item name="footerCopyright" label={t("site.footerCopyright")}>
@@ -128,12 +158,14 @@ export function SiteSettingsPage() {
             <Input maxLength={200} placeholder={t("site.tabTitleHint")} />
           </Form.Item>
 
-          <Space>
-            <Button type="primary" loading={saving} onClick={onSave}>
-              {t("common.save")}
-            </Button>
-            <Button onClick={() => window.location.reload()}>{t("common.reset")}</Button>
-          </Space>
+          <Form.Item label=" " colon={false}>
+            <Space>
+              <Button type="primary" loading={saving} onClick={onSave}>
+                {t("common.save")}
+              </Button>
+              <Button onClick={() => window.location.reload()}>{t("common.reset")}</Button>
+            </Space>
+          </Form.Item>
         </Form>
       </Card>
 

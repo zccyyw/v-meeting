@@ -260,10 +260,13 @@ function AppShellInner() {
         </div>
       </Sider>
 
-      <Layout>
-        <Content className="app-content">
+      <Layout style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <Content className="app-content" style={{ flex: 1 }}>
           <Outlet />
         </Content>
+        <Layout.Footer style={{ background: "transparent", padding: 0 }}>
+          <SiteFooter />
+        </Layout.Footer>
       </Layout>
 
       <ChangePasswordModal
@@ -281,10 +284,6 @@ function AppShellInner() {
       >
         <p>{t("idle.warningText", { seconds: remainingSec })}</p>
       </Modal>
-
-      <Layout.Footer style={{ background: "transparent", padding: 0 }}>
-        <SiteFooter />
-      </Layout.Footer>
     </Layout>
   );
 }

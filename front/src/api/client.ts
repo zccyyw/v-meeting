@@ -504,9 +504,11 @@ export const SiteSettingsApi = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  uploadLogo: async (file: Blob) => {
+  uploadLogo: async (file: File) => {
     const fd = new FormData();
-    fd.append("file", file, "logo");
+    // 必须带扩展名：后端按 multipart filename 的扩展名做类型白名单校验，
+    // 缺扩展名（如 "logo"）会被判为 unsupported_type 返回 415。
+    fd.append("file", file, file.name || "logo.png");
     const headers = new Headers();
     const sid = getSessionId();
     if (sid) headers.set("x-session-id", sid);
