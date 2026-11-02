@@ -79,14 +79,17 @@ cpu_used_pct() { # 与上轮差分；直接设置全局 CPU_PCT（命令替换�
 }
 
 # 每分区输出 "mount|total_kb|avail_kb|used_pct"；inode 单独
+# 挂载点可能含空格（如 Windows Git Bash 环境）：第 6 列起全部视为挂载点
 get_disks() {
   df -P -k 2>/dev/null | awk -v ex="$EXCLUDE_FS_RE" 'NR>1 && $1 !~ ex {
-    pct=$5; sub(/%/,"",pct); print $6"|"$2"|"$4"|"pct
+    pct=$5; sub(/%/,"",pct); m=$6; for(i=7;i<=NF;i++) m=m" "$i
+    print m"|"$2"|"$4"|"pct
   }'
 }
 get_disk_inodes() { # mount|inode_used_pct
   df -iP 2>/dev/null | awk -v ex="$EXCLUDE_FS_RE" 'NR>1 && $1 !~ ex {
-    pct=$5; sub(/%/,"",pct); print $6"|"pct
+    pct=$5; sub(/%/,"",pct); m=$6; for(i=7;i<=NF;i++) m=m" "$i
+    print m"|"pct
   }'
 }
 inode_pct_for() { # mount → pct（缺失或非数字返回 0）
@@ -125,9 +128,36 @@ write_metrics_sample() { # $1=cpu_pct(可空) $2=docker_json(可空=null)
   append_line "{\"ts\":\"$ts\",\"boot\":\"$(boot_id)\",\"uptime_s\":$(get_uptime_s),\"cpu_pct\":${cpu:-null},\"load1\":$LOAD1,\"nproc\":$NPROC,\"mem_total_kb\":$MEM_TOTAL_KB,\"mem_avail_kb\":$MEM_AVAIL_KB,\"swap_used_kb\":$SWAP_USED_KB,\"disks\":[$disks],\"tcp_estab\":$(get_tcp_estab),\"top_mem\":\"$(json_escape "$(get_top_mem)")\",\"top_cpu\":\"$(json_escape "$(get_top_cpu)")\",\"docker\":$docker_json}" "$METRICS_FILE"
 }
 
-# ── 容器指标（Task 3 填充占位：本任务先返回 null）──
+# ── 容器指标 ──
 have_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
-collect_docker_json() { echo "null"; }
+
+collect_docker_json() { # → JSON 数组；docker 不可用输出 null（降级）
+  have_docker || { echo "null"; return; }
+  local out="[" row name cpu mempct rc oom state sep="" any=0
+  while IFS=$'\t' read -r name cpu mempct; do
+    [ -z "$name" ] && continue
+    row="$(docker inspect --format '{{.RestartCount}} {{.State.OOMKilled}} {{.State.Status}}' "$name" 2>/dev/null || echo '0 false unknown')"
+    read -r rc oom state <<< "$row"
+    case "$rc" in ''|*[!0-9]*) rc=0 ;; esac
+    # 重启/OOM 检测：与 .state 中的上次值比对，变化则发事件
+    detect_container_event "$name" "$rc" "$oom"
+    out="$out$sep{\"name\":\"$(json_escape "$name")\",\"cpu_pct\":\"$cpu\",\"mem_pct\":\"$mempct\",\"restarts\":$rc,\"oom_killed\":$oom,\"state\":\"$state\"}"
+    sep=","
+    any=1
+  done < <(docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemPerc}}' 2>/dev/null)
+  [ "$any" -eq 0 ] && { echo "null"; return; }
+  echo "$out]"
+}
+
+detect_container_event() { # NAME RESTARTS OOMKILLED(bool)
+  local key="rc_$(printf '%s' "$1" | tr -c 'A-Za-z0-9_' _)"
+  local prev; prev="$(state_get "$key")"
+  state_set "$key" "$2|$3"
+  [ -z "$prev" ] && return 0          # 首次记录基线
+  [ "$prev" = "$2|$3" ] && return 0   # 无变化
+  local level="warn"; [ "$3" = "true" ] && level="crit"
+  emit_event container_event "$level" "{\"name\":\"$(json_escape "$1")\",\"restarts\":$2,\"oom_killed\":$3,\"prev\":\"$prev\"}"
+}
 
 # ── 阈值评估与快照（Task 4/5 填充占位）──
 evaluate_thresholds() { :; }
