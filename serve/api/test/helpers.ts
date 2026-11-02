@@ -27,9 +27,12 @@ export type MockHandler = {
  *   使代码走 sys_user 新表路径；
  * - 其余返回空结果（getConfig 等走默认值分支）。
  */
-export function mockDb(handlers: MockHandler[] = []): Db {
+export function mockDb(
+  handlers: MockHandler[] = [],
+  driver: Db["driver"] = "sqlite",
+): Db {
   return {
-    driver: "sqlite",
+    driver,
     async query(sql: string, params: unknown[] = []) {
       for (const h of handlers) {
         if (h.match.test(sql)) {

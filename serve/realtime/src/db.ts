@@ -1,7 +1,13 @@
 import { createPool, type Db } from "@meeting/db";
 
 export { createPool, type Db };
-export { nowSql } from "@meeting/db";
+export {
+  nowSql,
+  toSqlDateTime,
+  formatLocalDateTime,
+  parseDateTime,
+  epochMs,
+} from "@meeting/db";
 export {
   isUniqueViolation,
   resolveDriver,

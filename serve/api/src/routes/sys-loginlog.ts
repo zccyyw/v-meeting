@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db.js";
+import { formatLocalDateTime } from "../db.js";
 import type { Redis } from "ioredis";
 import { loadSessionUser } from "../session-user.js";
 
@@ -40,7 +41,9 @@ function mapRow(row: OperLogRow) {
     status: row.status,
     errorMsg: row.error_msg,
     operUserName: row.oper_user_name,
-    operTime: row.oper_time,
+    // 展示口径：'YYYY-MM-DD HH:mm:ss'（服务端本地时区）。直接回传 Date 会被
+    // 序列化成带 T/Z 的 ISO，前端又原样渲染，页面上会出现 "2026-10-31T01:00:00.000Z"
+    operTime: formatLocalDateTime(row.oper_time) ?? "",
     costTime: row.cost_time,
   };
 }

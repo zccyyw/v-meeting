@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db.js";
+import { formatLocalDateTime } from "../db.js";
 import type { Redis } from "ioredis";
 import { loadSessionUser } from "../session-user.js";
 
@@ -33,7 +34,7 @@ function mapRow(row: MeetingLogRow) {
     endTime: row.end_time ?? "",
     durationSec: Number(row.duration_sec) || 0,
     participantCount: Number(row.participant_count) || 0,
-    createTime: row.create_time,
+    createTime: formatLocalDateTime(row.create_time) ?? "",
   };
 }
 

@@ -19,7 +19,7 @@ import type {
 } from "mediasoup/types";
 import { MeetingRoom } from "./room.js";
 import { createRouter, createWebRtcTransport } from "./mediasoup.js";
-import { nowSql, type Db } from "./db.js";
+import { nowSql, formatLocalDateTime, epochMs, type Db } from "./db.js";
 import { validateJoinToken } from "./auth-bridge.js";
 
 type PeerMedia = {
@@ -606,17 +606,15 @@ export function createSignalHandler(db: Db) {
         attendanceCnt > 0
           ? attendanceCnt
           : (Number(inv?.cnt) || 0) + (Number(inv?.host_in_list) > 0 ? 0 : 1);
-      // 驱动可能返回 Date（mysql/pg）或字符串（sqlite），统一转 "YYYY-MM-DD HH:MM:SS"
-      const norm = (v: unknown): string | null => {
-        if (v == null) return null;
-        if (v instanceof Date) return v.toISOString().slice(0, 19).replace("T", " ");
-        return String(v);
-      };
+      // 驱动可能返回 Date（mysql/pg）或字符串（sqlite），统一转
+      // "YYYY-MM-DD HH:MM:SS"（服务端本地时区，与库内 NOW() 同基准）。
+      // 不要用 toISOString() 去 Z 的写法：那是 UTC 墙上时间，再按本地解析会偏移 8 小时。
+      const norm = (v: unknown): string | null => formatLocalDateTime(v);
       const startTime =
         norm(att?.first_joined) ?? norm(inv?.first_joined) ?? norm(m.created_at);
       const endTime = norm(m.ended_at);
-      const startMs = startTime ? new Date(startTime.replace(" ", "T")).getTime() : NaN;
-      const endMs = endTime ? new Date(endTime.replace(" ", "T")).getTime() : Date.now();
+      const startMs = epochMs(startTime);
+      const endMs = endTime ? epochMs(endTime) : Date.now();
       const durationSec =
         Number.isFinite(startMs) && Number.isFinite(endMs)
           ? Math.max(0, Math.floor((endMs - startMs) / 1000))

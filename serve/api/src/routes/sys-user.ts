@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Db, ResultHeader } from "../db.js";
+import { formatLocalDateTime } from "../db.js";
 import type { Redis } from "ioredis";
 import { hashPassword } from "../auth.js";
 import { loadSessionUser } from "../session-user.js";
@@ -58,8 +59,8 @@ function mapRow(row: SysUserRow, roleIds: number[] = []) {
     status: row.status,
     delFlag: row.del_flag,
     loginIp: row.login_ip ?? "",
-    loginDate: row.login_date ?? "",
-    createTime: row.create_time,
+    loginDate: formatLocalDateTime(row.login_date) ?? "",
+    createTime: formatLocalDateTime(row.create_time) ?? "",
     updateTime: row.update_time,
     remark: row.remark ?? "",
     roleIds,

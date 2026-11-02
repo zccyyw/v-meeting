@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS meeting_applications (
   end_time      DATETIME,
   location      VARCHAR(255),
   dept_count    INT DEFAULT 0,
-  priority      VARCHAR(10) DEFAULT '中',
+  priority      VARCHAR(10) DEFAULT 'medium',
   status        VARCHAR(20) DEFAULT 'pending',
   approver_id   BIGINT,
   approve_time  DATETIME,

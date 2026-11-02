@@ -3,7 +3,12 @@ import { z } from "zod";
 import { CreateMeetingSchema, JoinTokenBodySchema } from "@meeting/shared";
 import { randomBytes } from "node:crypto";
 import { Readable } from "node:stream";
-import { isUniqueViolation, type ResultHeader } from "../db.js";
+import {
+  isUniqueViolation,
+  formatLocalDateTime,
+  epochMs,
+  type ResultHeader,
+} from "../db.js";
 import type { Db } from "../db.js";
 import type { Redis } from "ioredis";
 import { hashPassword, verifyPassword } from "../auth.js";
@@ -196,7 +201,9 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
        ORDER BY
          CASE m.status WHEN 'live' THEN 0 ELSE 1 END,
          CASE WHEN ma.priority IS NULL THEN 1 ELSE 0 END,
-         CASE ma.priority WHEN '高' THEN 1 WHEN '中' THEN 2 WHEN '低' THEN 3 ELSE 4 END,
+         -- 优先级已机器码化为 high/medium/low（存量中文值由 migrateMeetingAppPriority 回填），
+         -- 此处曾按 '高'/'中'/'低' 排序，导致实际值全部落到 ELSE 4、排序静默失效
+         CASE ma.priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
          CASE WHEN m.scheduled_at IS NULL THEN 1 ELSE 0 END,
          m.scheduled_at ASC,
          m.created_at DESC`,
@@ -300,21 +307,20 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
        ORDER BY m.ended_at DESC
        LIMIT ${pageSize} OFFSET ${offset}`,
     );
-    const norm = (v: unknown): string | null => {
-      if (v == null) return null;
-      if (v instanceof Date) return v.toISOString().slice(0, 19).replace("T", " ");
-      return String(v);
-    };
+    // 展示口径统一为服务端本地（部署为 Asia/Shanghai）墙上时间 'YYYY-MM-DD HH:mm:ss'：
+    // 不再走 "toISOString → 去 Z → 按本地解析" 的往返（该往返只在 TZ=UTC 下自洽）。
     const items = (rows as Record<string, unknown>[]).map((r) => {
       // 参会人数：优先实际参会记录（021，覆盖凭号加入/访客），
       // 无记录（历史旧会议）回退邀请表口径
       const attCnt = Number(r.att_cnt) || 0;
       const invCnt = Number(r.inv_participants) || 0;
-      const startTime =
-        norm(r.att_first_joined) ?? norm(r.inv_first_joined) ?? norm(r.created_at) ?? "";
-      const endTime = norm(r.ended_at) ?? "";
-      const startMs = startTime ? new Date(startTime.replace(" ", "T")).getTime() : NaN;
-      const endMs = endTime ? new Date(endTime.replace(" ", "T")).getTime() : NaN;
+      const startRaw = r.att_first_joined ?? r.inv_first_joined ?? r.created_at ?? null;
+      const endRaw = r.ended_at ?? null;
+      const startTime = formatLocalDateTime(startRaw) ?? "";
+      const endTime = formatLocalDateTime(endRaw) ?? "";
+      // 时长直接用原始值换算，避免对展示字符串二次解析
+      const startMs = epochMs(startRaw);
+      const endMs = epochMs(endRaw);
       return {
         meetingId: Number(r.id),
         code: String(r.code ?? ""),
@@ -366,11 +372,7 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
        WHERE meeting_id = ? ORDER BY joined_at ASC`,
       [id],
     );
-    const norm = (v: unknown): string | null => {
-      if (v == null) return null;
-      if (v instanceof Date) return v.toISOString().slice(0, 19).replace("T", " ");
-      return String(v);
-    };
+    const norm = (v: unknown): string | null => formatLocalDateTime(v);
     // 去重键：登录用户按 user_id，访客按显示名（与 recordAttendance 口径一致）
     const seen = new Set<string>();
     const dedupeKey = (userId: unknown, name: string) =>
@@ -424,8 +426,9 @@ export async function meetingRoutes(app: FastifyInstance, db: Db, redis: Redis) 
     }
     const startTime = attendees[0]?.joinedAt || norm(m.created_at) || "";
     const endTime = norm(m.ended_at) ?? "";
-    const startMs = startTime ? new Date(startTime.replace(" ", "T")).getTime() : NaN;
-    const endMs = endTime ? new Date(endTime.replace(" ", "T")).getTime() : NaN;
+    // 展示串是本地墙上时间，按同一口径反解（epochMs 对无时区串按本地解析）
+    const startMs = epochMs(startTime);
+    const endMs = epochMs(endTime);
     return {
       meetingId: Number(m.id),
       code: String(m.code ?? ""),

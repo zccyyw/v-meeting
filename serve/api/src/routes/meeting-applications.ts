@@ -8,7 +8,7 @@ import { generateMeetingCode } from "../meeting-code.js";
 import { isApproverRole, listApproverUserIds, loadSessionUser } from "../session-user.js";
 import { notifyUser } from "../notify.js";
 import { nowSql } from "../sql-utils.js";
-import { isUniqueViolation } from "../db.js";
+import { isUniqueViolation, toSqlDateTime, formatLocalDateTime } from "../db.js";
 
 type AppRow = {
   app_id: number | string;
@@ -32,16 +32,18 @@ function mapRow(row: AppRow) {
     appId: Number(row.app_id),
     title: row.title,
     applicantId: Number(row.applicant_id),
-    meetingTime: row.meeting_time,
-    endTime: row.end_time ?? "",
+    // 时间统一为 'YYYY-MM-DD HH:mm:ss'（服务端本地时区/Asia-Shanghai）：
+    // 直接回传 Date 会被序列化成带 T/Z 的 ISO，页面原样渲染就会出现 "T"
+    meetingTime: formatLocalDateTime(row.meeting_time) ?? "",
+    endTime: formatLocalDateTime(row.end_time) ?? "",
     location: row.location ?? "",
     deptCount: row.dept_count,
     priority: row.priority,
     status: row.status,
     approverId: row.approver_id ? Number(row.approver_id) : null,
-    approveTime: row.approve_time ?? "",
+    approveTime: formatLocalDateTime(row.approve_time) ?? "",
     meetingId: row.meeting_id ? Number(row.meeting_id) : null,
-    createdAt: row.created_at,
+    createdAt: formatLocalDateTime(row.created_at) ?? "",
     remark: row.remark ?? "",
   };
 }
@@ -70,6 +72,20 @@ const ApproveBody = z.object({
   rejectReason: z.string().max(500).optional().default(""),
 });
 
+/**
+ * 优先级机器码与历史中文值的映射。
+ * 建表默认值与早期版本用 '高'/'中'/'低'（迁移 migrateMeetingAppPriority 会回填存量行），
+ * 老客户端/直连写入仍可能回传中文，进校验前统一折算，避免 400 validation_error。
+ */
+const PRIORITY_ALIAS: Record<string, "high" | "medium" | "low"> = {
+  high: "high",
+  medium: "medium",
+  low: "low",
+  高: "high",
+  中: "medium",
+  低: "low",
+};
+
 export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redis) {
   // ── 提交会议申请 ──
   app.post("/meeting-applications", async (req, reply) => {
@@ -77,9 +93,15 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
     const user = await loadSessionUser(db, redis, sid);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
 
+    const raw = { ...(req.body ?? {}) } as Record<string, unknown>;
+    if (typeof raw.priority === "string") {
+      const alias = PRIORITY_ALIAS[raw.priority.trim().toLowerCase()];
+      if (alias) raw.priority = alias;
+    }
+
     let body;
     try {
-      body = CreateAppBody.parse(req.body ?? {});
+      body = CreateAppBody.parse(raw);
     } catch (err) {
       if (err instanceof z.ZodError) {
         const msg = err.issues[0]?.message;
@@ -90,11 +112,18 @@ export async function meetingAppRoutes(app: FastifyInstance, db: Db, redis: Redi
       throw err;
     }
 
+    // 时间入参必须先归一化：前端 toISOString() 的 '...T16:30:00.000Z' 在 MySQL
+    // 严格模式下会触发 ER_TRUNCATED_WRONG_VALUE(1292)（详见 @meeting/db toSqlDateTime）。
+    const meetingTime = toSqlDateTime(db, body.meetingTime);
+    if (!meetingTime) return reply.code(400).send({ error: "invalid_meeting_time" });
+    const endTime = toSqlDateTime(db, body.endTime ?? null);
+    if (body.endTime && !endTime) return reply.code(400).send({ error: "invalid_meeting_time" });
+
     const [result] = await db.query(
       `INSERT INTO meeting_applications
        (title, applicant_id, meeting_time, end_time, location, dept_count, priority, status, created_at, remark)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ${nowSql(db)}, ?)`,
-      [body.title, user.id, body.meetingTime, body.endTime || null, body.location, body.deptCount, body.priority, body.remark],
+      [body.title, user.id, meetingTime, endTime, body.location, body.deptCount, body.priority, body.remark],
     );
     const appId = Number((result as ResultHeader).insertId);
     // 站内通知所有审批人（SSE 实时提醒；通知失败不影响主流程）

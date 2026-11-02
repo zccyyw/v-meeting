@@ -6,11 +6,18 @@ export type {
   QueryResult,
   ResultHeader,
 } from "./types.js";
+export type { SqlDateTime } from "./datetime.js";
 export {
   isUniqueViolation,
   resolveDriver,
   qmarksToDollar,
 } from "./types.js";
+export {
+  toSqlDateTime,
+  formatLocalDateTime,
+  parseDateTime,
+  epochMs,
+} from "./datetime.js";
 
 /**
  * 返回当前时间戳 SQL 表达式，兼容 SQLite / MySQL / PostgreSQL。

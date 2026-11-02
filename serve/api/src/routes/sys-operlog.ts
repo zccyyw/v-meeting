@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db.js";
+import { formatLocalDateTime } from "../db.js";
 import type { Redis } from "ioredis";
 import { loadSessionUser } from "../session-user.js";
 import { getConfigInt } from "../config-cache.js";
@@ -42,7 +43,8 @@ function mapRow(row: OperLogRow) {
     status: row.status,
     errorMsg: row.error_msg,
     operUserName: row.oper_user_name,
-    operTime: row.oper_time,
+    // 展示口径：'YYYY-MM-DD HH:mm:ss'（服务端本地时区），避免前端原样渲染出带 T/Z 的 ISO
+    operTime: formatLocalDateTime(row.oper_time) ?? "",
     costTime: row.cost_time,
     operObject: row.oper_object ?? "",
     classification: row.classification ?? "公开",

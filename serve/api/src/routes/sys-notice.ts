@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Db, ResultHeader } from "../db.js";
+import { formatLocalDateTime } from "../db.js";
 import type { Redis } from "ioredis";
 import { loadSessionUser } from "../session-user.js";
 import { nowSql } from "../sql-utils.js";
@@ -32,9 +33,9 @@ function mapRow(row: NoticeRow) {
     noticeContent: row.notice_content ?? "",
     status: row.status,
     createBy: row.create_by ?? "",
-    createTime: row.create_time,
+    createTime: formatLocalDateTime(row.create_time) ?? "",
     updateBy: row.update_by ?? "",
-    updateTime: row.update_time,
+    updateTime: formatLocalDateTime(row.update_time) ?? "",
     remark: row.remark ?? "",
     // 接收范围计数：-1 = 全员（type=2 或无 target 的存量 type=1）；管理端列表用
     targetCount: -1 as number,

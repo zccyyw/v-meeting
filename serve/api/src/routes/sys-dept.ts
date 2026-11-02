@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db.js";
+import { formatLocalDateTime } from "../db.js";
 import type { Redis } from "ioredis";
 import { loadSessionUser } from "../session-user.js";
 import { nowSql } from "../sql-utils.js";
@@ -31,7 +32,7 @@ function mapRow(row: DeptRow) {
     email: row.email ?? "",
     status: row.status,
     delFlag: row.del_flag,
-    createTime: row.create_time,
+    createTime: formatLocalDateTime(row.create_time) ?? "",
   };
 }
 

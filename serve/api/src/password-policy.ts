@@ -1,4 +1,5 @@
 import type { Db } from "./db.js";
+import { parseDateTime } from "./db.js";
 import { getConfigInt, getConfigBool } from "./config-cache.js";
 
 /**
@@ -116,13 +117,10 @@ export function isPasswordExpired(
   expireDays: number,
 ): boolean {
   if (!pwdUpdateDate || expireDays <= 0) return false;
-  // 兼容 MySQL 返回 Date 对象和字符串两种情况
-  const dateStr = pwdUpdateDate instanceof Date
-    ? pwdUpdateDate.toISOString()
-    : typeof pwdUpdateDate === "string"
-      ? (pwdUpdateDate.endsWith("Z") ? pwdUpdateDate : pwdUpdateDate.replace(" ", "T"))
-      : String(pwdUpdateDate);
-  const updated = new Date(dateStr);
+  // 兼容 MySQL 返回 Date 与 sqlite 返回字符串两种情况；无时区串按服务端本地
+  // 时区解析（部署统一 Asia/Shanghai），不再依赖进程 TZ 的偶然一致
+  const updated = parseDateTime(pwdUpdateDate);
+  if (!updated) return false;
   const diffMs = Date.now() - updated.getTime();
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
   return diffDays > expireDays;

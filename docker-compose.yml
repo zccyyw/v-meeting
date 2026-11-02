@@ -33,6 +33,10 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-meeting}
       MYSQL_USER: ${MYSQL_USER:-meeting}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-meetingpass}
+      # 时间基准：官方镜像默认 UTC，而应用侧（api/realtime）按本地墙上时间写入
+      # DATETIME、库内 NOW()/CURRENT_TIMESTAMP 又按数据库时区取值，两者不一致
+      # 会让"创建时间/入会时间"整体偏移（曾实测 +8h）。统一为东八区。
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - mysql-data:/var/lib/mysql
       - ./logs/mysql:/var/log/mysql
@@ -110,6 +114,10 @@ services:
     # 优雅停机：给 API 30s 完成进行中的请求（含录制上传）后再 SIGKILL
     stop_grace_period: 30s
     environment:
+      # 时间基准：必须与数据库一致。node 镜像默认 UTC，而 DATETIME 的写入/读取
+      # 都按进程本地时区进行（mysql2 默认 timezone=local），与库内 NOW()（东八区）
+      # 不一致会让时间整体偏移 8 小时。
+      TZ: ${TZ:-Asia/Shanghai}
       # 数据库驱动跟随 .env 的 DB_DRIVER（本地默认 mysql，与宿主机 db:reset 同库）
       DB_DRIVER: ${DB_DRIVER:-sqlite}
       # 容器内经 host.docker.internal 访问宿主机 MySQL（开发场景，需
@@ -184,6 +192,8 @@ services:
     logging: *default-logging
     stop_grace_period: 30s
     environment:
+      # 时间基准：与 api / 数据库保持一致（同上，避免时间偏移与 1292 报错）
+      TZ: ${TZ:-Asia/Shanghai}
       # 数据库驱动跟随 .env 的 DB_DRIVER（本地默认 mysql，与宿主机 db:reset 同库）
       DB_DRIVER: ${DB_DRIVER:-sqlite}
       # 容器内经 host.docker.internal 访问宿主机 MySQL（开发场景，需

@@ -754,7 +754,9 @@ export function HomePage() {
         <Form
           form={schedForm}
           layout="vertical"
-          initialValues={{ priority: "中" }}
+          // 优先级机器码须与后端枚举（high/medium/low）一致：早期版本这里写 '中'，
+          // 与 Select 的英文选项不匹配，未手动选择时提交即 400 validation_error
+          initialValues={{ priority: "medium" }}
         >
           <Form.Item
             name="topic"

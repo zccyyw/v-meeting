@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Db, ResultHeader } from "../db.js";
+import { formatLocalDateTime } from "../db.js";
 import type { Redis } from "ioredis";
 import { loadSessionUser } from "../session-user.js";
 import { nowSql } from "../sql-utils.js";
@@ -27,9 +28,11 @@ function mapRow(row: ConfigRow) {
     configValue: row.config_value,
     configType: row.config_type,
     createBy: row.create_by ?? "",
-    createTime: row.create_time,
+    // 展示口径：'YYYY-MM-DD HH:mm:ss'（服务端本地时区）；直接回传 Date 会被
+    // 序列化成带 T/Z 的 ISO，前端原样渲染的表格列就会出现 "2026-10-31T01:00:00.000Z"
+    createTime: formatLocalDateTime(row.create_time) ?? "",
     updateBy: row.update_by ?? "",
-    updateTime: row.update_time,
+    updateTime: formatLocalDateTime(row.update_time) ?? "",
     remark: row.remark ?? "",
   };
 }
