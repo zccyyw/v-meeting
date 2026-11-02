@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# meeting-monitor.sh — Meeting 服务器资源监控采集器
+# 设计：docs/design/服务器资源监控采集器设计方案.md
+# 用法：
+#   meeting-monitor.sh          常驻采集（默认 15s 一轮）
+#   meeting-monitor.sh --once   采集两轮后退出（冒烟/调试；两轮为获得 CPU 差分）
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=monitor-thresholds.sh
+source "$SCRIPT_DIR/monitor-thresholds.sh"
+
+MON_DIR="${MONITOR_DIR:-$PWD/logs/monitor}"
+INTERVAL="${MONITOR_INTERVAL:-15}"
+FAST_INTERVAL=2        # 触发后细采样间隔
+FAST_DURATION=600      # 细采样持续 10 分钟
+METRICS_KEEP_DAYS="${LOG_RETENTION_DAYS:-15}"
+SNAPSHOT_KEEP_DAYS=30
+EXCLUDE_FS_RE='^(tmpfs|devtmpfs|udev|overlay|squashfs|shm|nsfs|ramfs)'
+
+ONCE=0; [ "${1:-}" = "--once" ] && ONCE=1
+
+mkdir -p "$MON_DIR/snapshots" 2>/dev/null
+STATE_FILE="$MON_DIR/.state"
+METRICS_FILE=""; EVENTS_FILE=""
+
+# ── 基础 ──
+now_epoch() { date +%s; }
+now_iso()   { date '+%Y-%m-%dT%H:%M:%S%z'; }
+boot_id()   { cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo "unknown"; }
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+append_line() { printf '%s\n' "$1" >> "$2"; }
+state_get()   { grep -F "$1=" "$STATE_FILE" 2>/dev/null | tail -1 | cut -d= -f2-; }
+state_set()   { printf '%s=%s\n' "$1" "$2" >> "$STATE_FILE"; }
+
+emit_event() { # TYPE LEVEL DETAIL_JSON(可选)
+  append_line "{\"ts\":\"$(now_iso)\",\"type\":\"$1\",\"level\":\"${2:-info}\",\"detail\":${3:-{}}}" "$EVENTS_FILE"
+}
+
+ensure_day_files() { # 参数=YYYYMMDD
+  local want="metrics-$1.jsonl"
+  if [ "$METRICS_FILE" != "$MON_DIR/$want" ]; then
+    METRICS_FILE="$MON_DIR/metrics-$1.jsonl"
+    EVENTS_FILE="$MON_DIR/events-$1.jsonl"
+  fi
+}
+
+# ── 系统指标 ──
+MEM_TOTAL_KB=0; MEM_AVAIL_KB=0; SWAP_USED_KB=0
+read_meminfo() {
+  local k v
+  MEM_TOTAL_KB=0; MEM_AVAIL_KB=0
+  while read -r k v _; do
+    case "$k" in
+      MemTotal:)     MEM_TOTAL_KB=$v ;;
+      MemAvailable:) MEM_AVAIL_KB=$v ;;
+      SwapTotal:)    SWAP_TOTAL=$v ;;
+      SwapFree:)     SWAP_FREE=$v ;;
+    esac
+  done < /proc/meminfo
+  SWAP_USED_KB=$(( ${SWAP_TOTAL:-0} - ${SWAP_FREE:-0} ))
+}
+
+LOAD1=0
+read_loadavg() { LOAD1=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo 0); }
+
+NPROC="$(nproc 2>/dev/null || echo 1)"
+CPU_PREV=""; CPU_PCT=""
+cpu_used_pct() { # 与上轮差分；直接设置全局 CPU_PCT（命令替换子 shell 内的赋值对父不可见，故不走 $()）
+  local cur used total
+  CPU_PCT=""
+  cur=$(awk '/^cpu /{print $2+$3+$4+$6+$7+$8, $2+$3+$4+$5+$6+$7+$8}' /proc/stat 2>/dev/null) || return 0
+  if [ -z "$CPU_PREV" ]; then CPU_PREV="$cur"; return 0; fi
+  used=$(( ${cur%% *} - ${CPU_PREV%% *} ))
+  total=$(( ${cur##* } - ${CPU_PREV##* } ))
+  CPU_PREV="$cur"
+  [ "$total" -le 0 ] && return 0
+  CPU_PCT=$(( used * 100 / total ))
+}
+
+# 每分区输出 "mount|total_kb|avail_kb|used_pct"；inode 单独
+get_disks() {
+  df -P -k 2>/dev/null | awk -v ex="$EXCLUDE_FS_RE" 'NR>1 && $1 !~ ex {
+    pct=$5; sub(/%/,"",pct); print $6"|"$2"|"$4"|"pct
+  }'
+}
+get_disk_inodes() { # mount|inode_used_pct
+  df -iP 2>/dev/null | awk -v ex="$EXCLUDE_FS_RE" 'NR>1 && $1 !~ ex {
+    pct=$5; sub(/%/,"",pct); print $6"|"pct
+  }'
+}
+inode_pct_for() { # mount → pct（缺失或非数字返回 0）
+  local m="$1" row
+  row="$(get_disk_inodes | grep -F "$m|" | head -1)"
+  row="${row##*|}"
+  case "$row" in ''|*[!0-9]*) echo 0 ;; *) printf '%s' "$row" ;; esac
+}
+
+get_top_mem()  { ps aux 2>/dev/null | sort -k6 -rn | head -6 | tail -5 \
+                 | awk '{printf "%s:%sKB:%.60s ", $2, $6, $11}'; }
+get_top_cpu()  { ps aux 2>/dev/null | sort -k3 -rn | head -6 | tail -5 \
+                 | awk '{printf "%s:%s%%:%.60s ", $2, $3, $11}'; }
+get_tcp_estab() { # ss 缺失/失败时输出 -1（管道退出码来自末段 awk，不能靠 || 兜底）
+  local v
+  v=$(ss -s 2>/dev/null | awk '/TCP:/{print $2; exit}')
+  [ -n "$v" ] && echo "$v" || echo -1
+}
+get_uptime_s()  { awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0; }
+
+# ── 采样落盘 ──
+collect_disks_json() { # → 逗号分隔的多分区 JSON 片段
+  local out="" m total avail pct sep=""
+  while IFS='|' read -r m total avail pct; do
+    [ -z "$m" ] && continue
+    out="$out$sep{\"m\":\"$(json_escape "$m")\",\"total_kb\":$total,\"avail_kb\":$avail,\"used_pct\":$pct,\"inode_pct\":$(inode_pct_for "$m")}"
+    sep=","
+  done < <(get_disks)
+  printf '%s' "$out"
+}
+
+write_metrics_sample() { # $1=cpu_pct(可空) $2=docker_json(可空=null)
+  local ts cpu="$1" docker_json="${2:-null}" disks
+  ts="$(now_iso)"
+  disks="$(collect_disks_json)"
+  append_line "{\"ts\":\"$ts\",\"boot\":\"$(boot_id)\",\"uptime_s\":$(get_uptime_s),\"cpu_pct\":${cpu:-null},\"load1\":$LOAD1,\"nproc\":$NPROC,\"mem_total_kb\":$MEM_TOTAL_KB,\"mem_avail_kb\":$MEM_AVAIL_KB,\"swap_used_kb\":$SWAP_USED_KB,\"disks\":[$disks],\"tcp_estab\":$(get_tcp_estab),\"top_mem\":\"$(json_escape "$(get_top_mem)")\",\"top_cpu\":\"$(json_escape "$(get_top_cpu)")\",\"docker\":$docker_json}" "$METRICS_FILE"
+}
+
+# ── 容器指标（Task 3 填充占位：本任务先返回 null）──
+have_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
+collect_docker_json() { echo "null"; }
+
+# ── 阈值评估与快照（Task 4/5 填充占位）──
+evaluate_thresholds() { :; }
+check_oom_journal()   { :; }
+maybe_cleanup()       { :; }
+
+# ── 主循环 ──
+run_round() {
+  local day cpu
+  day="$(date +%Y%m%d)"
+  ensure_day_files "$day"
+  read_meminfo; read_loadavg
+  cpu_used_pct
+  write_metrics_sample "$CPU_PCT" "$(collect_docker_json)"
+  evaluate_thresholds
+  check_oom_journal
+  maybe_cleanup "$day"
+}
+
+sleep_interval() {
+  local now; now="$(now_epoch)"
+  if [ "${FAST_UNTIL:-0}" -gt "$now" ]; then echo "$FAST_INTERVAL"; else echo "$INTERVAL"; fi
+}
+
+startup_checks() { :; } # Task 5 填充
+
+main() {
+  startup_checks
+  while :; do
+    run_round || emit_event monitor_error warn "{\"msg\":\"round failed\"}"
+    if [ "$ONCE" -eq 1 ]; then
+      sleep 1; read_meminfo; read_loadavg
+      cpu_used_pct
+      write_metrics_sample "$CPU_PCT" "$(collect_docker_json)"
+      break
+    fi
+    sleep "$(sleep_interval)"
+  done
+}
+main
