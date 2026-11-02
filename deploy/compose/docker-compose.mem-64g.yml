@@ -1,0 +1,54 @@
+# 内存分级配置（64G 宿主机）— docker-compose override
+#
+# 用法（在仓库根目录 / 离线包根目录）：
+#   docker-compose -f docker-compose.yml -f deploy/compose/docker-compose.mem-64g.yml up -d
+#
+# 说明：
+#   1. 仅追加资源限制，不改端口/卷/镜像；未启用的 profile（mysql/postgres）配置不生效。
+#   2. 语义：mem_limit = 物理内存（RAM）上限；memswap_limit = RAM+swap 总上限，
+#      必须 ≥ mem_limit。两者同值 = 禁用 swap，避免内存超限时进程进入
+#      "假死不 OOM" 的灰状态。注意：memswap_limit < mem_limit 时容器创建直接报错
+#      （"Minimum memoryswap limit should be larger than memory limit"）。
+#   3. 64G 宿主机，全部按 mem_limit 计上限合计 ≈28g（mysql/postgres 互斥不同时启用），
+#      容纳无压力；但相对默认推荐值（合计 ≈5g）护栏灵敏度下降——单容器内存要涨到
+#      6g 才被 OOM kill，泄漏类问题被发现得更晚，需依赖 logs/monitor/ 监控数据
+#      兜底（见 docs/design/服务器资源监控采集器设计方案.md §9）。
+services:
+  realtime:
+    # mediasoup 单 worker（Node 信令 + C++ worker 双进程），50 路并发的内存大头
+    mem_limit: 6g
+    memswap_limit: 6g
+
+  api:
+    # Fastify + 流式录制上传，常态 <300M
+    mem_limit: 6g
+    memswap_limit: 6g
+
+  mysql:
+    mem_limit: 6g
+    memswap_limit: 6g
+
+  postgres:
+    mem_limit: 6g
+    memswap_limit: 6g
+
+  redis:
+    # 数据面已由 --maxmemory 256mb 限制，容器级 limit 仅为护栏
+    mem_limit: 6g
+    memswap_limit: 6g
+    # 整体覆盖基础文件的 command：追加 maxmemory 上限与 LRU 淘汰策略
+    # （会话 key 均带 TTL，LRU 仅为异常累积兜底）
+    command:
+      [
+        "sh",
+        "-c",
+        "exec redis-server ${REDIS_PASSWORD:+--requirepass \"$REDIS_PASSWORD\"} --maxmemory 256mb --maxmemory-policy allkeys-lru --logfile /var/log/redis/redis.log",
+      ]
+
+  web:
+    mem_limit: 3g
+    memswap_limit: 3g
+
+  caddy:
+    mem_limit: 1g
+    memswap_limit: 1g

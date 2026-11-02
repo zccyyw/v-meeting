@@ -1,0 +1,56 @@
+# 内存分级配置（4G 宿主机）— docker-compose override
+#
+# 用法（在仓库根目录 / 离线包根目录）：
+#   docker-compose -f docker-compose.yml -f deploy/compose/docker-compose.mem-4g.yml up -d
+#
+# 说明：
+#   1. 仅追加资源限制，不改端口/卷/镜像；未启用的 profile（mysql/postgres）配置不生效。
+#   2. memswap_limit 与 mem_limit 同值 = 禁用 swap，避免内存超限时进程进入
+#      "假死不 OOM" 的灰状态（卡顿但杀不掉）。
+#   3. 数值为起点值，最终值请结合 logs/monitor/ 监控数据校准（见
+#      docs/design/服务器资源监控采集器设计方案.md §9）。
+#
+# ⚠ 4G 宿主机强烈建议 COMPOSE_PROFILES=sqlite（零数据库容器）：
+#   sqlite 方案应用容器合计 ≈3.1g，宿主机系统层余 ≈0.9g，健康；
+#   叠加 mysql 容器（768m）后合计 ≈3.8g，系统层仅剩 ≈0.2g，不推荐；
+#   必须使用 mysql 时，建议将 realtime 降至 1.2g 并接受并发承载下降。
+services:
+  realtime:
+    # mediasoup 单 worker（Node 信令 + C++ worker 双进程），50 路并发的内存大头；
+    # 若被 OOM kill（UDP socket 内核内存计入 cgroup）应上调而非下调
+    mem_limit: 1536m
+    memswap_limit: 1536m
+
+  api:
+    # Fastify + better-sqlite3（sqlite 模式时进程内含数据库），流式处理录制上传
+    mem_limit: 1g
+    memswap_limit: 1g
+
+  # ⚠ 仅 mysql/postgres profile 启用时生效，见文件头警告
+  mysql:
+    mem_limit: 768m
+    memswap_limit: 768m
+
+  postgres:
+    mem_limit: 768m
+    memswap_limit: 768m
+
+  redis:
+    mem_limit: 384m
+    memswap_limit: 384m
+    # 整体覆盖基础文件的 command：追加 maxmemory 上限与 LRU 淘汰策略
+    # （会话 key 均带 TTL，LRU 仅为异常累积兜底）
+    command:
+      [
+        "sh",
+        "-c",
+        "exec redis-server ${REDIS_PASSWORD:+--requirepass \"$REDIS_PASSWORD\"} --maxmemory 256mb --maxmemory-policy allkeys-lru --logfile /var/log/redis/redis.log",
+      ]
+
+  web:
+    mem_limit: 96m
+    memswap_limit: 96m
+
+  caddy:
+    mem_limit: 96m
+    memswap_limit: 96m
