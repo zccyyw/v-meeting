@@ -259,6 +259,23 @@ if (existsSync(join(root, "deploy", "docker", "install.sh"))) {
   );
 }
 
+// 资源监控采集器（install.sh 4.9 段调用 install-monitor.sh 安装 systemd 服务）
+if (existsSync(join(root, "scripts", "monitor", "install-monitor.sh"))) {
+  mkdirSync(join(out, "scripts", "monitor"), { recursive: true });
+  mkdirSync(join(out, "deploy", "monitor"), { recursive: true });
+  for (const f of [
+    "meeting-monitor.sh",
+    "monitor-thresholds.sh",
+    "install-monitor.sh",
+  ]) {
+    copyTextLf(join(root, "scripts", "monitor", f), join(out, "scripts", "monitor", f));
+  }
+  copyTextLf(
+    join(root, "deploy", "monitor", "meeting-monitor.service"),
+    join(out, "deploy", "monitor", "meeting-monitor.service"),
+  );
+}
+
 // 仅对两个可执行脚本授 755（zip 在 Linux 上解压后保留该权限位）；
 // 其余文件保持默认权限，不需要也不应整体放权
 chmodSync(join(out, "install.sh"), 0o755);
@@ -318,7 +335,13 @@ if (wantZip) {
 /** 递归打包 srcRoot 到 zipPath，顶层目录名为 topDirName；权限显式指定（见上） */
 async function zipOut(srcRoot, zipPath, topDirName) {
   // 可执行脚本白名单：命中授 755，其余文件 644
-  const SCRIPT_NAMES = new Set(["install.sh", "gen-selfsigned.sh"]);
+  const SCRIPT_NAMES = new Set([
+    "install.sh",
+    "gen-selfsigned.sh",
+    "meeting-monitor.sh",
+    "monitor-thresholds.sh",
+    "install-monitor.sh",
+  ]);
   const output = createWriteStream(zipPath);
   const archive = archiver("zip", { forceLocalTime: true });
   const done = new Promise((resolve, reject) => {

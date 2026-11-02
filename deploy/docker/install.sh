@@ -261,6 +261,17 @@ if [ "$CMD" = "--env-only" ]; then
   exit 0
 fi
 
+# ── 4.9 资源监控采集器（存在则安装，失败不阻断部署）──
+# 采集宿主机 CPU/内存/磁盘/容器指标到 logs/monitor/（JSONL），阈值触发现场快照；
+# systemd 常驻（meeting-monitor.service），详见 docs/design/服务器资源监控采集器设计方案.md
+if [ -f "$DIR/scripts/monitor/install-monitor.sh" ]; then
+  if bash "$DIR/scripts/monitor/install-monitor.sh" "$DIR"; then
+    echo "-> 资源监控已启用（数据: $DIR/logs/monitor/）"
+  else
+    echo "!! 资源监控安装失败（不影响业务部署），可稍后手动执行: sudo bash $DIR/scripts/monitor/install-monitor.sh" >&2
+  fi
+fi
+
 compose up -d
 
 # 新生成的证书：bind mount 内容变化不会触发容器重建，需显式重载 caddy

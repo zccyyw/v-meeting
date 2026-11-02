@@ -1,0 +1,14 @@
+[Unit]
+Description=Meeting resource monitor (metrics to JSONL)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@WORKDIR@
+ExecStart=/usr/bin/env bash /usr/local/lib/meeting/meeting-monitor.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
