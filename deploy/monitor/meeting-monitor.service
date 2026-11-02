@@ -6,6 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=@WORKDIR@
+# 读取部署 .env（LOG_RETENTION_DAYS 等可生效）；前导 - 表示文件缺失不报错
+EnvironmentFile=-@WORKDIR@/.env
 ExecStart=/usr/bin/env bash /usr/local/lib/meeting/meeting-monitor.sh
 Restart=always
 RestartSec=10

@@ -34,8 +34,11 @@ compute_disk_thresholds() {
 }
 
 # classify_mem_state AVAIL_KB TOTAL_KB → 输出 ok|warn|crit
+# 输入非数字或 total<=0 时返回 ok（监控不得因脏输入误触快照或除零中断）
 classify_mem_state() {
   local avail="$1" total="$2" a c used_pct
+  case "$avail$total" in ''|*[!0-9]*) echo "ok"; return ;; esac
+  [ "$total" -le 0 ] && { echo "ok"; return; }
   read -r a c <<< "$(compute_mem_thresholds "$total")"
   used_pct=$(( (total - avail) * 100 / total ))
   if [ "$avail" -lt "$c" ]; then echo "crit"
@@ -46,6 +49,8 @@ classify_mem_state() {
 # classify_disk_state AVAIL_KB TOTAL_KB → 输出 ok|warn|crit
 classify_disk_state() {
   local avail="$1" total="$2" a c used_pct
+  case "$avail$total" in ''|*[!0-9]*) echo "ok"; return ;; esac
+  [ "$total" -le 0 ] && { echo "ok"; return; }
   read -r a c <<< "$(compute_disk_thresholds "$total")"
   used_pct=$(( (total - avail) * 100 / total ))
   if [ "$avail" -lt "$c" ]; then echo "crit"

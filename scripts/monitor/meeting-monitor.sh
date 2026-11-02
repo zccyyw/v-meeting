@@ -29,10 +29,19 @@ METRICS_FILE=""; EVENTS_FILE=""
 now_epoch() { date +%s; }
 now_iso()   { date '+%Y-%m-%dT%H:%M:%S%z'; }
 boot_id()   { cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo "unknown"; }
-json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+json_escape() { printf '%s' "$1" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 append_line() { printf '%s\n' "$1" >> "$2"; }
 state_get()   { grep -F "$1=" "$STATE_FILE" 2>/dev/null | tail -1 | cut -d= -f2-; }
-state_set()   { printf '%s=%s\n' "$1" "$2" >> "$STATE_FILE"; }
+state_set() { # 读-改-写单行：高频键（每轮 rc_* / epoch / strikes）否则 .state 无限增长
+  local key="$1" val="$2"
+  if [ -f "$STATE_FILE" ] && grep -q "^${key}=" "$STATE_FILE" 2>/dev/null; then
+    grep -v "^${key}=" "$STATE_FILE" > "$STATE_FILE.tmp" 2>/dev/null || true
+    printf '%s=%s\n' "$key" "$val" >> "$STATE_FILE.tmp"
+    mv "$STATE_FILE.tmp" "$STATE_FILE"
+  else
+    printf '%s=%s\n' "$key" "$val" >> "$STATE_FILE"
+  fi
+}
 
 emit_event() { # TYPE LEVEL DETAIL_JSON(可选)
   # 注意不能写 ${3:-{}}：bash 会把默认值解析为 "{" 再跟一个字面 "}"，
@@ -96,32 +105,31 @@ get_disk_inodes() { # mount|inode_used_pct
     print m"|"pct
   }'
 }
-inode_pct_for() { # mount → pct（缺失或非数字返回 0）
-  local m="$1" row
-  row="$(get_disk_inodes | grep -F "$m|" | head -1)"
-  row="${row##*|}"
-  case "$row" in ''|*[!0-9]*) echo 0 ;; *) printf '%s' "$row" ;; esac
-}
 
 get_top_mem()  { ps aux 2>/dev/null | sort -k6 -rn | head -6 | tail -5 \
                  | awk '{printf "%s:%sKB:%.60s ", $2, $6, $11}'; }
 get_top_cpu()  { ps aux 2>/dev/null | sort -k3 -rn | head -6 | tail -5 \
                  | awk '{printf "%s:%s%%:%.60s ", $2, $3, $11}'; }
-get_tcp_estab() { # ss 缺失/失败时输出 -1（管道退出码来自末段 awk，不能靠 || 兜底）
+get_tcp_estab() { # ss 缺失/失败/非数字时输出 -1（管道退出码来自末段 awk，不能靠 || 兜底）
   local v
   v=$(ss -s 2>/dev/null | awk '/TCP:/{print $2; exit}')
-  [ -n "$v" ] && echo "$v" || echo -1
+  case "$v" in ''|*[!0-9]*) echo -1 ;; *) echo "$v" ;; esac
 }
 get_uptime_s()  { awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0; }
 
 # ── 采样落盘 ──
 collect_disks_json() { # → 逗号分隔的多分区 JSON 片段
-  local out="" m total avail pct sep=""
+  local out="" m total avail pct sep="" inode_table row inode_pct
+  inode_table="$(get_disk_inodes)"   # 一次取全表，避免每分区每轮各跑一次 df 子进程
   while IFS='|' read -r m total avail pct; do
     [ -z "$m" ] && continue
     # 脏输入防御：total/avail/pct 必须为纯数字，否则跳过该分区（防坏 JSON 落盘）
     case "$total$avail$pct" in ''|*[!0-9]*) continue ;; esac
-    out="$out$sep{\"m\":\"$(json_escape "$m")\",\"total_kb\":$total,\"avail_kb\":$avail,\"used_pct\":$pct,\"inode_pct\":$(inode_pct_for "$m")}"
+    inode_pct=0
+    row="$(printf '%s\n' "$inode_table" | grep -F "$m|" | head -1)"
+    row="${row##*|}"
+    case "$row" in [0-9]*) inode_pct="$row" ;; esac
+    out="$out$sep{\"m\":\"$(json_escape "$m")\",\"total_kb\":$total,\"avail_kb\":$avail,\"used_pct\":$pct,\"inode_pct\":$inode_pct}"
     sep=","
   done < <(get_disks)
   printf '%s' "$out"
@@ -162,8 +170,8 @@ detect_container_event() { # NAME RESTARTS OOMKILLED(bool)
   state_set "$key" "$2|$3"
   [ -z "$prev" ] && return 0          # 首次记录基线
   [ "$prev" = "$2|$3" ] && return 0   # 无变化
-  local level="warn"; [ "$3" = "true" ] && level="crit"
-  emit_event container_event "$level" "{\"name\":\"$(json_escape "$1")\",\"restarts\":$2,\"oom_killed\":$3,\"prev\":\"$prev\"}"
+  # RestartCount 增加或 OOMKilled 均为 crit（spec §5.3）
+  emit_event container_event "crit" "{\"name\":\"$(json_escape "$1")\",\"restarts\":$2,\"oom_killed\":$3,\"prev\":\"$prev\"}"
 }
 
 # ── 阈值评估与快照 ──
@@ -186,11 +194,12 @@ snapshot_now() { # $1=reason
   emit_event snapshot_taken info "{\"reason\":\"$1\",\"dir\":\"$(basename "$dir")\"}"
 }
 
-handle_alert() { # $1=level(ok|warn|crit) $2=reason $3=detail_json
+handle_alert() { # $1=level $2=reason $3=detail_json $4=冷却key后缀(可选，如转义后的挂载点)
   local level="$1" reason="$2" now key last
   [ "$level" = "ok" ] && return 0
   now="$(now_epoch)"
-  key="snap_${reason}"
+  # 冷却 key 带后缀：不同磁盘的告警互不压制冷却期
+  key="snap_${reason}${4:+_$(printf '%s' "$4" | tr -c 'A-Za-z0-9_' _)}"
   last="$(state_get "$key")"
   # 冷却期：同类告警 30 分钟内不重抓快照（事件仍记录）
   if [ -z "$last" ] || [ $(( now - last )) -ge 1800 ]; then
@@ -210,12 +219,14 @@ evaluate_thresholds() {
     # 脏输入防御：非数字（如异常 df 输出被路径空格拆碎）直接跳过，不产坏 JSON
     case "$total$avail$pct" in ''|*[!0-9-]*) continue ;; esac
     disk_state="$(classify_disk_state "$avail" "$total")"
-    handle_alert "$disk_state" "disk" "{\"mount\":\"$(json_escape "$m")\",\"avail_kb\":$avail,\"total_kb\":$total,\"used_pct\":$pct}"
+    handle_alert "$disk_state" "disk" "{\"mount\":\"$(json_escape "$m")\",\"avail_kb\":$avail,\"total_kb\":$total,\"used_pct\":$pct}" "$m"
   done < <(get_disks)
   # 负载：load1 ≥ 2×核数 连续 3 轮
-  local lcount
+  local lcount strikes
   if awk -v l="$LOAD1" -v n="$NPROC" 'BEGIN{exit !(l >= 2*n)}'; then
-    lcount=$(( $(state_get load_strikes || echo 0) + 1 ))
+    strikes="$(state_get load_strikes)"; strikes=${strikes:-0}
+    case "$strikes" in *[!0-9]*) strikes=0 ;; esac
+    lcount=$(( strikes + 1 ))
     state_set load_strikes "$lcount"
     [ "$lcount" -ge 3 ] && handle_alert warn "load" "{\"load1\":$LOAD1,\"nproc\":$NPROC,\"strikes\":$lcount}"
   else
@@ -226,19 +237,29 @@ evaluate_thresholds() {
 startup_checks() {
   ensure_day_files "$(date +%Y%m%d)"
   read_meminfo
-  local a c
+  local a c disks_json docker_root docker_avail
   read -r a c <<< "$(compute_mem_thresholds "$MEM_TOTAL_KB")"
-  emit_event capacity info "{\"cores\":$NPROC,\"mem_total_kb\":$MEM_TOTAL_KB,\"mem_warn_kb\":$a,\"mem_crit_kb\":$c,\"boot_id\":\"$(boot_id)\"}"
+  disks_json="$(collect_disks_json)"
+  docker_root="$(docker info -f '{{.DockerRootDir}}' 2>/dev/null)"
+  docker_avail="null"
+  if [ -n "$docker_root" ]; then
+    docker_avail="$(df -P -k "$docker_root" 2>/dev/null | awk 'NR==2{print $4}')"
+    case "$docker_avail" in ''|*[!0-9]*) docker_avail="null" ;; esac
+  fi
+  # capacity 基准：事后还原"当时的阈值是怎么算的"（含磁盘与 Docker 数据根分区）
+  emit_event capacity info "{\"cores\":$NPROC,\"mem_total_kb\":$MEM_TOTAL_KB,\"mem_warn_kb\":$a,\"mem_crit_kb\":$c,\"disks\":[$disks_json],\"docker_root\":\"$(json_escape "$docker_root")\",\"docker_root_avail_kb\":$docker_avail,\"boot_id\":\"$(boot_id)\"}"
   boot_check
 }
 
 boot_check() { # 上一次 boot 的 OOM 与干净关机检测（尽力而为）
   local prev_oom clean
   journalctl --list-boots --no-pager 2>/dev/null | grep -q -- '-' || return 0
-  prev_oom=$(journalctl -b -1 --no-pager 2>/dev/null | grep -icE 'oom-kill|out of memory' || echo 0)
-  clean=$(journalctl -b -1 -n 50 --no-pager 2>/dev/null | grep -icE 'powering off|reached target (poweroff|shutdown)' || echo 0)
-  local level="info"; [ "${prev_oom:-0}" -gt 0 ] && level="crit"
-  emit_event boot_check "$level" "{\"prev_boot_oom_lines\":${prev_oom:-0},\"prev_boot_clean_shutdown_lines\":${clean:-0}}"
+  # grep -c 零匹配时输出 "0" 且退出码 1：不能接 || echo 0（会叠加出多行值污染 JSON）
+  prev_oom=$(journalctl -b -1 --no-pager 2>/dev/null | grep -icE 'oom-kill|out of memory')
+  clean=$(journalctl -b -1 -n 50 --no-pager 2>/dev/null | grep -icE 'powering off|reached target (poweroff|shutdown)')
+  prev_oom=${prev_oom:-0}; clean=${clean:-0}
+  local level="info"; [ "$prev_oom" -gt 0 ] && level="crit"
+  emit_event boot_check "$level" "{\"prev_boot_oom_lines\":$prev_oom,\"prev_boot_clean_shutdown_lines\":$clean}"
 }
 
 check_oom_journal() { # 内核日志 OOM 增量（--since 上次检查点）
@@ -247,9 +268,10 @@ check_oom_journal() { # 内核日志 OOM 增量（--since 上次检查点）
   since="$(state_get last_oom_check_epoch)"
   now="$(now_epoch)"
   [ -z "$since" ] && { state_set last_oom_check_epoch "$now"; return 0; }
-  count=$(journalctl -k --no-pager --since "@$since" 2>/dev/null | grep -icE 'oom-kill|out of memory' || echo 0)
+  count=$(journalctl -k --no-pager --since "@$since" 2>/dev/null | grep -icE 'oom-kill|out of memory')
+  count=${count:-0}
   state_set last_oom_check_epoch "$now"
-  [ "${count:-0}" -gt 0 ] && handle_alert crit "kernel_oom" "{\"oom_lines\":$count}"
+  [ "$count" -gt 0 ] && handle_alert crit "kernel_oom" "{\"oom_lines\":$count}"
   return 0
 }
 
