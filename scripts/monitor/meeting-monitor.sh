@@ -248,7 +248,19 @@ check_oom_journal() { # 内核日志 OOM 增量（--since 上次检查点）
   return 0
 }
 
-maybe_cleanup()       { :; } # Task 6 填充
+maybe_cleanup() { # $1=YYYYMMDD（每天执行一次）
+  local today="$1" last
+  last="$(state_get last_cleanup_day)"
+  [ "$last" = "$today" ] && return 0
+  state_set last_cleanup_day "$today"
+  # 前天及更早的 jsonl 压缩（mtime >1 天）
+  find "$MON_DIR" -maxdepth 1 -name '*.jsonl' -mtime +1 -exec gzip -f {} \; 2>/dev/null
+  # 超保留期删除
+  find "$MON_DIR" -maxdepth 1 -name 'metrics-*.jsonl.gz' -mtime +"$METRICS_KEEP_DAYS" -delete 2>/dev/null
+  find "$MON_DIR" -maxdepth 1 -name 'events-*.jsonl.gz'  -mtime +"$METRICS_KEEP_DAYS" -delete 2>/dev/null
+  find "$MON_DIR/snapshots" -maxdepth 1 -mindepth 1 -type d -mtime +"$SNAPSHOT_KEEP_DAYS" \
+    -exec rm -rf {} \; 2>/dev/null
+}
 
 # ── 主循环 ──
 run_round() {
