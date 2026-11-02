@@ -4,9 +4,12 @@ import { useTranslation } from "react-i18next";
 import {
   App as AntApp,
   Avatar,
+  Button,
   Layout,
   Menu,
   Modal,
+  Popover,
+  Tag,
   Tooltip,
   theme,
 } from "antd";
@@ -21,10 +24,13 @@ import {
 import {
   clearSession,
   getDisplayName,
+  getRole,
+  getRoles,
+  getUsername,
+  isManager,
 } from "@/auth/session";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 import { NotificationBell } from "@/components/NotificationBell";
-import { isManager } from "@/auth/session";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { api } from "@/api/client";
@@ -33,6 +39,15 @@ import { SiteBrand } from "@/site/SiteBrand";
 import { SiteFooter } from "@/site/SiteFooter";
 
 const { Sider, Content } = Layout;
+
+// 角色 → i18n 键；未登记的角色直接显示原始 key，避免信息丢失
+const ROLE_LABEL_KEYS: Record<string, string> = {
+  admin: "nav.roleSysAdmin",
+  sys_admin: "nav.roleSysAdmin",
+  auth_admin: "nav.roleAuthAdmin",
+  audit_admin: "nav.roleAuditAdmin",
+  user: "nav.roleUser",
+};
 
 function initialsFromName(name: string): string {
   const trimmed = name.trim();
@@ -52,6 +67,21 @@ function AppShellInner() {
   const { token } = theme.useToken();
   const displayName = getDisplayName();
   const [pwdOpen, setPwdOpen] = useState(false);
+  // 头像浮窗：hover 展开个人信息 / 修改密码 / 退出系统
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const username = getUsername();
+  // 角色标签：优先取多角色，缺失时回退到单角色字段
+  const roleNames = (() => {
+    const keys = getRoles();
+    const list = keys.length > 0 ? keys : [getRole() === "admin" ? "admin" : "user"];
+    const names: string[] = [];
+    for (const key of list) {
+      const labelKey = ROLE_LABEL_KEYS[key];
+      const name = labelKey ? t(labelKey) : key;
+      if (!names.includes(name)) names.push(name);
+    }
+    return names;
+  })();
   const { canInstall, installed, promptInstall } = useInstallPrompt();
 
   // ── 登录后提示修改密码（默认密码/密码过期），非强制 ──
@@ -141,6 +171,92 @@ function AppShellInner() {
       : []),
   ];
 
+  // 头像浮窗内容：个人信息 + 修改密码 + 退出系统
+  const userMenu = (
+    <div style={{ width: 220 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "2px 2px 10px" }}>
+        <Avatar
+          size={40}
+          style={{
+            background: token.colorPrimary,
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            flex: "none",
+          }}
+        >
+          {initialsFromName(displayName)}
+        </Avatar>
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              lineHeight: "20px",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {displayName || "—"}
+          </div>
+          {username && (
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: "18px",
+                color: token.colorTextSecondary,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              @{username}
+            </div>
+          )}
+          {roleNames.length > 0 && (
+            <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {roleNames.map((name) => (
+                <Tag
+                  key={name}
+                  color="blue"
+                  style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "16px", paddingInline: 6 }}
+                >
+                  {name}
+                </Tag>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{ borderTop: `1px solid ${token.colorSplit}`, margin: "0 -4px 4px" }} />
+      <Button
+        type="text"
+        block
+        icon={<LockOutlined />}
+        style={{ justifyContent: "flex-start", paddingInline: 8 }}
+        onClick={() => {
+          setUserMenuOpen(false);
+          setPwdOpen(true);
+        }}
+      >
+        {t("nav.changePassword")}
+      </Button>
+      <Button
+        type="text"
+        block
+        danger
+        icon={<LogoutOutlined />}
+        style={{ justifyContent: "flex-start", paddingInline: 8 }}
+        onClick={() => {
+          setUserMenuOpen(false);
+          onLogout();
+        }}
+      >
+        {t("nav.logoutSystem")}
+      </Button>
+    </div>
+  );
+
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <Sider
@@ -163,12 +279,38 @@ function AppShellInner() {
         <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, paddingTop: 16 }}>
           {/* 站点品牌（窄侧栏下仅显示 Logo 图标） */}
           <SiteBrand showName={false} />
-          <Avatar
-            size={40}
-            style={{ background: token.colorPrimary, fontSize: "0.75rem", fontWeight: 600 }}
+          <Popover
+            open={userMenuOpen}
+            onOpenChange={setUserMenuOpen}
+            trigger={["hover", "click"]}
+            placement="rightTop"
+            mouseEnterDelay={0.15}
+            content={userMenu}
+            arrow
           >
-            {initialsFromName(displayName)}
-          </Avatar>
+            <button
+              type="button"
+              aria-label={t("nav.userMenu")}
+              aria-haspopup="menu"
+              aria-expanded={userMenuOpen}
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                margin: 0,
+                lineHeight: 0,
+                cursor: "pointer",
+                borderRadius: "50%",
+              }}
+            >
+              <Avatar
+                size={40}
+                style={{ background: token.colorPrimary, fontSize: "0.75rem", fontWeight: 600 }}
+              >
+                {initialsFromName(displayName)}
+              </Avatar>
+            </button>
+          </Popover>
         </div>
 
         <Menu
@@ -211,29 +353,6 @@ function AppShellInner() {
               </button>
             </Tooltip>
           )}
-          <Tooltip title={t("nav.changePassword")}>
-            <button
-              type="button"
-              onClick={() => setPwdOpen(true)}
-              aria-label={t("nav.changePassword")}
-              style={{
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: "10px 4px",
-                fontSize: 22,
-                color: "inherit",
-                width: 44,
-                height: 44,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 8,
-              }}
-            >
-              <LockOutlined />
-            </button>
-          </Tooltip>
           <Tooltip title={t("nav.logout")}>
             <button
               type="button"

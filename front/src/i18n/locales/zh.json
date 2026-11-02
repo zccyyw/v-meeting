@@ -24,7 +24,12 @@
     "userMenu": "用户菜单",
     "manager": "管理",
     "collapseMenu": "收起菜单",
-    "expandMenu": "展开菜单"
+    "expandMenu": "展开菜单",
+    "logoutSystem": "退出系统",
+    "roleSysAdmin": "系统管理员",
+    "roleAuthAdmin": "授权管理员",
+    "roleAuditAdmin": "审计管理员",
+    "roleUser": "普通用户"
   },
   "manager": {
     "login": {

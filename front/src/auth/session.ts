@@ -6,6 +6,9 @@ export function getSessionId() {
 export function getDisplayName() {
   return localStorage.getItem("displayName") ?? "";
 }
+export function getUsername() {
+  return localStorage.getItem("username") ?? "";
+}
 export function getRole(): UserRole {
   return localStorage.getItem("role") === "admin" ? "admin" : "user";
 }

@@ -19,7 +19,7 @@ import {
   theme,
 } from "antd";
 import {
-  LoginOutlined,
+  VideoCameraAddOutlined,
   VideoCameraOutlined,
   ScheduleOutlined,
   PlayCircleOutlined,
@@ -433,7 +433,7 @@ export function HomePage() {
   }
 
   const tiles = [
-    { key: "join", label: t("home.join"), icon: <LoginOutlined style={{ fontSize: TILE_ICON_SIZE }} />, onClick: () => openJoinModal() },
+    { key: "join", label: t("home.join"), icon: <VideoCameraAddOutlined style={{ fontSize: TILE_ICON_SIZE }} />, onClick: () => openJoinModal() },
     { key: "instant", label: t("home.instant"), icon: <VideoCameraOutlined style={{ fontSize: TILE_ICON_SIZE }} />, onClick: () => void onInstant() },
     { key: "schedule", label: t("home.schedule"), icon: <ScheduleOutlined style={{ fontSize: TILE_ICON_SIZE }} />, onClick: () => {
       schedForm.resetFields();

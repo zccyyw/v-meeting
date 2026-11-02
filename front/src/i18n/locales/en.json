@@ -24,7 +24,12 @@
     "userMenu": "User menu",
     "manager": "Manager",
     "collapseMenu": "Collapse menu",
-    "expandMenu": "Expand menu"
+    "expandMenu": "Expand menu",
+    "logoutSystem": "Log out",
+    "roleSysAdmin": "System Administrator",
+    "roleAuthAdmin": "Authorization Administrator",
+    "roleAuditAdmin": "Audit Administrator",
+    "roleUser": "User"
   },
   "manager": {
     "login": {
