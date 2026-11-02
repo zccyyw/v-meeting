@@ -8,7 +8,8 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=monitor-thresholds.sh
-source "$SCRIPT_DIR/monitor-thresholds.sh"
+source "$SCRIPT_DIR/monitor-thresholds.sh" \
+  || { echo "!! 缺少 $SCRIPT_DIR/monitor-thresholds.sh，无法启动监控" >&2; exit 1; }
 
 MON_DIR="${MONITOR_DIR:-$PWD/logs/monitor}"
 INTERVAL="${MONITOR_INTERVAL:-15}"
@@ -159,10 +160,63 @@ detect_container_event() { # NAME RESTARTS OOMKILLED(bool)
   emit_event container_event "$level" "{\"name\":\"$(json_escape "$1")\",\"restarts\":$2,\"oom_killed\":$3,\"prev\":\"$prev\"}"
 }
 
-# ── 阈值评估与快照（Task 4/5 填充占位）──
-evaluate_thresholds() { :; }
-check_oom_journal()   { :; }
-maybe_cleanup()       { :; }
+# ── 阈值评估与快照 ──
+snapshot_now() { # $1=reason
+  local dir="$MON_DIR/snapshots/$(date +%Y%m%dT%H%M%S)-$1"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  dmesg -T 2>/dev/null | tail -200 > "$dir/dmesg-tail.txt" \
+    || journalctl -k -n 200 --no-pager > "$dir/dmesg-tail.txt" 2>/dev/null
+  journalctl -k --no-pager 2>/dev/null | grep -iE 'oom|out of memory' \
+    > "$dir/journalctl-oom.txt" || true
+  ps aux --sort=-rss  2>/dev/null | head -11 > "$dir/top-mem.txt"
+  ps aux --sort=-%cpu 2>/dev/null | head -11 > "$dir/top-cpu.txt"
+  df -P -k  > "$dir/df.txt" 2>/dev/null
+  df -iP    > "$dir/df-inode.txt" 2>/dev/null
+  ss -s     > "$dir/ss-summary.txt" 2>/dev/null
+  if have_docker; then
+    docker stats --no-stream > "$dir/docker-stats.txt" 2>/dev/null
+    docker ps -a             > "$dir/docker-ps.txt" 2>/dev/null
+  fi
+  emit_event snapshot_taken info "{\"reason\":\"$1\",\"dir\":\"$(basename "$dir")\"}"
+}
+
+handle_alert() { # $1=level(ok|warn|crit) $2=reason $3=detail_json
+  local level="$1" reason="$2" now key last
+  [ "$level" = "ok" ] && return 0
+  now="$(now_epoch)"
+  key="snap_${reason}"
+  last="$(state_get "$key")"
+  # 冷却期：同类告警 30 分钟内不重抓快照（事件仍记录）
+  if [ -z "$last" ] || [ $(( now - last )) -ge 1800 ]; then
+    state_set "$key" "$now"
+    snapshot_now "$reason"
+    FAST_UNTIL=$(( now + FAST_DURATION ))   # 细采样 2s × 10min
+  fi
+  emit_event "alert_${reason}" "$level" "$3"
+}
+
+evaluate_thresholds() {
+  local mem_state disk_state m total avail pct
+  mem_state="$(classify_mem_state "$MEM_AVAIL_KB" "$MEM_TOTAL_KB")"
+  handle_alert "$mem_state" "mem" "{\"avail_kb\":$MEM_AVAIL_KB,\"total_kb\":$MEM_TOTAL_KB,\"load1\":$LOAD1}"
+  while IFS='|' read -r m total avail pct; do
+    [ -z "$m" ] && continue
+    disk_state="$(classify_disk_state "$avail" "$total")"
+    handle_alert "$disk_state" "disk" "{\"mount\":\"$(json_escape "$m")\",\"avail_kb\":$avail,\"total_kb\":$total,\"used_pct\":$pct}"
+  done < <(get_disks)
+  # 负载：load1 ≥ 2×核数 连续 3 轮
+  local lcount
+  if awk -v l="$LOAD1" -v n="$NPROC" 'BEGIN{exit !(l >= 2*n)}'; then
+    lcount=$(( $(state_get load_strikes || echo 0) + 1 ))
+    state_set load_strikes "$lcount"
+    [ "$lcount" -ge 3 ] && handle_alert warn "load" "{\"load1\":$LOAD1,\"nproc\":$NPROC,\"strikes\":$lcount}"
+  else
+    state_set load_strikes 0
+  fi
+}
+
+check_oom_journal()   { :; } # Task 5 填充
+maybe_cleanup()       { :; } # Task 6 填充
 
 # ── 主循环 ──
 run_round() {
