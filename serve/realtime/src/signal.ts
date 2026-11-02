@@ -1786,10 +1786,11 @@ export function createSignalHandler(db: Db) {
         case "createWebRtcTransport": {
           const ctx = requireAdmitted(ws);
           if (!ctx) return;
-          // 仅 recv（下行）transport 抬高 BWE 起点：默认 600k 会导致入会先压到
-          // 低 simulcast 层（模糊）再爬坡升层，会议中带宽估计波动还会反复降/升层
-          // （共享画面模糊↔清晰震荡）。send 方向的 outgoing 是客户端上行，SFU
-          // 端估计无意义，不传。
+          // 仅 recv（SFU→客户端下行）transport 抬高 BWE 起点：默认 600k 会导致入会
+          // 先压到低 simulcast 层（模糊）再爬坡升层，会议中带宽估计波动还会反复降/升层
+          // （共享画面模糊↔清晰震荡）。send transport 的 outgoing 是 SFU 发给共享端的
+          // 下行（共享端看他人画面），与"客户端上行"无关；不上行 BWE 由客户端编码侧
+          // 的 encodings.startBitrate 负责，故 send 方向此处不传以避免盲目抬高。
           const transport = await createWebRtcTransport(
             ctx.state.router,
             message.direction === "recv"

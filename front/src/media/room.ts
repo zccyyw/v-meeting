@@ -917,10 +917,15 @@ export class MediaRoom {
         //   顺序颠倒会让成员端永远收到 ÷2 半分辨率层（拉伸铺满→模糊）。
         encodings: [
           { rid: "s1", maxBitrate: 2_500_000, scaleResolutionDownBy: 2, maxFramerate: 15 },
-          { rid: "s0", maxBitrate: 6_000_000, scaleResolutionDownBy: 1, maxFramerate: 15 },
+          // startBitrate：浏览器 WebRTC 发送端默认起始编码码率仅 ~300k，GCC 爬坡到
+          // 6Mbps 需 3~5s，表现为"刚共享先模糊后清晰"。显式从满码率起步编码，跳过
+          // 上行爬坡期（下行 BWE 起点已由 realtime 侧 initialAvailableOutgoingBitrate 抬高）。
+          // 弱网时 GCC 仍会自适应降层，比持续模糊体验更好。
+          // startBitrate 是 Chrome 实际支持但 lib.dom 未声明，故用类型断言绕过。
+          { rid: "s0", maxBitrate: 6_000_000, scaleResolutionDownBy: 1, maxFramerate: 15, startBitrate: 6_000_000 } as RTCRtpEncodingParameters,
         ],
-        // 起步码率=目标码率：消除共享开始后 ~1s 的"模糊→清晰"爬坡期
-        // （libwebrtc 默认起步 ~300k，靠带宽估计数秒爬升）
+        // videoGoogleStartBitrate（Google 私有、simulcast 下不一定生效，已 deprecated）：
+        // 作为起步码率兜底；真正的上行爬坡消除由上方 encodings.startBitrate 标准字段负责。
         codecOptions: { videoGoogleStartBitrate: 6000 },
         appData: { source: "screen" },
       });
