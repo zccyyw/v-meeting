@@ -514,7 +514,26 @@
     "index": "序号",
     "totalItems": "共 {{count}} 条",
     "export": "导出",
-    "clean": "清空"
+    "clean": "清空",
+    "reset": "重置",
+    "uploadSuccess": "上传成功",
+    "loadFailed": "加载失败"
+  },
+  "site": {
+    "title": "站点设置",
+    "name": "项目名称",
+    "nameRequired": "请输入项目名称",
+    "logo": "项目Logo",
+    "uploadLogo": "上传Logo",
+    "logoHint": "支持 png/jpg/jpeg/svg，≤600KB",
+    "version": "版本标识",
+    "footerCopyright": "页脚版权",
+    "footerCopyrightHint": "留空则不显示版权",
+    "footerShowVersion": "页脚显示版本",
+    "tabShowName": "页签显示名称",
+    "tabTitle": "页签标题",
+    "tabTitleHint": "留空则使用项目名称",
+    "preview": "预览"
   },
   "dept": {
     "title": "部门管理",

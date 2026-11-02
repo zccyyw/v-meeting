@@ -21,6 +21,7 @@ import { userApprovalRoutes } from "./routes/sys-user-approval.js";
 import { meetingAppRoutes } from "./routes/meeting-applications.js";
 import { meetingGroupRoutes } from "./routes/meeting-groups.js";
 import { caCertRoutes } from "./routes/ca-cert.js";
+import { siteSettingsRoutes } from "./routes/site-settings.js";
 import { getConfigInt } from "./config-cache.js";
 import { isForceChangePassword } from "./auth.js";
 import { loadSessionUser } from "./session-user.js";
@@ -118,6 +119,7 @@ await userApprovalRoutes(app, db, redis);
 await meetingAppRoutes(app, db, redis);
 await meetingGroupRoutes(app, db, redis);
 await caCertRoutes(app);
+await siteSettingsRoutes(app, db, redis);
 
 // 注册操作日志自动记录钩子
 registerOperLogHook(app, db, redis);

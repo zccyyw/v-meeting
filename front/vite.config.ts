@@ -9,6 +9,8 @@ import react from "@vitejs/plugin-react";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const frontRoot = path.dirname(fileURLToPath(import.meta.url));
+// 读取仓库 package.json 版本号，注入为构建期常量 __APP_VERSION__（前端站点设置页脚/页签兜底用）
+const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 
 /**
  * 品牌与 PWA 的仓库默认值：按客户定制时在**构建前**修改 config/branding.json 即可
@@ -121,9 +123,18 @@ export default defineConfig(({ mode }) => {
       // 已扫描确认业务代码无 es2021+ 运行时 API 依赖，转译即可覆盖。
       target: "es2020",
     },
+    // ⚠ define 只能出现一次：对象字面量重复键后者覆盖前者（曾因两个 define 并存
+    //   导致 __MEETING_CRYPTO_KEY__ 被静默丢弃，前端回退默认密钥 → 本地登录报"密码错误"）
     define: {
-      // 注入 AES-GCM 加密密钥到前端（与后端 MEETING_CRYPTO_KEY 保持一致）
-      __MEETING_CRYPTO_KEY__: JSON.stringify(env.MEETING_CRYPTO_KEY ?? ""),
+      // 注入 AES-GCM 加密密钥到前端（与后端 MEETING_CRYPTO_KEY 同源：仓库根 .env）。
+      // 未配置时不注入（保持运行时 typeof undefined → 回退默认密钥），
+      // 避免 `""` 空密钥被 typeof 分支取用造成新的不一致；
+      // 生产 web 镜像构建时 CI 无 .env，运行时由 /app-config.js 注入 globalThis，机制不变。
+      ...(env.MEETING_CRYPTO_KEY
+        ? { __MEETING_CRYPTO_KEY__: JSON.stringify(env.MEETING_CRYPTO_KEY) }
+        : {}),
+      // 站点设置中 site.version 为空时，前端以此为兜底版本号
+      __APP_VERSION__: JSON.stringify(pkg.version),
     },
     resolve: {
       alias: {

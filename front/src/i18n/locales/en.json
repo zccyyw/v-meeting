@@ -514,7 +514,26 @@
     "index": "No.",
     "totalItems": "Total {{count}} items",
     "export": "Export",
-    "clean": "Clean All"
+    "clean": "Clean All",
+    "reset": "Reset",
+    "uploadSuccess": "Uploaded",
+    "loadFailed": "Failed to load"
+  },
+  "site": {
+    "title": "Site Settings",
+    "name": "Site Name",
+    "nameRequired": "Site name is required",
+    "logo": "Logo",
+    "uploadLogo": "Upload Logo",
+    "logoHint": "png/jpg/jpeg/svg, ≤600KB",
+    "version": "Version",
+    "footerCopyright": "Footer copyright",
+    "footerCopyrightHint": "Empty to hide",
+    "footerShowVersion": "Show version in footer",
+    "tabShowName": "Show name in browser tab",
+    "tabTitle": "Tab title",
+    "tabTitleHint": "Empty to use site name",
+    "preview": "Preview"
   },
   "dept": {
     "title": "Departments",

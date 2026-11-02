@@ -29,6 +29,8 @@ import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { api } from "@/api/client";
 import { ThemeToggle } from "@/theme/ThemeToggle";
+import { SiteBrand } from "@/site/SiteBrand";
+import { SiteFooter } from "@/site/SiteFooter";
 
 const { Sider, Content } = Layout;
 
@@ -159,6 +161,8 @@ function AppShellInner() {
         }}
       >
         <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, paddingTop: 16 }}>
+          {/* 站点品牌（窄侧栏下仅显示 Logo 图标） */}
+          <SiteBrand showName={false} />
           <Avatar
             size={40}
             style={{ background: token.colorPrimary, fontSize: "0.75rem", fontWeight: 600 }}
@@ -277,6 +281,10 @@ function AppShellInner() {
       >
         <p>{t("idle.warningText", { seconds: remainingSec })}</p>
       </Modal>
+
+      <Layout.Footer style={{ background: "transparent", padding: 0 }}>
+        <SiteFooter />
+      </Layout.Footer>
     </Layout>
   );
 }

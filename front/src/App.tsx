@@ -10,6 +10,7 @@ import {
 import { setPendingJoinCode } from "@/auth/joinPrefs";
 import { getSessionId, isManager, getRoles } from "@/auth/session";
 import { AppShell } from "@/components/AppShell";
+import { SiteSettingsProvider } from "@/site/SiteSettingsContext";
 import { AuthBootstrap } from "@/components/AuthBootstrap";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { HomePage } from "@/pages/HomePage";
@@ -45,6 +46,9 @@ const MenusPage = lazy(() =>
 );
 const ConfigsPage = lazy(() =>
   import("@/pages/manager/ConfigsPage").then((m) => ({ default: m.ConfigsPage })),
+);
+const SiteSettingsPage = lazy(() =>
+  import("@/pages/manager/SiteSettingsPage").then((m) => ({ default: m.SiteSettingsPage })),
 );
 const NoticesPage = lazy(() =>
   import("@/pages/manager/NoticesPage").then((m) => ({ default: m.NoticesPage })),
@@ -112,6 +116,7 @@ export default function App() {
     // 不再白屏，提供刷新入口与错误详情
     <ErrorBoundary>
       <BrowserRouter>
+        <SiteSettingsProvider>
         <Routes>
         {/* ── 会议应用入口 ── */}
         <Route path="/login" element={<LoginPage />} />
@@ -148,6 +153,7 @@ export default function App() {
             <Route path="role" element={<Suspense fallback={null}><RolesPage /></Suspense>} />
             <Route path="menu" element={<Suspense fallback={null}><MenusPage /></Suspense>} />
             <Route path="config" element={<Suspense fallback={null}><ConfigsPage /></Suspense>} />
+            <Route path="site-settings" element={<Suspense fallback={null}><SiteSettingsPage /></Suspense>} />
             <Route path="notice" element={<Suspense fallback={null}><NoticesPage /></Suspense>} />
             <Route path="operlog" element={<Suspense fallback={null}><OperLogPage /></Suspense>} />
             <Route path="loginlog" element={<Suspense fallback={null}><LoginLogsPage /></Suspense>} />
@@ -161,6 +167,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+        </SiteSettingsProvider>
     </BrowserRouter>
     </ErrorBoundary>
   );

@@ -37,6 +37,8 @@ import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { api, SysMenuApi } from "@/api/client";
 import { getIcon } from "@/components/iconRegistry";
+import { SiteBrand } from "@/site/SiteBrand";
+import { SiteFooter } from "@/site/SiteFooter";
 const { Header, Sider, Content } = Layout;
 
 /**
@@ -195,28 +197,8 @@ function ManagerShellInner() {
           boxShadow: `0 1px 4px ${token.colorFillSecondary}`,
         }}
       >
-        {/* Logo + 系统名称 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 6,
-              background: token.colorPrimary,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#fff",
-              fontSize: 16,
-              fontWeight: 700,
-            }}
-          >
-            M
-          </div>
-          <Typography.Title level={4} style={{ margin: 0, lineHeight: "56px" }}>
-            {t("nav.systemManagement")}
-          </Typography.Title>
-        </div>
+        {/* Logo + 系统名称（来自站点设置，可页面维护） */}
+        <SiteBrand />
 
         {/* 右侧：返回会议 + 主题切换 + 用户头像（悬浮菜单：修改密码 / 退出） */}
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -374,6 +356,10 @@ function ManagerShellInner() {
       >
         <p>{t("idle.warningText", { seconds: remainingSec })}</p>
       </Modal>
+
+      <Layout.Footer style={{ background: "transparent", padding: 0 }}>
+        <SiteFooter />
+      </Layout.Footer>
     </Layout>
   );
 }

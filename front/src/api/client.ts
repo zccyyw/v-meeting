@@ -486,6 +486,40 @@ export const SysConfigApi = {
   remove: (id: number) => api<void>(`/sys-config/${id}`, { method: "DELETE" }),
 };
 
+// ── 站点设置 API ──
+export interface SiteSettings {
+  name: string;
+  logo: string;
+  version: string;
+  footerCopyright: string;
+  footerShowVersion: boolean;
+  tabShowName: boolean;
+  tabTitle: string;
+}
+
+export const SiteSettingsApi = {
+  get: () => api<SiteSettings>("/site-settings"),
+  update: (body: SiteSettings) =>
+    api<SiteSettings>("/site-settings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  uploadLogo: async (file: Blob) => {
+    const fd = new FormData();
+    fd.append("file", file, "logo");
+    const headers = new Headers();
+    const sid = getSessionId();
+    if (sid) headers.set("x-session-id", sid);
+    const res = await fetch(`${API_BASE}/site-settings/logo`, {
+      method: "POST",
+      headers,
+      body: fd,
+    });
+    if (!res.ok) await throwApiError(res);
+    return res.json() as Promise<{ url: string }>;
+  },
+};
+
 // ── 通知公告 API ──
 
 export type NoticeItem = {

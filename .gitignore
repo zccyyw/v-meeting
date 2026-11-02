@@ -7,6 +7,8 @@ certs/*.key
 .certs/
 front/public/ca.crt
 *.log
+# 运行时数据（录制文件、上传的站点 logo 等，禁止入库）
+/data/
 coverage
 .superpowers/
 .cache/
