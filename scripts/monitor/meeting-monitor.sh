@@ -215,7 +215,36 @@ evaluate_thresholds() {
   fi
 }
 
-check_oom_journal()   { :; } # Task 5 填充
+startup_checks() {
+  ensure_day_files "$(date +%Y%m%d)"
+  read_meminfo
+  local a c
+  read -r a c <<< "$(compute_mem_thresholds "$MEM_TOTAL_KB")"
+  emit_event capacity info "{\"cores\":$NPROC,\"mem_total_kb\":$MEM_TOTAL_KB,\"mem_warn_kb\":$a,\"mem_crit_kb\":$c,\"boot_id\":\"$(boot_id)\"}"
+  boot_check
+}
+
+boot_check() { # 上一次 boot 的 OOM 与干净关机检测（尽力而为）
+  local prev_oom clean
+  journalctl --list-boots --no-pager 2>/dev/null | grep -q -- '-' || return 0
+  prev_oom=$(journalctl -b -1 --no-pager 2>/dev/null | grep -icE 'oom-kill|out of memory' || echo 0)
+  clean=$(journalctl -b -1 -n 50 --no-pager 2>/dev/null | grep -icE 'powering off|reached target (poweroff|shutdown)' || echo 0)
+  local level="info"; [ "${prev_oom:-0}" -gt 0 ] && level="crit"
+  emit_event boot_check "$level" "{\"prev_boot_oom_lines\":${prev_oom:-0},\"prev_boot_clean_shutdown_lines\":${clean:-0}}"
+}
+
+check_oom_journal() { # 内核日志 OOM 增量（--since 上次检查点）
+  command -v journalctl >/dev/null 2>&1 || return 0
+  local since now count
+  since="$(state_get last_oom_check_epoch)"
+  now="$(now_epoch)"
+  [ -z "$since" ] && { state_set last_oom_check_epoch "$now"; return 0; }
+  count=$(journalctl -k --no-pager --since "@$since" 2>/dev/null | grep -icE 'oom-kill|out of memory' || echo 0)
+  state_set last_oom_check_epoch "$now"
+  [ "${count:-0}" -gt 0 ] && handle_alert crit "kernel_oom" "{\"oom_lines\":$count}"
+  return 0
+}
+
 maybe_cleanup()       { :; } # Task 6 填充
 
 # ── 主循环 ──
