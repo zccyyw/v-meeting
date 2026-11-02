@@ -125,6 +125,19 @@ for (const img of images) {
       "--build-arg",
       `GHPROXY=${process.env.GHPROXY || "https://gh-proxy.com"}`,
     );
+    // 预编译 worker 下载不可达时，显式改为本地编译
+    if (process.env.SKIP_WORKER_PREBUILT) {
+      args.push(
+        "--build-arg",
+        `SKIP_WORKER_PREBUILT=${process.env.SKIP_WORKER_PREBUILT}`,
+      );
+    }
+  }
+  // npm 源透传：三个 Dockerfile 均声明了 NPM_REGISTRY 这个 ARG，但脚本此前从不传递，
+  // 导致国内构建机即使设置了 NPM_REGISTRY，npm ci 仍走官方源（数分钟无进展乃至超时）。
+  const npmRegistry = (process.env.NPM_REGISTRY || "").trim();
+  if (npmRegistry) {
+    args.push("--build-arg", `NPM_REGISTRY=${npmRegistry}`);
   }
   args.push(".");
   run("docker", args);
