@@ -35,7 +35,10 @@ state_get()   { grep -F "$1=" "$STATE_FILE" 2>/dev/null | tail -1 | cut -d= -f2-
 state_set()   { printf '%s=%s\n' "$1" "$2" >> "$STATE_FILE"; }
 
 emit_event() { # TYPE LEVEL DETAIL_JSON(可选)
-  append_line "{\"ts\":\"$(now_iso)\",\"type\":\"$1\",\"level\":\"${2:-info}\",\"detail\":${3:-{}}}" "$EVENTS_FILE"
+  # 注意不能写 ${3:-{}}：bash 会把默认值解析为 "{" 再跟一个字面 "}"，
+  # 有 detail 时会多出一个 "}" 产出非法 JSON
+  local detail="${3:-"{}"}"
+  append_line "{\"ts\":\"$(now_iso)\",\"type\":\"$1\",\"level\":\"${2:-info}\",\"detail\":${detail}}" "$EVENTS_FILE"
 }
 
 ensure_day_files() { # 参数=YYYYMMDD
@@ -264,8 +267,6 @@ sleep_interval() {
   local now; now="$(now_epoch)"
   if [ "${FAST_UNTIL:-0}" -gt "$now" ]; then echo "$FAST_INTERVAL"; else echo "$INTERVAL"; fi
 }
-
-startup_checks() { :; } # Task 5 填充
 
 main() {
   startup_checks
