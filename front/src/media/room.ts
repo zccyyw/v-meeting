@@ -908,13 +908,16 @@ export class MediaRoom {
       this.screenProducer = await this.sendTransport.produce({
         track,
         // P0+P1：原屏幕共享是单层 6Mbps「全有或全无」，弱机/弱网只能整路卡顿。
-        // 改为两层 Simulcast（顶层满分辨率 + ÷2 降级层），并把编码帧率锁到 15fps：
+        // 改为两层 Simulcast（÷2 降级层 + 满分辨率层），并把编码帧率锁到 15fps：
         // - 限帧率直接砍掉一半编码负载，缓解发送端掉帧（卡顿主因）；
         // - ÷2 层让弱机/弱网自动降分辨率而非卡死，文字常态仍走满分辨率层保持锐利；
         // - VP8 默认协商自带时间层，接收端 CPU 过载时浏览器还会自动降帧率。
+        // ⚠ 层序必须是「低分辨率在前、满分辨率在末位」：mediasoup 规定 encodings
+        //   首项=最低空间层、末项=最高空间层；SFU 统一拉最高层（signal.ts），
+        //   顺序颠倒会让成员端永远收到 ÷2 半分辨率层（拉伸铺满→模糊）。
         encodings: [
-          { rid: "s0", maxBitrate: 6_000_000, scaleResolutionDownBy: 1, maxFramerate: 15 },
           { rid: "s1", maxBitrate: 2_500_000, scaleResolutionDownBy: 2, maxFramerate: 15 },
+          { rid: "s0", maxBitrate: 6_000_000, scaleResolutionDownBy: 1, maxFramerate: 15 },
         ],
         // 起步码率=目标码率：消除共享开始后 ~1s 的"模糊→清晰"爬坡期
         // （libwebrtc 默认起步 ~300k，靠带宽估计数秒爬升）
