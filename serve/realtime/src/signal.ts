@@ -1786,7 +1786,16 @@ export function createSignalHandler(db: Db) {
         case "createWebRtcTransport": {
           const ctx = requireAdmitted(ws);
           if (!ctx) return;
-          const transport = await createWebRtcTransport(ctx.state.router);
+          // 仅 recv（下行）transport 抬高 BWE 起点：默认 600k 会导致入会先压到
+          // 低 simulcast 层（模糊）再爬坡升层，会议中带宽估计波动还会反复降/升层
+          // （共享画面模糊↔清晰震荡）。send 方向的 outgoing 是客户端上行，SFU
+          // 端估计无意义，不传。
+          const transport = await createWebRtcTransport(
+            ctx.state.router,
+            message.direction === "recv"
+              ? { initialAvailableOutgoingBitrate: 5_000_000 }
+              : undefined,
+          );
           ctx.media.transports.set(transport.id, transport);
           if (message.direction === "send") {
             ctx.media.sendTransport = transport;

@@ -89,7 +89,10 @@ export async function createRouter() {
   return w.createRouter({ mediaCodecs });
 }
 
-export async function createWebRtcTransport(router: Router) {
+export async function createWebRtcTransport(
+  router: Router,
+  opts?: { initialAvailableOutgoingBitrate?: number },
+) {
   const listenIps = [
     {
       ip: process.env.MEDIASOUP_LISTEN_IP ?? "0.0.0.0",
@@ -103,6 +106,14 @@ export async function createWebRtcTransport(router: Router) {
     enableUdp: true,
     enableTcp: true,
     preferUdp: true,
+    // BWE（带宽估计）初始值：默认仅 600kbps，入会先压到低 simulcast 层
+    // （画面模糊）再随估计爬坡升层——表现为"先模糊后清晰"，会议中 BWE 被
+    // 其他 consumer 挤占或抖动时也会来回降/升层（模糊↔清晰震荡）。
+    // 仅对 recv 方向有意义（SFU→客户端下行）；send 方向调用方不传。
+    // 条件展开而非 undefined 直传：mediasoup 运行时校验参数，不赌可选字段容错。
+    ...(opts?.initialAvailableOutgoingBitrate !== undefined
+      ? { initialAvailableOutgoingBitrate: opts.initialAvailableOutgoingBitrate }
+      : {}),
   });
   return transport;
 }
