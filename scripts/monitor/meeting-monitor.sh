@@ -106,9 +106,9 @@ get_disk_inodes() { # mount|inode_used_pct
   }'
 }
 
-get_top_mem()  { ps aux 2>/dev/null | sort -k6 -rn | head -6 | tail -5 \
+get_top_mem()  { ps aux 2>/dev/null | sort -k6 -rn 2>/dev/null | head -6 | tail -5 \
                  | awk '{printf "%s:%sKB:%.60s ", $2, $6, $11}'; }
-get_top_cpu()  { ps aux 2>/dev/null | sort -k3 -rn | head -6 | tail -5 \
+get_top_cpu()  { ps aux 2>/dev/null | sort -k3 -rn 2>/dev/null | head -6 | tail -5 \
                  | awk '{printf "%s:%s%%:%.60s ", $2, $3, $11}'; }
 get_tcp_estab() { # ss 缺失/失败/非数字时输出 -1（管道退出码来自末段 awk，不能靠 || 兜底）
   local v
