@@ -122,8 +122,8 @@ services:
     image: ${MEETING_API_IMAGE:-meeting-api:latest}
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 6g
-    memswap_limit: 6g
+    mem_limit: 12g
+    memswap_limit: 12g
     # 优雅停机：给 API 30s 完成进行中的请求（含录制上传）后再 SIGKILL
     stop_grace_period: 30s
     environment:
@@ -203,8 +203,8 @@ services:
     image: ${MEETING_REALTIME_IMAGE:-meeting-realtime:latest}
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 6g
-    memswap_limit: 6g
+    mem_limit: 24g
+    memswap_limit: 24g
     stop_grace_period: 30s
     environment:
       # 时间基准：与 api / 数据库保持一致（同上，避免时间偏移与 1292 报错）
@@ -274,8 +274,8 @@ services:
     image: ${MEETING_WEB_IMAGE:-meeting-web:latest}
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 3g
-    memswap_limit: 3g
+    mem_limit: 6g
+    memswap_limit: 6g
     # nginx 的 proxy_pass 在启动时解析 upstream 主机名，realtime 未启动会
     # emerg 退出（host not found in upstream "realtime"）。强制先起 realtime。
     depends_on:
