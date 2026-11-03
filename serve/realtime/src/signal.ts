@@ -2023,6 +2023,41 @@ export function createSignalHandler(db: Db) {
           break;
         }
 
+        case "setConsumerPreferredLayers": {
+          const ctx = requireAdmitted(ws);
+          if (!ctx) return;
+          const consumer = ctx.media.consumers.get(message.consumerId);
+          if (!consumer) {
+            send(ws, { type: "error", message: "consumer_not_found" });
+            return;
+          }
+          if (consumer.kind !== "video") return;
+          // 客户端只表达"要最高层"，实际能否切到该层由 mediasoup 按生产者
+          // 的 encodings 数量钳制（摄像头 3 层 → 2，共享 2 层 → 1）。
+          try {
+            await consumer.setPreferredLayers({
+              spatialLayer: message.spatialLayer,
+              temporalLayer: message.temporalLayer ?? 2,
+            });
+          } catch (err) {
+            // 切层失败不影响已建立的媒体流，仅记录现场
+            console.warn(
+              `[signal] setPreferredLayers failed consumer=${consumer.id}`,
+              err instanceof Error ? err.message : err
+            );
+          }
+          // 回执实际生效值：客户端据此确认"是否真的切到了目标层"，
+          // 这是排查画面模糊的关键闭环（spatialLayer 为 null 表示尚未转发）。
+          send(ws, {
+            type: "consumerLayers",
+            consumerId: consumer.id,
+            spatialLayer: consumer.preferredLayers?.spatialLayer ?? null,
+            temporalLayer: consumer.preferredLayers?.temporalLayer ?? null,
+            producerPaused: consumer.producerPaused,
+          });
+          break;
+        }
+
         case "pauseProducer": {
           const ctx = requireAdmitted(ws);
           if (!ctx) return;

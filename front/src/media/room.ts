@@ -113,10 +113,14 @@ export type MediaRoomSnapshot = {
 type Listener = () => void;
 
 const VIDEO_ENCODINGS = [
-  { rid: "r0", maxBitrate: 100_000, scaleResolutionDownBy: 4 },
-  { rid: "r1", maxBitrate: 300_000, scaleResolutionDownBy: 2 },
-  // 最高层 4.5Mbps @ 1080p：内网环境按高清/超清算；带宽不足时 WebRTC 拥塞控制仍会自动降级
-  { rid: "r2", maxBitrate: 4_500_000 },
+  // 三层都必须"可用"：原先 r0 仅 100kbps/÷4，一旦因带宽抖动落到该层，画面是
+  // 报废而非降级，且客户端不做层回升，会长期停在低层。故把各层码率抬到足以
+  // 支撑其分辨率的水平：÷4 需约 400k、÷2 需约 1.2M、满分辨率 4Mbps。
+  // 保持 ÷4/÷2/÷1 的整数缩放（÷1.5 这类非整数比例各内核取整结果不一致，
+  // 可能得到非预期的输出分辨率）。
+  { rid: "r0", maxBitrate: 400_000, scaleResolutionDownBy: 4 },
+  { rid: "r1", maxBitrate: 1_200_000, scaleResolutionDownBy: 2 },
+  { rid: "r2", maxBitrate: 4_000_000 },
 ];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -148,6 +152,16 @@ export class MediaRoom {
   private consumerMeta = new Map<
     string,
     { peerId: string; source: "camera" | "screen" | "screen-audio" }
+  >();
+  /** 服务端回执的实际生效层（consumerId → 请求/生效层号 + 对方是否暂停），仅用于诊断 */
+  private consumerLayerState = new Map<
+    string,
+    {
+      requested: number | null;
+      spatialLayer: number | null;
+      temporalLayer: number | null;
+      producerPaused: boolean;
+    }
   >();
   private localStream: MediaStream | null = null;
   private localScreenStream: MediaStream | null = null;
@@ -603,109 +617,311 @@ export class MediaRoom {
 
   /**
    * 现场排查：控制台执行 __meetingDebug() 打印音视频质量数据。
-   * 采样 1 秒计算码率；字段全部防御式读取（不同内核 stats 结构有差异）。
-   * 判读要点：
-   *  - 摄像头"设备输出"低于 1920 → 设备硬件上限（换 1080p 摄像头）；
-   *  - 发送分辨率正常但接收偏低 → 传输链路（层切换/带宽估计）；
-   *  - 码率远低于编码目标 → 带宽估计被压制或 CPU 编码跟不上。
+   *
+   * 目标是把"画面模糊"拆成 7 段并逐段归属：源 → 编码 → 上行 → 选层 → 下行 →
+   * 解码 → 渲染。采样 3 秒（6 次）取首尾差算速率、取中位数抗抖，避免单点瞬态
+   * 值（入会瞬间的低码率、刚开摄像头时的空帧）误导结论。
+   *
+   * 判读顺序：
+   *  1. 采集宽 < 设备上限           → 约束未生效 / 设备上限低
+   *  2. r2.active=false 或帧宽<采集 → 看 lim：cpu=编码算力，bandwidth=上行带宽
+   *  3. 接收帧宽 < 对方最高层帧宽    → 选层失败（对照"层 请求/生效"）
+   *  4. protocol=tcp                 → UDP 被拦回落 TCP，先修网络
+   *  5. 放大倍率 > 1.2               → 上采样，与编码无关
+   *  6. 平均 QP >= 35                → 码率密度不足，压缩过狠
+   *  7. 丢包/抖动高                   → 链路问题
    */
   async debugStats(): Promise<void> {
     const tag = "[MeetingDebug]";
     const log = console.log.bind(console, tag);
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-    const pickVideo = (
-      report: RTCStatsReport,
-      type: "outbound-rtp" | "inbound-rtp",
-    ): Record<string, any> | null => {
-      let found: Record<string, any> | null = null;
-      report.forEach((s: any) => {
-        if (s.type === type && (s.kind === "video" || s.mediaType === "video") && !s.isRemote) {
-          found = s;
+
+    /** 从单份 report 按类型抽取；不同内核字段有差异，全部防御式读取 */
+    const readReport = (report: RTCStatsReport | null | undefined) => {
+      const out: Record<string, any>[] = [];
+      const inb: Record<string, any>[] = [];
+      const remoteIn: Record<string, any>[] = [];
+      const codecs = new Map<string, Record<string, any>>();
+      // 用对象容器持有 pair/transport：闭包内赋值的局部变量会被 TS 控制流收缩
+      // 成 never，导致后续访问属性报错
+      const meta = {
+        pair: null as Record<string, any> | null,
+        transport: null as Record<string, any> | null,
+      };
+      report?.forEach((s: any) => {
+        if (s.type === "codec") codecs.set(s.id, s);
+        else if (s.type === "candidate-pair") {
+          if (s.state === "succeeded" && (s.nominated === undefined || s.nominated)) meta.pair = s;
+        } else if (s.type === "transport") meta.transport = s;
+        else if (s.type === "remote-inbound-rtp") {
+          if (s.kind === "video" || s.mediaType === "video") remoteIn.push(s);
+        } else if (s.type === "outbound-rtp") {
+          if ((s.kind === "video" || s.mediaType === "video") && !s.isRemote) out.push(s);
+        } else if (s.type === "inbound-rtp") {
+          if ((s.kind === "video" || s.mediaType === "video") && !s.isRemote) inb.push(s);
         }
       });
-      return found;
+      return { out, inb, remoteIn, pair: meta.pair, transport: meta.transport, codecs };
     };
-    const kbps = (b1: number, b2: number) =>
-      b2 >= b1 ? Math.round(((b2 - b1) * 8) / 1000) : 0;
-    const peerName = (peerId: string) =>
-      this.peers.find((p) => p.peerId === peerId)?.displayName ?? peerId.slice(0, 8);
+    type Report = ReturnType<typeof readReport>;
 
-    // 本地设备实际输出分辨率（回答"摄像头到底给没给 1080p"）
+    const median = (nums: number[]): number => {
+      if (!nums.length) return 0;
+      const s = [...nums].sort((a, b) => a - b);
+      const m = Math.floor(s.length / 2);
+      return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+    };
+    const medianOrNull = (nums: number[]): number | null =>
+      nums.length ? median(nums) : null;
+
+    /** 摄像头 3 层（r0/r1/r2）、共享 2 层：按 rid 降序，最高层排在最前 */
+    const byRidDesc = (list: Record<string, any>[]) =>
+      [...list].sort((x, y) => String(y.rid ?? "").localeCompare(String(x.rid ?? "")));
+
+    const videoElOf = (track?: MediaStreamTrack | null): HTMLVideoElement | null => {
+      if (!track) return null;
+      for (const el of document.querySelectorAll("video")) {
+        const st = el.srcObject as MediaStream | null;
+        if (st && st.getVideoTracks().includes(track)) return el;
+      }
+      return null;
+    };
+    /** 放大倍率 = 显示物理像素宽 ÷ 源帧宽；>1.2 时任何编码优化都救不回清晰度 */
+    const zoomOf = (track: MediaStreamTrack | null | undefined, frameW?: number) => {
+      const el = videoElOf(track);
+      if (!el || !frameW) return null;
+      const rect = el.getBoundingClientRect();
+      if (!rect.width) return null;
+      const physical = rect.width * (window.devicePixelRatio || 1);
+      return Math.round((physical / frameW) * 100) / 100;
+    };
+    const playbackOf = (track?: MediaStreamTrack | null) => {
+      const el = videoElOf(track);
+      const q = el?.getVideoPlaybackQuality?.();
+      return q ? `${q.totalVideoFrames}帧/丢${q.droppedVideoFrames}` : "-";
+    };
+    const limText = (cur: Record<string, any>) => {
+      const d = cur.qualityLimitationDurations;
+      if (!d) return "";
+      const worst = Object.entries(d)
+        .map(([k, v]) => [k, Number(v) || 0] as [string, number])
+        .sort((a, b) => b[1] - a[1])[0];
+      return worst && worst[1] > 0 ? `(${worst[0]} ${Math.round(worst[1])}s)` : "";
+    };
+
     const camTrack = this.localStream?.getVideoTracks()[0];
-    const camOut = camTrack?.getSettings?.() ?? {};
+    const camOut = camTrack?.getSettings?.() ?? ({} as MediaTrackSettings);
+    const camCap = (camTrack?.getCapabilities?.() ?? {}) as MediaTrackCapabilities;
     const scrTrack = this.localScreenStream?.getVideoTracks()[0];
-    const scrOut = scrTrack?.getSettings?.() ?? {};
-
-    const videoConsumers: { label: string; consumer: Consumer }[] = [];
-    for (const [id, consumer] of this.consumers) {
-      if (consumer.kind !== "video") continue;
-      const meta = this.consumerMeta.get(id);
-      const label =
-        meta?.source === "screen"
-          ? `${peerName(meta?.peerId ?? "")}·共享`
-          : `${peerName(meta?.peerId ?? "")}·摄像头`;
-      videoConsumers.push({ label, consumer });
-    }
+    const scrOut = scrTrack?.getSettings?.() ?? ({} as MediaTrackSettings);
+    const camEl = videoElOf(camTrack);
 
     const sample = async () => {
-      const send: { camera: Record<string, any> | null; screen: Record<string, any> | null } = {
-        camera: null,
-        screen: null,
-      };
-      if (this.videoProducer) {
-        send.camera = pickVideo(await this.videoProducer.getStats(), "outbound-rtp");
+      const camera = this.videoProducer ? readReport(await this.videoProducer.getStats()) : null;
+      const screen = this.screenProducer ? readReport(await this.screenProducer.getStats()) : null;
+      const recv = new Map<string, Report>();
+      for (const [id, consumer] of this.consumers) {
+        if (consumer.kind !== "video") continue;
+        try {
+          recv.set(id, readReport(await consumer.getStats()));
+        } catch {
+          /* 单个 consumer 取不到 stats 时跳过，不影响整体采样 */
+        }
       }
-      if (this.screenProducer) {
-        send.screen = pickVideo(await this.screenProducer.getStats(), "outbound-rtp");
-      }
-      const recv: Record<string, Record<string, any>> = {};
-      for (const { label, consumer } of videoConsumers) {
-        const s = pickVideo(await consumer.getStats(), "inbound-rtp");
-        if (s) recv[label] = s;
-      }
-      return { send, recv };
+      return { camera, screen, recv, t: performance.now() };
     };
 
-    try {
-      log("── 正在采样 1 秒，请稍候… ──");
-      const s1 = await sample();
-      await sleep(1000);
-      const s2 = await sample();
+    const SNAPS = 6;
+    const GAP = 500;
+    log(`── 采样 3 秒（${SNAPS} 次），请保持会议页在前台 ──`);
+    log(`── 判读前先确认：发送端与接收端需同时采样，单侧数据无法定位 ──`);
 
-      const printSend = (
-        name: string,
-        a: Record<string, any> | null,
-        b: Record<string, any> | null,
-        devOut: Record<string, any>,
-      ) => {
-        const cur = b ?? a;
-        if (!cur) return log(`${name}: 未开启`);
-        const target = cur.targetBitrate != null ? ` | 编码目标 ${Math.round(cur.targetBitrate / 1000)}kbps` : "";
-        const rate = kbps(a?.bytesSent ?? 0, b?.bytesSent ?? 0);
-        log(
-          `${name}: 设备输出 ${devOut.width ?? "?"}x${devOut.height ?? "?"} | 发送 ${cur.frameWidth ?? "?"}x${cur.frameHeight ?? "?"} @${Math.round(cur.framesPerSecond ?? 0)}fps | 码率 ${rate}kbps${target}`,
-        );
+    try {
+      const snaps: Awaited<ReturnType<typeof sample>>[] = [];
+      for (let i = 0; i < SNAPS; i++) {
+        snaps.push(await sample());
+        if (i < SNAPS - 1) await sleep(GAP);
+      }
+      const first = snaps[0];
+      const last = snaps[snaps.length - 1];
+      const spanMs = Math.max(1, last.t - first.t);
+      const kbps = (a?: number, b?: number) =>
+        a == null || b == null || b < a ? 0 : Math.round(((b - a) * 8) / spanMs);
+      const sumOf = (list: Record<string, any>[] | undefined, key: string) =>
+        (list ?? []).reduce((n, s) => n + (Number(s?.[key]) || 0), 0);
+      /** 平均 QP = ΔqpSum ÷ ΔframesEncoded；QP 才是"糊"的直接量化，比看码率准 */
+      const qpOf = (prev?: Record<string, any>, cur?: Record<string, any>) => {
+        if (!prev || !cur) return null;
+        const dq = cur.qpSum != null && prev.qpSum != null ? cur.qpSum - prev.qpSum : null;
+        const df = cur.framesEncoded != null && prev.framesEncoded != null ? cur.framesEncoded - prev.framesEncoded : null;
+        if (dq == null || df == null || df <= 0) return null;
+        return Math.round(dq / df);
+      };
+      const decodeMsOf = (prev?: Record<string, any>, cur?: Record<string, any>) => {
+        if (!prev || !cur) return null;
+        const dt = cur.totalDecodeTime != null && prev.totalDecodeTime != null ? cur.totalDecodeTime - prev.totalDecodeTime : null;
+        const df = cur.framesDecoded != null && prev.framesDecoded != null ? cur.framesDecoded - prev.framesDecoded : null;
+        if (dt == null || df == null || df <= 0) return null;
+        return Math.round((dt / df) * 1000 * 10) / 10;
+      };
+      const encodeMsOf = (prev?: Record<string, any>, cur?: Record<string, any>) => {
+        if (!prev || !cur) return null;
+        const dt = cur.totalEncodeTime != null && prev.totalEncodeTime != null ? cur.totalEncodeTime - prev.totalEncodeTime : null;
+        const df = cur.framesEncoded != null && prev.framesEncoded != null ? cur.framesEncoded - prev.framesEncoded : null;
+        if (dt == null || df == null || df <= 0) return null;
+        return Math.round((dt / df) * 1000 * 10) / 10;
       };
 
-      log("── 本端发送 ──");
-      printSend("摄像头", s1.send.camera, s2.send.camera, camOut as Record<string, any>);
-      printSend("共享", s1.send.screen, s2.send.screen, scrOut as Record<string, any>);
+      log("── 环境 ──");
+      log(
+        `页面 ${document.visibilityState === "visible" ? "前台" : "后台(浏览器会节流)"} | DPR ${window.devicePixelRatio || 1} | 远端视频 ${[...this.consumers.values()].filter((c) => c.kind === "video").length} 路`,
+      );
 
-      log("── 接收 ──");
-      if (videoConsumers.length === 0) log("（当前无远端视频）");
-      for (const { label } of videoConsumers) {
-        const a = s1.recv[label];
-        const b = s2.recv[label];
-        const cur = b ?? a;
-        if (!cur) continue;
-        const rate = kbps(a?.bytesReceived ?? 0, b?.bytesReceived ?? 0);
-        const lost = cur.packetsLost ?? 0;
-        const jitter = Math.round((cur.jitter ?? 0) * 1000);
+      log("── 源 ──");
+      if (camTrack) {
+        const capMax =
+          camCap.width?.max != null
+            ? `${camCap.width.max}x${camCap.height?.max ?? "?"}`
+            : "?（内核不支持 getCapabilities）";
         log(
-          `${label}: ${cur.frameWidth ?? "?"}x${cur.frameHeight ?? "?"} @${Math.round(cur.framesPerSecond ?? 0)}fps | 码率 ${rate}kbps | 丢包 ${lost} 包 | 抖动 ${jitter}ms`,
+          `摄像头: 设备上限 ${capMax} | 设置 ${camOut.width ?? "?"}x${camOut.height ?? "?"}@${Math.round(camOut.frameRate ?? 0)} | 预览 ${camEl?.videoWidth ?? "?"}x${camEl?.videoHeight ?? "?"}`,
         );
+      } else log("摄像头: 未开启");
+      if (scrTrack) {
+        log(
+          `共享: 设置 ${scrOut.width ?? "?"}x${scrOut.height ?? "?"}@${Math.round(scrOut.frameRate ?? 0)} | 预览 ${videoElOf(scrTrack)?.videoWidth ?? "?"}x${videoElOf(scrTrack)?.videoHeight ?? "?"}`,
+        );
+      } else log("共享: 未开启");
+
+      const verdict: string[] = [];
+
+      // ── 编码（发送侧）：必须按 rid 分列，单条记录无法判断最高层是否在发 ──
+      const printSend = (name: string, key: "camera" | "screen") => {
+        const rep = last[key];
+        const prev = first[key];
+        if (!rep) return log(`【编码·${name}】未开启`);
+        const total = kbps(sumOf(prev?.out, "bytesSent"), sumOf(rep.out, "bytesSent"));
+        log(`【编码·${name}】总上行 ${total}kbps`);
+        if (!rep.out.length) return log("  （未采到编码层）");
+        for (const cur of byRidDesc(rep.out)) {
+          const p = prev?.out.find((x) => x.id === cur.id);
+          const rate = kbps(p?.bytesSent, cur.bytesSent);
+          const target = cur.targetBitrate != null ? Math.round(cur.targetBitrate / 1000) : null;
+          const rid = cur.rid ?? "-";
+          const active = cur.active === undefined ? "?" : cur.active ? "true" : "false";
+          log(
+            `  ${rid} active=${active} ${cur.frameWidth ?? "?"}x${cur.frameHeight ?? "?"} @${Math.round(cur.framesPerSecond ?? 0)}fps ` +
+              `${rate}kbps${target != null ? `/目标${target}` : ""} QP ${qpOf(p, cur) ?? "-"}` +
+              ` lim=${cur.qualityLimitationReason ?? "-"}${limText(cur)} enc ${encodeMsOf(p, cur) ?? "-"}ms`,
+          );
+        }
+        const top = byRidDesc(rep.out)[0];
+        const srcW = key === "camera" ? camOut.width : scrOut.width;
+        if (top?.active === false) verdict.push(`${name}: 最高层 ${top.rid ?? "?"} 未激活 → 高层没有发送`);
+        if (srcW && top?.frameWidth && srcW > top.frameWidth + 32)
+          verdict.push(`${name}: 编码宽 ${top.frameWidth} < 采集 ${srcW} → 被降分辨率`);
+        if (top?.qualityLimitationReason === "cpu")
+          verdict.push(`${name}: 编码受限 cpu → 本端算力不足，与网络无关`);
+        if (top?.qualityLimitationReason === "bandwidth")
+          verdict.push(`${name}: 编码受限 bandwidth → 上行带宽不足（对照下方通道可用上行）`);
+        const topQp = qpOf(prev?.out.find((x) => x.id === top?.id), top);
+        if (topQp != null && topQp >= 35)
+          verdict.push(`${name}: 平均 QP ${topQp} → 码率密度不足，细节必然偏软`);
+      };
+      log("── 编码（本端发送）──");
+      printSend("摄像头", "camera");
+      printSend("共享", "screen");
+
+      // ── 上行通道：tcp 回落与带宽估计是"有线内网仍糊"的首要嫌疑 ──
+      const sendRep = last.camera ?? last.screen;
+      log("── 上行通道 ──");
+      if (sendRep?.pair) {
+        const rtt = Math.round((sendRep.pair.currentRoundTripTime ?? 0) * 1000);
+        const avail =
+          sendRep.pair.availableOutgoingBitrate != null
+            ? Math.round(sendRep.pair.availableOutgoingBitrate / 1000)
+            : "?";
+        const lost = sendRep.remoteIn.length ? Math.max(...sendRep.remoteIn.map((r) => Number(r.fractionLost) || 0)) : 0;
+        log(
+          `${sendRep.pair.protocol ?? "?"} | rtt ${rtt}ms | 可用上行 ${avail}kbps | dtls ${sendRep.transport?.dtlsState ?? "?"} | 对端反馈丢包 ${(lost * 100).toFixed(1)}%`,
+        );
+        if (sendRep.pair.protocol === "tcp") verdict.push("通道: 已回落 TCP(UDP 被拦) → 吞吐与抖动都会恶化，优先修复网络");
+        if (rtt > 50) verdict.push(`通道: rtt ${rtt}ms 偏高`);
+        if (sendRep.pair.availableOutgoingBitrate != null && sendRep.pair.availableOutgoingBitrate < 2_000_000)
+          verdict.push(`通道: 可用上行仅 ${avail}kbps → 不足以支撑 1080p`);
+      } else log("（候选对不可用，部分内核的 producer stats 不含 candidate-pair）");
+
+      // ── 接收：分辨率 + 生效层 + 放大倍率三者交叉，才能分离"层"与"上采样" ──
+      log("── 接收 ──");
+      const videoConsumers: { id: string; label: string; consumer: Consumer }[] = [];
+      for (const [id, consumer] of this.consumers) {
+        if (consumer.kind !== "video") continue;
+        const meta = this.consumerMeta.get(id);
+        const label = `${this.peers.find((p) => p.peerId === meta?.peerId)?.displayName ?? (meta?.peerId ?? "").slice(0, 8)}${
+          meta?.source === "screen" ? "·共享" : "·摄像头"
+        }`;
+        videoConsumers.push({ id, label, consumer });
       }
-      log("── 判读：摄像头发送/设备输出 <1920 多为设备上限；接收低于发送多为层切换或带宽压制 ──");
+      if (!videoConsumers.length) log("（当前无远端视频）");
+      for (const { id, label, consumer } of videoConsumers) {
+        const rep = last.recv.get(id);
+        const prev = first.recv.get(id);
+        const cur = rep?.inb[0];
+        if (!cur) {
+          log(`${label}: 未收到视频流（对方未开启/收流失败）`);
+          continue;
+        }
+        const rate = kbps(prev?.inb[0]?.bytesReceived, cur.bytesReceived);
+        const lostDeltas: number[] = [];
+        for (let i = 1; i < snaps.length; i++) {
+          const a = snaps[i - 1].recv.get(id)?.inb[0]?.packetsLost;
+          const b = snaps[i].recv.get(id)?.inb[0]?.packetsLost;
+          if (a != null && b != null && b >= a) lostDeltas.push(b - a);
+        }
+        const lost = Math.round(median(lostDeltas) * (1000 / GAP));
+        const jitter = Math.round((cur.jitter ?? 0) * 1000);
+        const codec = rep?.codecs.get(cur.codecId)?.mimeType ?? "?";
+        const requested = this.consumerLayerState.get(id);
+        const layers = consumer.rtpParameters?.encodings?.length ?? "?";
+        const zoom = zoomOf(consumer.track, cur.frameWidth);
+        log(
+          `${label}: ${cur.frameWidth ?? "?"}x${cur.frameHeight ?? "?"} @${Math.round(cur.framesPerSecond ?? 0)}fps ${rate}kbps ` +
+            `QP ${medianOrNull(snaps.slice(1).map((s, i) => {
+              const p = snaps[i].recv.get(id)?.inb[0];
+              const c = s.recv.get(id)?.inb[0];
+              const dq = c?.qpSum != null && p?.qpSum != null ? c.qpSum - p.qpSum : null;
+              const df = c?.framesDecoded != null && p?.framesDecoded != null ? c.framesDecoded - p.framesDecoded : null;
+              return dq != null && df != null && df > 0 ? Math.round(dq / df) : -1;
+            }).filter((n) => n >= 0)) ?? "-"} | ` +
+            `丢包 +${lost}/秒 抖动 ${jitter}ms | ${codec} | ` +
+            `层 请求${requested?.requested ?? "-"}/生效${requested?.spatialLayer ?? "-"}（共${layers}层）| ` +
+            `对方暂停 ${requested?.producerPaused ? "是" : "否"} | ` +
+            `解码 ${decodeMsOf(prev?.inb[0], cur) ?? "-"}ms | 冻结 ${cur.freezeCount ?? 0}次/${Math.round(cur.totalFreezesDuration ?? 0)}s | ` +
+            `播放 ${playbackOf(consumer.track)} | 放大 ${zoom ?? "-"}x`,
+        );
+        if (zoom != null && zoom > 1.2) verdict.push(`${label}: 显示放大 ${zoom}x → 上采样糊，非编码问题（需提高显示源或降低容器尺寸）`);
+        if (lost > 0 || jitter > 30) verdict.push(`${label}: 丢包/抖动异常 → 链路问题`);
+        if (this.consumerLayerState.get(id)?.producerPaused) verdict.push(`${label}: 对方已暂停视频 → 画面为冻结帧`);
+        if (cur.frameWidth && cur.frameWidth < 960 && requested?.spatialLayer != null)
+          verdict.push(`${label}: 仅收到 ${cur.frameWidth}px 宽 → 落在低空间层，检查对方是否产出高层`);
+      }
+
+      log("── 合计 ──");
+      log(
+        `上行 ${kbps(sumOf(first.camera?.out, "bytesSent") + sumOf(first.screen?.out, "bytesSent"), sumOf(last.camera?.out, "bytesSent") + sumOf(last.screen?.out, "bytesSent"))}kbps | ` +
+          `下行 ${kbps(
+            [...first.recv.values()].reduce((n, r) => n + sumOf(r.inb, "bytesReceived"), 0),
+            [...last.recv.values()].reduce((n, r) => n + sumOf(r.inb, "bytesReceived"), 0),
+          )}kbps`,
+      );
+
+      log("── 结论 ──");
+      if (!verdict.length) {
+        log("指标层面未发现编码/传输/渲染的硬性问题；若主观仍模糊，优先排查：镜头对焦/脏污、投屏是否复制模式、观看距离与屏幕缩放");
+      } else {
+        for (const v of verdict) log(`· ${v}`);
+      }
+      log("── 指标口径：速率取 3 秒首尾差；QP/解码/编码耗时取首尾差均值；丢包取各区间增量中位数 ──");
     } catch (err) {
       log(`采样失败: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -1321,6 +1537,17 @@ export class MediaRoom {
         }
         break;
 
+      case "consumerLayers": {
+        const prevLayer = this.consumerLayerState.get(msg.consumerId);
+        this.consumerLayerState.set(msg.consumerId, {
+          requested: prevLayer?.requested ?? null,
+          spatialLayer: msg.spatialLayer,
+          temporalLayer: msg.temporalLayer,
+          producerPaused: msg.producerPaused,
+        });
+        break;
+      }
+
       case "peerJoined":
         this.waitingPeers = this.waitingPeers.filter((p) => p.peerId !== msg.peerId);
         if (!this.peers.some((p) => p.peerId === msg.peerId)) {
@@ -1759,9 +1986,9 @@ export class MediaRoom {
       this.videoProducer = await this.sendTransport.produce({
         track: videoTrack,
         encodings: VIDEO_ENCODINGS,
-        // 起步码率=目标码率（4.5M@1080p）：不设时 libwebrtc 默认从 ~300k 按带宽
+        // 起步码率=目标码率（4M@1080p）：不设时 libwebrtc 默认从 ~300k 按带宽
         // 估计爬升，开播后数秒内画面偏糊；内网带宽充足，起步即高清档
-        codecOptions: { videoGoogleStartBitrate: 4500 },
+        codecOptions: { videoGoogleStartBitrate: 4000 },
       });
       if (!this.camEnabled) {
         this.videoProducer.pause();
@@ -2023,10 +2250,12 @@ export class MediaRoom {
     // 用 kind 区分：视频 → 共享画面；音频 → 共享内容声音（独立播放）
     const isScreen = msg.appData?.source === "screen" || consumed.appData?.source === "screen";
     const isScreenAudio = isScreen && consumer.kind === "audio";
-    this.consumerMeta.set(consumer.id, {
-      peerId: consumed.peerId,
-      source: isScreen ? (isScreenAudio ? "screen-audio" : "screen") : "camera",
-    });
+    const source: "camera" | "screen" | "screen-audio" = isScreen
+      ? isScreenAudio
+        ? "screen-audio"
+        : "screen"
+      : "camera";
+    this.consumerMeta.set(consumer.id, { peerId: consumed.peerId, source });
 
     if (isScreenAudio) {
       let stream = this.screenAudioStreams.get(consumed.peerId);
@@ -2054,7 +2283,51 @@ export class MediaRoom {
 
     this.signal.send({ type: "resumeConsumer", consumerId: consumer.id });
     await consumer.resume();
+    // 补设空间层：服务端 consume() 时写入的 preferredLayers 是"一次性"的，
+    // 若那一刻生产者高层尚未就绪（入会瞬间、对方刚打开摄像头），consumer 会被
+    // 固定在低层且此后不会自动升层。resume 后补一次，远端轨道 unmute（暂停→
+    // 恢复）时再补一次。
+    this.applyPreferredLayers(consumer, source);
+    if (consumer.kind === "video") {
+      consumer.track.addEventListener("unmute", () =>
+        this.applyPreferredLayers(consumer, source)
+      );
+    }
     this.emit();
+  }
+
+  /**
+   * 请求把该消费流切到最高空间层。
+   *
+   * 必须走信令：mediasoup-client 的 consumer.setPreferredLayers() 对 VP8 simulcast
+   * 只写本地状态，真正切层由服务端 Consumer.setPreferredLayers() 执行。
+   */
+  private applyPreferredLayers(
+    consumer: Consumer,
+    source: "camera" | "screen" | "screen-audio"
+  ): void {
+    if (consumer.kind !== "video") return;
+    // 摄像头 3 层（r0/r1/r2）→ 2；屏幕共享 2 层（s1/s0）→ 1。超出实际层数时
+    // 由 mediasoup 钳制到生产者提供的最大层。
+    const spatialLayer = source === "screen" ? 1 : 2;
+    // 记录"请求值"，服务端回执到了之后再补"生效值"，供诊断对照
+    const prevLayer = this.consumerLayerState.get(consumer.id);
+    this.consumerLayerState.set(consumer.id, {
+      requested: spatialLayer,
+      spatialLayer: prevLayer?.spatialLayer ?? null,
+      temporalLayer: prevLayer?.temporalLayer ?? null,
+      producerPaused: prevLayer?.producerPaused ?? false,
+    });
+    try {
+      this.signal.send({
+        type: "setConsumerPreferredLayers",
+        consumerId: consumer.id,
+        spatialLayer,
+        temporalLayer: 2,
+      });
+    } catch {
+      // 信令已断开时忽略：重连后会重新走 consume 流程并再次设置
+    }
   }
 
   /**

@@ -135,6 +135,20 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("resumeConsumer"),
     consumerId: z.string(),
   }),
+  /**
+   * 请求切换本端某个消费流的 simulcast 空间层。
+   * 层选择只能由服务端 Consumer 生效：mediasoup-client 的
+   * consumer.setPreferredLayers() 对 VP8 simulcast 只写本地状态，不会通知服务端。
+   * 客户端在 resume 之后、远端轨道 unmute 时补发，避免 consumer 创建瞬间
+   * 生产者高层未就绪而被固定在低层且不再回升。
+   */
+  z.object({
+    type: z.literal("setConsumerPreferredLayers"),
+    consumerId: z.string(),
+    // 上限放宽到 7 仅作输入兜底，实际层号由服务端按生产者 encodings 钳制
+    spatialLayer: z.number().int().min(0).max(7),
+    temporalLayer: z.number().int().min(0).max(7).optional(),
+  }),
   z.object({
     type: z.literal("pauseProducer"),
     producerId: z.string(),
@@ -367,6 +381,18 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("pong"),
     /** 回显客户端 ping 的时间戳 */
     t: z.number().optional(),
+  }),
+  /**
+   * 服务端回执：某消费流实际生效的 simulcast 层。
+   * 客户端只能"请求"层，无法得知服务端是否真的切了；缺此回执就无法区分
+   * "请求未生效"与"发送端未产出高层"，现场排查会一直猜。
+   */
+  z.object({
+    type: z.literal("consumerLayers"),
+    consumerId: z.string(),
+    spatialLayer: z.number().int().nullable(),
+    temporalLayer: z.number().int().nullable(),
+    producerPaused: z.boolean(),
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
