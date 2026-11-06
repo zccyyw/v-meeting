@@ -11,7 +11,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import readline from "node:readline";
 import { randomBytes } from "node:crypto";
 import { spawnSync, execSync } from "node:child_process";
@@ -51,7 +51,13 @@ function fail(msg) {
 }
 
 function runNode(cwd, ...args) {
-  const r = spawnSync(NODE_BIN, args, {
+  // 与 install.sh 的 run_node 一致：用 --env-file 把 conf/.env 交给子进程。
+  // 此前只传 {...process.env}，而 .env 从未被加载，migrate/seed 一直用默认凭据
+  // 连接（改过库名或口令就会连错库），是 "Unknown database" 的另一半原因。
+  const nodeArgs = fs.existsSync(ENV_FILE)
+    ? [`--env-file=${ENV_FILE}`, ...args]
+    : args;
+  const r = spawnSync(NODE_BIN, nodeArgs, {
     cwd,
     stdio: "inherit",
     env: { ...process.env },
@@ -130,6 +136,17 @@ async function main() {
     log("Certificate already exists, skipping.");
   }
 
+  // --- Database readiness (自动建库 + 连通性) ---
+  console.log("");
+  loadEnvIntoProcess();
+  if (!(await checkDatabase())) {
+    console.log("");
+    log("数据库未就绪：已跳过迁移与默认用户初始化。");
+    log(`配置已保存到 ${ENV_FILE}，按上面的提示处理后再执行一次本向导即可（无需重填）。`);
+    rl.close();
+    return;
+  }
+
   // --- Database migration ---
   console.log("");
   const runMigrate = await ask("Run database migration now? (Y/n)", "Y");
@@ -172,6 +189,94 @@ async function main() {
   log(`          test1-5 / 123456    (普通用户)`);
 
   rl.close();
+}
+
+/**
+ * 把 conf/.env 注入当前进程环境。
+ * configure 自身与它 fork 的 migrate/seed 子进程都只读 process.env，不读 .env，
+ * 所以必须在跑迁移前注入，否则子进程会拿默认凭据连错库。
+ */
+function loadEnvIntoProcess() {
+  if (!fs.existsSync(ENV_FILE)) return;
+  for (const raw of fs.readFileSync(ENV_FILE, "utf8").split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1);
+    }
+    // 不覆盖已存在的环境变量，便于用环境变量临时覆盖配置
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+/**
+ * 确保数据库存在且可连接。
+ * 建库逻辑不在本文件重复实现，而是复用 app/serve/db 的 createPool：它在建池前
+ * 会 CREATE DATABASE IF NOT EXISTS，账号无建库权限时只告警不中断。因此这里既能
+ * 自动建库，也不会把"库已存在但只有库级权限"的正常环境误判为失败。
+ */
+async function checkDatabase() {
+  const driver = (process.env.DB_DRIVER ?? "sqlite").trim().toLowerCase();
+  if (driver === "sqlite") {
+    log("SQLite 无需建库，跳过数据库检查。");
+    return true;
+  }
+
+  const dbEntry = path.join(PREFIX, "app/serve/db/dist/index.js");
+  if (!fs.existsSync(dbEntry)) {
+    log(`未找到 ${dbEntry}，跳过建库检查（迁移仍会尝试连接）。`);
+    return true;
+  }
+
+  const isPg = driver === "postgres";
+  const dbName = isPg
+    ? process.env.PGDATABASE ?? process.env.POSTGRES_DATABASE ?? "meeting"
+    : process.env.MYSQL_DATABASE ?? "meeting";
+  const dbUser = isPg
+    ? process.env.PGUSER ?? process.env.POSTGRES_USER ?? "meeting"
+    : process.env.MYSQL_USER ?? "meeting";
+
+  let db;
+  try {
+    const mod = await import(pathToFileURL(dbEntry).href);
+    db = await mod.createPool();
+    // createPool 是惰性建连，必须真跑一条语句才能验证库是否存在/可达
+    await db.query("SELECT 1");
+    log(`数据库就绪：${driver} / ${dbName}`);
+    return true;
+  } catch (err) {
+    const code =
+      err && typeof err === "object" && "code" in err ? String(err.code) : "";
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("");
+    console.error(`[configure] 数据库连接失败：${msg}`);
+    if (code === "ER_BAD_DB_ERROR" || code === "3D000") {
+      console.error(`[configure] 库 "${dbName}" 不存在，且当前账号没有建库权限。请用 DBA 账号执行：`);
+      if (isPg) {
+        console.error(`  CREATE DATABASE "${dbName}";`);
+      } else {
+        console.error(`  CREATE DATABASE IF NOT EXISTS \`${dbName}\` DEFAULT CHARACTER SET utf8mb4;`);
+        console.error(`  CREATE USER IF NOT EXISTS '${dbUser}'@'%' IDENTIFIED BY '<你的口令>';`);
+        console.error(`  GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${dbUser}'@'%';`);
+        console.error("  FLUSH PRIVILEGES;");
+      }
+    } else if (code === "ER_ACCESS_DENIED_ERROR" || code === "28P01") {
+      console.error("[configure] 账号或口令不正确，请核对 conf/.env 中的连接配置。");
+    } else if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT") {
+      console.error("[configure] 数据库服务不可达，请确认已启动且地址/端口正确。");
+    }
+    return false;
+  } finally {
+    if (db) await db.end().catch(() => {});
+  }
 }
 
 async function generateConfig() {
