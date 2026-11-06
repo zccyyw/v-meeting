@@ -1,0 +1,22 @@
+# CodeGraph data files
+# These are local to each machine and should not be committed
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Cache
+cache/
+
+# Logs
+*.log
+
+# CodeGraph daemon / local process marker
+*.pid
+
+# Viz generated data (regenerate with npm run codegraph:viz)
+viz/data/*.json
+
+# Hook markers
+.dirty

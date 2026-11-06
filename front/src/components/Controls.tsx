@@ -45,9 +45,12 @@ type Props = {
   micBannedTip?: string;
   /** 麦克风/摄像头设备枚举与当前选中（设备菜单数据源） */
   audioInputs: MediaDeviceInfo[];
-  /** 屏幕共享内容类型：detail=文档清晰优先；motion=视频流畅优先（默认） */
+  /** 屏幕共享内容类型：detail=文档清晰优先（默认）；motion=视频流畅优先 */
   screenContentType?: ScreenContentType;
   onScreenContentTypeChange?: (v: ScreenContentType) => void;
+  /** 下次共享是否向选源窗口要标签页声音。默认关；共享进行中不可改。 */
+  shareSystemAudio?: boolean;
+  onShareSystemAudioChange?: (v: boolean) => void;
   videoInputs: MediaDeviceInfo[];
   audioId: string;
   videoId: string;
@@ -220,6 +223,8 @@ export function Controls({
   recordAllowed,
   screenContentType,
   onScreenContentTypeChange,
+  shareSystemAudio = false,
+  onShareSystemAudioChange,
   micBanned = false,
   micBannedTip,
   audioInputs,
@@ -360,6 +365,11 @@ export function Controls({
               key: "content-motion",
               label: menuRow(t("meeting.shareContentMotion"), screenContentType !== "detail"),
             },
+            {
+              key: "share-audio",
+              disabled: sharingScreen,
+              label: menuRow(t("meeting.shareSystemAudio"), shareSystemAudio),
+            },
             ...(isHost
               ? [
                   {
@@ -372,6 +382,7 @@ export function Controls({
           onMenuClick={(key) => {
             if (key === "content-doc") onScreenContentTypeChange?.("detail");
             else if (key === "content-motion") onScreenContentTypeChange?.("motion");
+            else if (key === "share-audio") onShareSystemAudioChange?.(!shareSystemAudio);
             else onToggleAllowShare();
           }}
         />

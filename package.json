@@ -22,9 +22,11 @@
     "dev:front": "npm run dev -w @meeting/front",
     "dev:local": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d api realtime && npm run dev:front",
     "cert:dev": "node deploy/native/bin/gen-cert.mjs",
-    "dev": "concurrently -k -n api,realtime,front -c blue,magenta,green \"npm run dev:api\" \"npm run dev:realtime\" \"npm run dev:front\""
+    "dev": "concurrently -k -n api,realtime,front -c blue,magenta,green \"npm run dev:api\" \"npm run dev:realtime\" \"npm run dev:front\"",
+    "codegraph:viz": "node .codegraph/scripts/export-viz.mjs"
   },
   "devDependencies": {
+    "better-sqlite3": "^11.10.0",
     "archiver": "^7.0.1",
     "concurrently": "^9.2.5",
     "node-forge": "^1.3.1"

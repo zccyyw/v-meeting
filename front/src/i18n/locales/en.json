@@ -310,6 +310,7 @@
     "shareFailed": "Could not start screen share",
     "shareContentDoc": "Document (clarity first)",
     "shareContentMotion": "Video (smooth first)",
+    "shareSystemAudio": "Share tab audio",
     "previewBanner": "Viewing {{name}}'s camera · Click to return to shared screen",
     "members": "Members",
     "chat": "Chat",

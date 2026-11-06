@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { AudioMutedOutlined, DesktopOutlined, LeftOutlined, RightOutlined } from "@ant-design/icons";
 import { HandIcon } from "@/components/HandIcon";
 import type { MeetingLayout, PeerInfo } from "@/media/room";
-import { useSpeaking } from "@/media/useSpeaking";
 
 /** 宫格布局"一屏N等分"可选档位（对齐腾讯会议） */
 export type LayoutCols = 3 | 6 | 9 | 12;
@@ -69,10 +68,26 @@ type Props = {
   sideVariant?: "embed" | "top" | "float";
   /** "仅显示正在说话的人"：最近 3s 有电平活动的成员集合；null=不过滤 */
   onlySpeakers?: Set<string> | null;
+  /**
+   * 当前正在说话的 peerId（本地为 "local"）。来自全会议唯一的音频分析，
+   * 替代按格子各建一个 AudioContext。
+   */
+  speakingPeerIds?: ReadonlySet<string> | null;
   /** 主持人开关"开启主讲人小窗"：投屏时观看侧是否显示主讲人小窗（PiP）。
    *  默认 true（缺字段兜底）；共享者自己视角的轮换 PiP 不受此开关限制 */
   hostPipEnabled?: boolean;
 };
+
+function tileSpeaking(
+  peerId: string,
+  localPeerId: string | null | undefined,
+  speakingPeerIds: ReadonlySet<string> | null | undefined,
+  isScreen?: boolean,
+): boolean {
+  if (isScreen || !speakingPeerIds) return false;
+  const key = localPeerId && peerId === localPeerId ? "local" : peerId;
+  return speakingPeerIds.has(key);
+}
 
 function hasActiveCamera(stream: MediaStream | null | undefined): boolean {
   if (!stream) return false;
@@ -161,6 +176,8 @@ export function DraggableSideList({
   rttByPeer,
   rotationEnabled,
   rotationIntervalMs = 15_000,
+  speakingPeerIds,
+  localPeerId,
 }: {
   tiles: {
     key: string;
@@ -187,6 +204,8 @@ export function DraggableSideList({
   rotationIntervalMs?: number;
   /** embed：右侧流入列（可拖动）；float：停靠右缘悬浮面板（可收起/展开） */
   variant?: "embed" | "float";
+  speakingPeerIds?: ReadonlySet<string> | null;
+  localPeerId?: string | null;
 }) {
   const { t } = useTranslation();
   const isFloat = variant === "float";
@@ -273,6 +292,7 @@ export function DraggableSideList({
                 label={tile.label}
                 muted={tile.muted}
                 micMuted={tile.micMuted}
+                speaking={tileSpeaking(tile.peerId, localPeerId, speakingPeerIds, tile.isScreen)}
                 handRaised={tile.handRaised}
                 handTitle={handTitle}
                 showAvatar={tile.forceAvatar}
@@ -322,6 +342,7 @@ export function DraggableSideList({
           label={tile.label}
           muted={tile.muted}
           micMuted={tile.micMuted}
+          speaking={tileSpeaking(tile.peerId, localPeerId, speakingPeerIds, tile.isScreen)}
           handRaised={tile.handRaised}
           handTitle={handTitle}
           showAvatar={tile.forceAvatar}
@@ -350,6 +371,8 @@ function DraggablePip({
   rotationTiles,
   rotationIntervalMs = 15_000,
   participantsCount,
+  speakingPeerIds,
+  localPeerId,
 }: {
   tile: Tile;
   handTitle: string;
@@ -359,6 +382,8 @@ function DraggablePip({
   rotationIntervalMs?: number;
   /** 参会总人数（overlay 显示） */
   participantsCount?: number;
+  speakingPeerIds?: ReadonlySet<string> | null;
+  localPeerId?: string | null;
 }) {
   const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
@@ -464,6 +489,7 @@ function DraggablePip({
         label={currentTile.label}
         muted={currentTile.muted}
         micMuted={currentTile.micMuted}
+        speaking={tileSpeaking(currentTile.peerId, localPeerId, speakingPeerIds, currentTile.isScreen)}
         handRaised={currentTile.handRaised}
         handTitle={handTitle}
         showAvatar={!currentTile.isScreen && currentTile.forceAvatar}
@@ -559,6 +585,7 @@ function VideoTile({
   focusable,
   actionTitle,
   rttMs,
+  speaking = false,
 }: {
   stream: MediaStream | null;
   rttMs?: number;
@@ -576,12 +603,13 @@ function VideoTile({
   onClick?: () => void;
   focusable?: boolean;
   actionTitle?: string;
+  /** 由全会议唯一的音频分析给出，屏幕格不显示 */
+  speaking?: boolean;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLVideoElement>(null);
   const avatar = !isScreen && Boolean(showAvatar);
   const showPlaceholder = Boolean(isScreen && localSelfScreen);
-  const speaking = useSpeaking(isScreen ? null : stream);
   const isMuted = Boolean(micMuted);
 
   useEffect(() => {
@@ -705,6 +733,7 @@ export function VideoGrid({
   sideListVisible = true,
   sideVariant = "embed",
   onlySpeakers = null,
+  speakingPeerIds = null,
 }: Props) {
   const { t } = useTranslation();
   const handTitle = t("meeting.hand");
@@ -1083,6 +1112,7 @@ export function VideoGrid({
                     handTitle={handTitle}
                     showAvatar={!tile.isScreen && tile.forceAvatar}
                     micMuted={tile.micMuted}
+                    speaking={tileSpeaking(tile.peerId, localPeerId, speakingPeerIds, tile.isScreen)}
                     localSelfScreen={tile.localSelfScreen}
                     rttMs={peerRtt?.[tile.peerId]}
                     focused={
@@ -1122,6 +1152,7 @@ export function VideoGrid({
               isScreen={focusTile.isScreen}
               localSelfScreen={focusTile.localSelfScreen}
               micMuted={focusTile.micMuted}
+              speaking={tileSpeaking(focusTile.peerId, localPeerId, speakingPeerIds, focusTile.isScreen)}
             />
           </div>
           {showSideList && sideVariant !== "top" && (
@@ -1137,6 +1168,8 @@ export function VideoGrid({
               rttByPeer={peerRtt}
               rotationEnabled={rotationEnabled}
               rotationIntervalMs={rotationIntervalMs}
+              speakingPeerIds={speakingPeerIds}
+              localPeerId={localPeerId}
             />
           )}
           {showPip && pipTile && (
@@ -1146,6 +1179,8 @@ export function VideoGrid({
               rotationTiles={selfSharing ? rotationPool : undefined}
               rotationIntervalMs={rotationIntervalMs}
               participantsCount={participantsCount}
+              speakingPeerIds={speakingPeerIds}
+              localPeerId={localPeerId}
             />
           )}
         </div>
@@ -1185,6 +1220,7 @@ export function VideoGrid({
                 localSelfScreen={tile.localSelfScreen}
                 rttMs={tile.rttMs}
                 micMuted={tile.micMuted}
+                speaking={tileSpeaking(tile.peerId, localPeerId, speakingPeerIds, tile.isScreen)}
                 camOff={!tile.isScreen && Boolean(tile.forceAvatar)}
               />
             ))}

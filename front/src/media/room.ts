@@ -3,6 +3,8 @@ import type {
   Consumer,
   Producer,
   RtpCapabilities,
+  RtpCodecCapability,
+  RtpEncodingParameters,
   Transport,
 } from "mediasoup-client/types";
 import type { ClientMessage, ServerMessage, UserRole } from "@meeting/shared";
@@ -10,7 +12,7 @@ import type { SignalClient } from "@/signal/client";
 
 export type WaitingPeer = { peerId: string; displayName: string };
 
-/** 屏幕共享内容类型：detail=文字/幻灯片优先清晰；motion=视频/动态优先流畅（默认） */
+/** 屏幕共享内容类型：detail=文字/幻灯片优先清晰（默认）；motion=视频/动态优先流畅 */
 export type ScreenContentType = "detail" | "motion";
 
 export type PeerInfo = {
@@ -112,16 +114,107 @@ export type MediaRoomSnapshot = {
 
 type Listener = () => void;
 
-const VIDEO_ENCODINGS = [
-  // 三层都必须"可用"：原先 r0 仅 100kbps/÷4，一旦因带宽抖动落到该层，画面是
-  // 报废而非降级，且客户端不做层回升，会长期停在低层。故把各层码率抬到足以
-  // 支撑其分辨率的水平：÷4 需约 400k、÷2 需约 1.2M、满分辨率 4Mbps。
-  // 保持 ÷4/÷2/÷1 的整数缩放（÷1.5 这类非整数比例各内核取整结果不一致，
-  // 可能得到非预期的输出分辨率）。
-  { rid: "r0", maxBitrate: 400_000, scaleResolutionDownBy: 4 },
-  { rid: "r1", maxBitrate: 1_200_000, scaleResolutionDownBy: 2 },
-  { rid: "r2", maxBitrate: 4_000_000 },
-];
+/**
+ * 单层发送（不再 simulcast）：Chrome 103 / 奇安信上 3 层摄像头 + 2 层共享
+ * 会同时开出多路 VP8 软件编码，大画面被降分辨率后放大发糊，严重时标签页卡死。
+ * 摄像头常态 720p24 / 2Mbps；共享开始后让路到 360p15 / 400kbps，把 CPU 和上行让给共享。
+ * 共享单层、编码侧封顶 1080p15 / 5Mbps，默认保分辨率（文字/PPT 优先于流畅）。
+ * 选源只用一次 getDisplayMedia，默认不带音频；分辨率用 scaleResolutionDownBy 收，
+ * 避免 Chrome 103 因 audio:true 或第二次选源卡住。本机 H264 硬编可用时优先 H264。
+ */
+const CAMERA_BITRATE = 2_000_000;
+const CAMERA_BITRATE_WHILE_SHARING = 400_000;
+const SCREEN_BITRATE = 5_000_000;
+const SCREEN_MAX_WIDTH = 1920;
+const SCREEN_MAX_HEIGHT = 1080;
+
+function cameraTrackConstraints(yielding: boolean, hardCap: boolean): MediaTrackConstraints {
+  if (yielding) {
+    return hardCap
+      ? {
+          width: { ideal: 640, max: 640 },
+          height: { ideal: 360, max: 360 },
+          frameRate: { ideal: 12, max: 15 },
+        }
+      : {
+          width: { ideal: 640 },
+          height: { ideal: 360 },
+          frameRate: { ideal: 12, max: 15 },
+        };
+  }
+  return hardCap
+    ? {
+        width: { ideal: 1280, max: 1280 },
+        height: { ideal: 720, max: 720 },
+        frameRate: { ideal: 24, max: 24 },
+      }
+    : {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 24, max: 24 },
+      };
+}
+
+type DegradationPreference = "maintain-resolution" | "maintain-framerate" | "balanced";
+
+/** 只改码率/帧率/降级偏好，不走 mediasoup 的 setRtpEncodingParameters（那会重新协商 SDP）。 */
+async function tuneSender(
+  producer: Producer | null,
+  opts: { maxBitrate: number; maxFramerate: number; degradationPreference: DegradationPreference },
+): Promise<void> {
+  const sender = producer && !producer.closed ? producer.rtpSender : undefined;
+  if (!sender) return;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings?.length) return;
+    for (const enc of params.encodings) {
+      enc.maxBitrate = opts.maxBitrate;
+      enc.maxFramerate = opts.maxFramerate;
+    }
+    params.degradationPreference = opts.degradationPreference;
+    await sender.setParameters(params);
+  } catch (err) {
+    console.warn(
+      "[rtc] sender.setParameters failed",
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/** 采集尺寸超出 1080p 时，编码侧等比缩小，使宽高都落进 1920×1080。 */
+function screenScaleDownBy(track: MediaStreamTrack): number {
+  const { width = 0, height = 0 } = track.getSettings();
+  const scale = Math.max(
+    width > 0 ? width / SCREEN_MAX_WIDTH : 1,
+    height > 0 ? height / SCREEN_MAX_HEIGHT : 1,
+    1,
+  );
+  return Math.round(scale * 100) / 100;
+}
+
+/**
+ * 1280×720 H264 是否走硬编。探测失败或 powerEfficient 为假时保持 VP8，
+ * 不改路由器编解码器顺序，避免只支持 VP8 的成员解不了别人的画面。
+ */
+async function h264PowerEfficient(): Promise<boolean> {
+  const encodingInfo = navigator.mediaCapabilities?.encodingInfo;
+  if (!encodingInfo) return false;
+  try {
+    const info = await encodingInfo({
+      type: "webrtc",
+      video: {
+        contentType: "video/H264",
+        width: 1280,
+        height: 720,
+        bitrate: CAMERA_BITRATE,
+        framerate: 24,
+      },
+    });
+    return Boolean(info.supported && info.powerEfficient);
+  } catch {
+    return false;
+  }
+}
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -231,6 +324,8 @@ export class MediaRoom {
   private focusPeerId: string | null = null;
   private screenFocusPeerId: string | null = null;
   private sharingScreen = false;
+  /** null=尚未探测；true=本机 H264 硬编可用；false=继续 VP8（含 H264 produce 失败） */
+  private h264Preferred: boolean | null = null;
   private canShare = true;
   private allowShare = true;
   private waitingRoomEnabled = false;
@@ -624,8 +719,8 @@ export class MediaRoom {
    *
    * 判读顺序：
    *  1. 采集宽 < 设备上限           → 约束未生效 / 设备上限低
-   *  2. r2.active=false 或帧宽<采集 → 看 lim：cpu=编码算力，bandwidth=上行带宽
-   *  3. 接收帧宽 < 对方最高层帧宽    → 选层失败（对照"层 请求/生效"）
+   *  2. 编码帧宽 < 采集宽，或 lim=cpu/bandwidth → 算力或上行把分辨率压低了
+   *  3. 接收帧宽明显低于目标        → 对方没编出目标分辨率（单层时不再有“低空间层”）
    *  4. protocol=tcp                 → UDP 被拦回落 TCP，先修网络
    *  5. 放大倍率 > 1.2               → 上采样，与编码无关
    *  6. 平均 QP >= 35                → 码率密度不足，压缩过狠
@@ -847,8 +942,8 @@ export class MediaRoom {
         );
         if (sendRep.pair.protocol === "tcp") verdict.push("通道: 已回落 TCP(UDP 被拦) → 吞吐与抖动都会恶化，优先修复网络");
         if (rtt > 50) verdict.push(`通道: rtt ${rtt}ms 偏高`);
-        if (sendRep.pair.availableOutgoingBitrate != null && sendRep.pair.availableOutgoingBitrate < 2_000_000)
-          verdict.push(`通道: 可用上行仅 ${avail}kbps → 不足以支撑 1080p`);
+        if (sendRep.pair.availableOutgoingBitrate != null && sendRep.pair.availableOutgoingBitrate < 1_500_000)
+          verdict.push(`通道: 可用上行仅 ${avail}kbps → 共享目标约 5Mbps、摄像头约 2Mbps，码率会被压低`);
       } else log("（候选对不可用，部分内核的 producer stats 不含 candidate-pair）");
 
       // ── 接收：分辨率 + 生效层 + 放大倍率三者交叉，才能分离"层"与"上采样" ──
@@ -902,8 +997,8 @@ export class MediaRoom {
         if (zoom != null && zoom > 1.2) verdict.push(`${label}: 显示放大 ${zoom}x → 上采样糊，非编码问题（需提高显示源或降低容器尺寸）`);
         if (lost > 0 || jitter > 30) verdict.push(`${label}: 丢包/抖动异常 → 链路问题`);
         if (this.consumerLayerState.get(id)?.producerPaused) verdict.push(`${label}: 对方已暂停视频 → 画面为冻结帧`);
-        if (cur.frameWidth && cur.frameWidth < 960 && requested?.spatialLayer != null)
-          verdict.push(`${label}: 仅收到 ${cur.frameWidth}px 宽 → 落在低空间层，检查对方是否产出高层`);
+        if (cur.frameWidth && cur.frameWidth < 1280 && label.endsWith("·共享"))
+          verdict.push(`${label}: 共享帧宽仅 ${cur.frameWidth}px（目标约 1920）→ 采集或编码被降分辨率`);
       }
 
       log("── 合计 ──");
@@ -1057,7 +1152,10 @@ export class MediaRoom {
     } else {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { deviceId: { exact: deviceId } },
+        video: {
+          deviceId: { exact: deviceId },
+          ...cameraTrackConstraints(this.sharingScreen, false),
+        },
       });
       const next = stream.getVideoTracks()[0];
       if (!next) return;
@@ -1072,6 +1170,7 @@ export class MediaRoom {
       if (this.videoProducer && !this.videoProducer.closed) {
         await this.videoProducer.replaceTrack({ track: next });
       }
+      await this.applyCameraSendProfile();
     }
     this.emit();
     } catch (err) {
@@ -1085,7 +1184,10 @@ export class MediaRoom {
     }
   }
 
-  async startScreenShare(contentType: ScreenContentType = "motion"): Promise<void> {
+  async startScreenShare(
+    contentType: ScreenContentType = "detail",
+    options?: { systemAudio?: boolean },
+  ): Promise<void> {
     if (!this.sendTransport || this.closed) return;
     if (!this.canShare) {
       this.warning = "share_not_allowed";
@@ -1096,12 +1198,13 @@ export class MediaRoom {
 
     let stream: MediaStream;
     try {
-      // audio:true：共享「标签页」并在浏览器弹窗勾选「共享标签页音频」时才有音频轨；
-      // 共享窗口/整屏在多数平台无音频轨（此时不会创建屏幕音频轨）
+      // 只调用一次，且必须留在用户点击的手势里。默认不要音频：
+      // Chrome 103 / 奇安信在 getDisplayMedia({ audio: true }) 上会卡住选源窗口。
+      // 分辨率不写进采集约束（内核不报错也不缩小，失败重试还会丢掉用户手势），
+      // 改为选源成功后用 scaleResolutionDownBy 把编码收到 1080p。
       stream = await navigator.mediaDevices.getDisplayMedia({
-        // 采集侧即限制帧率（P0）：屏幕共享 15fps 足够清晰，从源头降低编码压力
-        video: { frameRate: { ideal: 15 } },
-        audio: true,
+        video: true,
+        audio: options?.systemAudio === true,
       });
     } catch (err) {
       const name = err instanceof Error ? err.name : String(err);
@@ -1117,33 +1220,23 @@ export class MediaRoom {
       for (const t of stream.getTracks()) t.stop();
       return;
     }
-    // detail=文字/幻灯片优先清晰；motion=视频/动态优先流畅（默认），缓解共享卡顿
+    // detail=文字/幻灯片优先清晰（默认）；motion=视频/动态优先流畅
     track.contentHint = contentType;
 
     try {
-      this.screenProducer = await this.sendTransport.produce({
+      this.screenProducer = await this.produceVideo({
         track,
-        // P0+P1：原屏幕共享是单层 6Mbps「全有或全无」，弱机/弱网只能整路卡顿。
-        // 改为两层 Simulcast（÷2 降级层 + 满分辨率层），并把编码帧率锁到 15fps：
-        // - 限帧率直接砍掉一半编码负载，缓解发送端掉帧（卡顿主因）；
-        // - ÷2 层让弱机/弱网自动降分辨率而非卡死，文字常态仍走满分辨率层保持锐利；
-        // - VP8 默认协商自带时间层，接收端 CPU 过载时浏览器还会自动降帧率。
-        // ⚠ 层序必须是「低分辨率在前、满分辨率在末位」：mediasoup 规定 encodings
-        //   首项=最低空间层、末项=最高空间层；SFU 统一拉最高层（signal.ts），
-        //   顺序颠倒会让成员端永远收到 ÷2 半分辨率层（拉伸铺满→模糊）。
-        encodings: [
-          { rid: "s1", maxBitrate: 2_500_000, scaleResolutionDownBy: 2, maxFramerate: 15 },
-          // startBitrate：浏览器 WebRTC 发送端默认起始编码码率仅 ~300k，GCC 爬坡到
-          // 6Mbps 需 3~5s，表现为"刚共享先模糊后清晰"。显式从满码率起步编码，跳过
-          // 上行爬坡期（下行 BWE 起点已由 realtime 侧 initialAvailableOutgoingBitrate 抬高）。
-          // 弱网时 GCC 仍会自适应降层，比持续模糊体验更好。
-          // startBitrate 是 Chrome 实际支持但 lib.dom 未声明，故用类型断言绕过。
-          { rid: "s0", maxBitrate: 6_000_000, scaleResolutionDownBy: 1, maxFramerate: 15, startBitrate: 6_000_000 } as RTCRtpEncodingParameters,
-        ],
-        // videoGoogleStartBitrate（Google 私有、simulcast 下不一定生效，已 deprecated）：
-        // 作为起步码率兜底；真正的上行爬坡消除由上方 encodings.startBitrate 标准字段负责。
-        codecOptions: { videoGoogleStartBitrate: 6000 },
+        maxBitrate: SCREEN_BITRATE,
+        maxFramerate: 15,
+        scaleResolutionDownBy: screenScaleDownBy(track),
+        codecOptions: { videoGoogleStartBitrate: 5000 },
         appData: { source: "screen" },
+      });
+      await tuneSender(this.screenProducer, {
+        maxBitrate: SCREEN_BITRATE,
+        maxFramerate: 15,
+        degradationPreference:
+          contentType === "detail" ? "maintain-resolution" : "maintain-framerate",
       });
     } catch (err) {
       for (const t of stream.getTracks()) t.stop();
@@ -1190,6 +1283,8 @@ export class MediaRoom {
     if (this.role === "host" && this.layout === "grid") {
       this.setLayout("speaker");
     }
+    // 方案 A：共享已经发出后，把摄像头收到 360p，避免和大画面抢 CPU / 上行
+    await this.applyCameraSendProfile();
     this.emit();
   }
 
@@ -1197,6 +1292,12 @@ export class MediaRoom {
   setScreenContentType(contentType: ScreenContentType): void {
     const track = this.localScreenStream?.getVideoTracks()[0];
     if (track) track.contentHint = contentType;
+    void tuneSender(this.screenProducer, {
+      maxBitrate: SCREEN_BITRATE,
+      maxFramerate: 15,
+      degradationPreference:
+        contentType === "detail" ? "maintain-resolution" : "maintain-framerate",
+    });
   }
 
   async stopScreenShare(): Promise<void> {
@@ -1229,6 +1330,8 @@ export class MediaRoom {
       this.localScreenStream = null;
     }
     this.sharingScreen = false;
+    // 共享结束后把摄像头恢复到 720p / 2Mbps（不阻塞关共享）
+    void this.applyCameraSendProfile();
     if (this.screenFocusPeerId === this.peerId) {
       this.screenFocusPeerId =
         this.screenStreams.size > 0
@@ -1274,7 +1377,10 @@ export class MediaRoom {
       const constraints: MediaStreamConstraints =
         kind === "audio"
           ? { audio: true, video: false }
-          : { audio: false, video: { width: { ideal: 1920 }, height: { ideal: 1080 } } };
+          : {
+              audio: false,
+              video: cameraTrackConstraints(this.sharingScreen, false),
+            };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       const next = (kind === "audio" ? stream.getAudioTracks() : stream.getVideoTracks())[0];
       if (!next) throw new Error("no track");
@@ -1294,6 +1400,7 @@ export class MediaRoom {
       next.enabled = kind === "audio" ? this.micEnabled : this.camEnabled;
       const producer = kind === "audio" ? this.audioProducer : this.videoProducer;
       if (producer && !producer.closed) await producer.replaceTrack({ track: next });
+      if (kind === "video") await this.applyCameraSendProfile();
       if (prev) {
         try {
           prev.stop();
@@ -1983,13 +2090,14 @@ export class MediaRoom {
     if (videoTrack) {
       // 初始化时同步 track.enabled 与 camEnabled，确保 hasActiveCamera 判断正确
       videoTrack.enabled = this.camEnabled;
-      this.videoProducer = await this.sendTransport.produce({
+      this.videoProducer = await this.produceVideo({
         track: videoTrack,
-        encodings: VIDEO_ENCODINGS,
-        // 起步码率=目标码率（4M@1080p）：不设时 libwebrtc 默认从 ~300k 按带宽
-        // 估计爬升，开播后数秒内画面偏糊；内网带宽充足，起步即高清档
-        codecOptions: { videoGoogleStartBitrate: 4000 },
+        maxBitrate: CAMERA_BITRATE,
+        maxFramerate: 24,
+        // videoGoogleStartBitrate 单位 kbps，避免从 ~300kbps 爬坡
+        codecOptions: { videoGoogleStartBitrate: 2000 },
       });
+      await this.applyCameraSendProfile();
       if (!this.camEnabled) {
         this.videoProducer.pause();
         this.signal.send({
@@ -2001,6 +2109,84 @@ export class MediaRoom {
     }
 
     this.emit();
+  }
+
+  /**
+   * 单层视频发送。scalabilityMode L1T1 避免内核再拆时间层。
+   * H264 仅在 encodingInfo 报告硬编时使用；produce 失败则记一笔并改回 VP8。
+   */
+  private async produceVideo(opts: {
+    track: MediaStreamTrack;
+    maxBitrate: number;
+    maxFramerate: number;
+    scaleResolutionDownBy?: number;
+    codecOptions: { videoGoogleStartBitrate: number };
+    appData?: Record<string, unknown>;
+  }): Promise<Producer> {
+    const transport = this.sendTransport;
+    if (!transport) throw new Error("send_transport_missing");
+    const encoding: RtpEncodingParameters = {
+      maxBitrate: opts.maxBitrate,
+      maxFramerate: opts.maxFramerate,
+      scalabilityMode: "L1T1",
+    };
+    if (opts.scaleResolutionDownBy && opts.scaleResolutionDownBy > 1.01) {
+      encoding.scaleResolutionDownBy = opts.scaleResolutionDownBy;
+    }
+    const base = {
+      track: opts.track,
+      encodings: [encoding],
+      codecOptions: opts.codecOptions,
+      appData: opts.appData,
+    };
+    const codec = await this.videoCodec();
+    if (!codec) return transport.produce(base);
+    try {
+      return await transport.produce({ ...base, codec });
+    } catch (err) {
+      console.warn(
+        "[rtc] H264 produce failed, fallback VP8",
+        err instanceof Error ? err.message : err,
+      );
+      this.h264Preferred = false;
+      return transport.produce(base);
+    }
+  }
+
+  /** 探测一次。路由器编解码器顺序不变，只在本端 produce 时指定 H264。 */
+  private async videoCodec(): Promise<RtpCodecCapability | undefined> {
+    if (this.h264Preferred === null) {
+      this.h264Preferred = await h264PowerEfficient();
+    }
+    if (!this.h264Preferred || !this.device) return undefined;
+    return this.device.rtpCapabilities.codecs?.find(
+      (c) => c.kind === "video" && c.mimeType.toLowerCase() === "video/h264",
+    );
+  }
+
+  /**
+   * 按当前是否正在共享，收紧或恢复摄像头采集与发送码率。
+   * 共享中：360p15 / 400kbps，给大画面让路；平时：720p24 / 2Mbps。
+   * 降级偏好保持 maintain-resolution，算力不够时掉帧而不是把分辨率再砍一档。
+   */
+  private async applyCameraSendProfile(): Promise<void> {
+    const yielding = this.sharingScreen;
+    const track = this.localStream?.getVideoTracks()[0];
+    if (track && track.readyState === "live") {
+      try {
+        await track.applyConstraints(cameraTrackConstraints(yielding, true));
+      } catch (err) {
+        console.warn(
+          "[rtc] camera applyConstraints failed",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    await tuneSender(this.videoProducer, {
+      maxBitrate: yielding ? CAMERA_BITRATE_WHILE_SHARING : CAMERA_BITRATE,
+      maxFramerate: yielding ? 15 : 24,
+      degradationPreference: "maintain-resolution",
+    });
   }
 
   /**
@@ -2023,7 +2209,7 @@ export class MediaRoom {
       return {
         stream: await gUM({
           audio: true,
-          video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+          video: cameraTrackConstraints(false, false),
         }),
         localMediaError: null,
       };
@@ -2307,8 +2493,10 @@ export class MediaRoom {
     source: "camera" | "screen" | "screen-audio"
   ): void {
     if (consumer.kind !== "video") return;
-    // 摄像头 3 层（r0/r1/r2）→ 2；屏幕共享 2 层（s1/s0）→ 1。超出实际层数时
-    // 由 mediasoup 钳制到生产者提供的最大层。
+    // 当前摄像头与共享都是单层。对单层流调用 setPreferredLayers 会在
+    // mediasoup 里抛错（不是 simulcast）。仅旧的多层生产者才请求最高层。
+    const encodingCount = consumer.rtpParameters?.encodings?.length ?? 0;
+    if (encodingCount <= 1) return;
     const spatialLayer = source === "screen" ? 1 : 2;
     // 记录"请求值"，服务端回执到了之后再补"生效值"，供诊断对照
     const prevLayer = this.consumerLayerState.get(consumer.id);

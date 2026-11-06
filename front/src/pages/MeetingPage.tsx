@@ -207,8 +207,10 @@ function MeetingPageInner() {
   // 沉浸态跟随浏览器全屏：全屏中 header/controls 浮化为 overlay 并自动隐藏；
   // 退出全屏恢复普通态（始终显示）。首次进入会议自动请求全屏（见下方 effect）。
   const [isImmersive, setIsImmersive] = useState(false);
-  // 屏幕共享内容类型：默认"视频(流畅优先)"，缓解共享卡顿；文档场景可切"清晰优先"
-  const [screenContentType, setScreenContentType] = useState<ScreenContentType>("motion");
+  // 屏幕共享内容类型：默认"文档(清晰优先)"。流畅优先会在吃紧时先降分辨率，大窗放大后发糊
+  const [screenContentType, setScreenContentType] = useState<ScreenContentType>("detail");
+  // 共享标签页声音：默认关。勾选后才把 audio:true 放进同一次 getDisplayMedia。
+  const [shareSystemAudio, setShareSystemAudio] = useState(false);
   // 共享预览态（方案A）：共享中点击成员小窗，主画面临时切到该成员摄像头（本地 UI 态）
   const [sharePreviewPeerId, setSharePreviewPeerId] = useState<string | null>(null);
   const chromeVisible = useChromeAutoHide(isImmersive);
@@ -261,7 +263,11 @@ function MeetingPageInner() {
   const audioSourcesKey =
     audioSources.map((a) => a.peerId).join(",") + (snap.micEnabled ? "+self" : "") +
     "|" + [...snap.remoteStreams].map(([pid, st]) => pid + ":" + String(st.getAudioTracks().length)).join(",");
-  const { activePeerId: activeSpeakerId, activeSpeakers } = useActiveSpeaker(audioSources, showActiveSpeaker, audioSourcesKey);
+  const { activePeerId: activeSpeakerId, activeSpeakers, speakingPeerIds } = useActiveSpeaker(
+    audioSources,
+    snap.status === "joined",
+    audioSourcesKey,
+  );
   const activeSpeakerName =
     activeSpeakerId === "local"
       ? displayName
@@ -1388,6 +1394,7 @@ function MeetingPageInner() {
                 sideListVisible={isHost || snap.sideListVisible}
                 sideVariant={sideListLayout}
                 onlySpeakers={onlyShowSpeakers ? activeSpeakers : null}
+                speakingPeerIds={speakingPeerIds}
                 hostPeerId={
                   isHost
                     ? snap.peerId
@@ -1513,6 +1520,8 @@ function MeetingPageInner() {
             // 共享进行中实时应用到轨道，无需停止再共享
             roomRef.current?.setScreenContentType(v);
           }}
+          shareSystemAudio={shareSystemAudio}
+          onShareSystemAudioChange={setShareSystemAudio}
           membersOpen={membersOpen}
           chatOpen={chatOpen}
           unreadChat={unreadChat}
@@ -1552,7 +1561,7 @@ function MeetingPageInner() {
                       .catch((err) => console.warn("[rtc] stop screen share failed:", err));
             } else {
               void roomRef.current
-                      ?.startScreenShare(screenContentType)
+                      ?.startScreenShare(screenContentType, { systemAudio: shareSystemAudio })
                       .catch((err) => console.warn("[rtc] start screen share failed:", err));
             }
           }}

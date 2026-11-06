@@ -1986,14 +1986,17 @@ export function createSignalHandler(db: Db) {
             send(ws, { type: "error", message: "cannot_consume" });
             return;
           }
+          const layered =
+            owner.producer.type === "simulcast" || owner.producer.type === "svc";
           const consumer = await recv.consume({
             producerId: message.producerId,
             rtpCapabilities,
             paused: true,
-            // 请求最高层即可：mediasoup 会自动钳制到生产者实际提供的最大层
-            // （摄像头 3 层→2，屏幕共享 2 层→1），无需按生产者计算层号。
-            // 不设置时消费端会落在低层（100kbps/1/4 分辨率），大画面放大后发糊。
-            preferredLayers: { spatialLayer: 2, temporalLayer: 2 },
+            // 单层生产者不能带 preferredLayers，否则 mediasoup 直接拒绝 consume。
+            // 多层（旧客户端 simulcast）仍请求最高层，由服务端钳制到实际最大层。
+            ...(layered
+              ? { preferredLayers: { spatialLayer: 2, temporalLayer: 2 } }
+              : {}),
           });
           ctx.media.consumers.set(consumer.id, consumer);
           consumer.on("transportclose", () => {
@@ -2032,8 +2035,8 @@ export function createSignalHandler(db: Db) {
             return;
           }
           if (consumer.kind !== "video") return;
-          // 客户端只表达"要最高层"，实际能否切到该层由 mediasoup 按生产者
-          // 的 encodings 数量钳制（摄像头 3 层 → 2，共享 2 层 → 1）。
+          // 单层流没有空间层；旧客户端仍可能发 setConsumerPreferredLayers
+          if (consumer.type !== "simulcast" && consumer.type !== "svc") return;
           try {
             await consumer.setPreferredLayers({
               spatialLayer: message.spatialLayer,
