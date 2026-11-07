@@ -45,3 +45,5 @@ coverage
 # 本地排查/自动化验证产物
 .tmp/
 .playwright-cli/
+# 本地代码图谱可视化产物（.codegraph/scripts/export-viz.mjs 生成）
+.codegraph/
