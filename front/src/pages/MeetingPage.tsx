@@ -532,6 +532,8 @@ function MeetingPageInner() {
         setVideoId((prev) =>
           prev && videos.some((d) => d.deviceId === prev) ? prev : videos[0]?.deviceId || "",
         );
+        // 打开麦克风/摄像头菜单是用户点击：授权成功后把缺的那一路补进会议，并清掉黄条
+        if (kind) await roomRef.current?.recoverLocalMedia([kind]);
       } catch {
         /* permission may be pending */
       }
@@ -539,11 +541,56 @@ function MeetingPageInner() {
 
     void refresh();
     refreshDevicesRef.current = refresh;
-    // devicechange 不带 kind：直接裸枚举，不做权限预触发
-    const onDeviceChange = () => void refresh();
+
+    const permissionStatuses: PermissionStatus[] = [];
+    const watchPermission = (name: "microphone" | "camera", kind: "audio" | "video") => {
+      const query = navigator.permissions?.query;
+      if (!query) return;
+      void query
+        .call(navigator.permissions, { name: name as PermissionName })
+        .then((status) => {
+          if (cancelled) return;
+          permissionStatuses.push(status);
+          status.onchange = () => {
+            if (cancelled || status.state !== "granted") return;
+            void refresh().then(() => {
+              if (cancelled) return;
+              void roomRef.current?.recoverLocalMedia([kind]);
+            });
+          };
+        })
+        .catch(() => {
+          /* 奇安信等内核不支持 camera/microphone 权限查询 */
+        });
+    };
+    watchPermission("microphone", "audio");
+    watchPermission("camera", "video");
+
+    // 插拔：先重新列举。权限已经允许时补上还没有的那一路；
+    // 仍是「询问」时不在这里弹窗，交给菜单或黄色提示上的重新检测。
+    const onDeviceChange = () => {
+      void (async () => {
+        await refresh();
+        if (cancelled) return;
+        const kinds: Array<"audio" | "video"> = [];
+        for (const [name, kind] of [
+          ["microphone", "audio"],
+          ["camera", "video"],
+        ] as const) {
+          try {
+            const status = await navigator.permissions?.query({ name: name as PermissionName });
+            if (status?.state === "granted") kinds.push(kind);
+          } catch {
+            /* 查询失败则不在插拔时补采 */
+          }
+        }
+        if (kinds.length) await roomRef.current?.recoverLocalMedia(kinds);
+      })();
+    };
     navigator.mediaDevices.addEventListener?.("devicechange", onDeviceChange);
     return () => {
       cancelled = true;
+      for (const status of permissionStatuses) status.onchange = null;
       navigator.mediaDevices.removeEventListener?.("devicechange", onDeviceChange);
     };
   }, []);
@@ -1501,6 +1548,13 @@ function MeetingPageInner() {
                     ? t("meeting.mediaPermissionHint")
                     : t("meeting.mediaCaptureHint")}
             </span>
+            <button
+              type="button"
+              className="meeting-media-hint-retry"
+              onClick={() => void roomRef.current?.recoverLocalMedia()}
+            >
+              {t("meeting.recheckDevices")}
+            </button>
           </div>
         )}
       </div>

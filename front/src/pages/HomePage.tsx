@@ -502,7 +502,7 @@ export function HomePage() {
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
-                          padding: "12px 0 12px 10px",
+                          padding: "12px 16px 12px 10px",
                           borderBottom: `1px solid ${token.colorBorderSecondary}`,
                           borderLeft: `3px solid ${
                             item.meetingStatus === "live"
@@ -579,7 +579,7 @@ export function HomePage() {
                           justifyContent: "space-between",
                           alignItems: "center",
                           gap: 8,
-                          padding: "12px 0 12px 10px",
+                          padding: "12px 16px 12px 10px",
                           borderBottom: `1px solid ${token.colorBorderSecondary}`,
                           borderLeft: `3px solid ${priorityColor}`,
                         }}
@@ -632,7 +632,7 @@ export function HomePage() {
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "center",
-                        padding: "12px 0 12px 10px",
+                        padding: "12px 16px 12px 10px",
                         borderBottom: `1px solid ${token.colorBorderSecondary}`,
                         borderLeft: `3px solid ${
                           item.status === "live"
@@ -656,7 +656,7 @@ export function HomePage() {
                               fontWeight: 600,
                             }}
                           >
-                            ● {t("home.live", "直播中")}
+                            ● {t("home.live", "会议中")}
                           </Typography.Text>
                         )}
                         {item.priority && (

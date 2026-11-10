@@ -117,12 +117,13 @@ type Listener = () => void;
 /**
  * 单层发送（不再 simulcast）：Chrome 103 / 奇安信上 3 层摄像头 + 2 层共享
  * 会同时开出多路 VP8 软件编码，大画面被降分辨率后放大发糊，严重时标签页卡死。
- * 摄像头常态 720p24 / 2Mbps；共享开始后让路到 360p15 / 400kbps，把 CPU 和上行让给共享。
+ * 摄像头常态 720p24 / 3.5Mbps；共享开始后让路到 360p15 / 400kbps，把 CPU 和上行让给共享。
  * 共享单层、编码侧封顶 1080p15 / 5Mbps，默认保分辨率（文字/PPT 优先于流畅）。
- * 选源只用一次 getDisplayMedia，默认不带音频；分辨率用 scaleResolutionDownBy 收，
- * 避免 Chrome 103 因 audio:true 或第二次选源卡住。本机 H264 硬编可用时优先 H264。
+ * 选源只用一次 getDisplayMedia，默认不带音频；用 ideal 1920×1080 向浏览器要高清，
+ * 不设 max、失败不重试。超过 1080p 再用 scaleResolutionDownBy 收，小窗口不放大。
+ * 本机 H264 硬编可用时优先 H264。
  */
-const CAMERA_BITRATE = 2_000_000;
+const CAMERA_BITRATE = 3_500_000;
 const CAMERA_BITRATE_WHILE_SHARING = 400_000;
 const SCREEN_BITRATE = 5_000_000;
 const SCREEN_MAX_WIDTH = 1920;
@@ -263,6 +264,11 @@ export class MediaRoom {
   /** 其他成员的共享内容声音（独立音轨），接收端单独播放/调音量 */
   private screenAudioStreams = new Map<string, MediaStream>();
   private mediaReady = false;
+  /** 入会时的第一次采集已结束（成功或失败）。未结束前不补采，避免和首轮 produce 各建一路。 */
+  private localCaptureSettled = false;
+  /** 最近一次采集是否因拒绝授权失败。只更新本次实际尝试的那一路。 */
+  private mediaDenied = { audio: false, video: false };
+  private mediaOpChain: Promise<void> = Promise.resolve();
   private closed = false;
   private pendingProducers: Extract<ServerMessage, { type: "newProducer" }>[] = [];
   /**
@@ -943,7 +949,7 @@ export class MediaRoom {
         if (sendRep.pair.protocol === "tcp") verdict.push("通道: 已回落 TCP(UDP 被拦) → 吞吐与抖动都会恶化，优先修复网络");
         if (rtt > 50) verdict.push(`通道: rtt ${rtt}ms 偏高`);
         if (sendRep.pair.availableOutgoingBitrate != null && sendRep.pair.availableOutgoingBitrate < 1_500_000)
-          verdict.push(`通道: 可用上行仅 ${avail}kbps → 共享目标约 5Mbps、摄像头约 2Mbps，码率会被压低`);
+          verdict.push(`通道: 可用上行仅 ${avail}kbps → 共享目标约 5Mbps、摄像头约 3.5Mbps，码率会被压低`);
       } else log("（候选对不可用，部分内核的 producer stats 不含 candidate-pair）");
 
       // ── 接收：分辨率 + 生效层 + 放大倍率三者交叉，才能分离"层"与"上采样" ──
@@ -1128,60 +1134,34 @@ export class MediaRoom {
   }
 
   async switchDevice(kind: "audio" | "video", deviceId: string): Promise<void> {
-    if (!this.localStream) return;
-
-    try {
-      if (kind === "audio") {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: deviceId } },
-        video: false,
-      });
-      const next = stream.getAudioTracks()[0];
-      if (!next) return;
-      const prev = this.localStream.getAudioTracks()[0];
-      this.localStream.addTrack(next);
-      if (prev) {
-        this.localStream.removeTrack(prev);
-        prev.stop();
-      }
-      next.enabled = this.micEnabled;
-      this.watchLocalTracks(this.localStream);
-      if (this.audioProducer && !this.audioProducer.closed) {
-        await this.audioProducer.replaceTrack({ track: next });
-      }
-    } else {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          deviceId: { exact: deviceId },
-          ...cameraTrackConstraints(this.sharingScreen, false),
-        },
-      });
-      const next = stream.getVideoTracks()[0];
-      if (!next) return;
-      const prev = this.localStream.getVideoTracks()[0];
-      this.localStream.addTrack(next);
-      if (prev) {
-        this.localStream.removeTrack(prev);
-        prev.stop();
-      }
-      next.enabled = this.camEnabled;
-      this.watchLocalTracks(this.localStream);
-      if (this.videoProducer && !this.videoProducer.closed) {
-        await this.videoProducer.replaceTrack({ track: next });
-      }
-      await this.applyCameraSendProfile();
-    }
-    this.emit();
-    } catch (err) {
-      // 切换设备被拒（权限/设备占用）不应产生未捕获异常，降级为非阻断提示
-      const name = err instanceof Error ? err.name : String(err);
-      this.localMediaError =
-        name === "NotAllowedError" || name === "SecurityError"
-          ? "media_permission_denied"
-          : "media_capture_failed";
+    if (!deviceId) return;
+    await this.enqueueMediaOp(async () => {
+      const result = await this.attachLocalTrack(kind, deviceId);
+      this.recomputeLocalMediaError({ [kind]: result });
       this.emit();
-    }
+    });
+  }
+
+  /**
+   * 补上还没有的麦克风或摄像头，并在成功后清掉黄色提示。
+   * 已有直播轨道的一路会跳过。权限仍是「询问」时只有用户点击才会弹出授权；
+   * 已拒绝时 getUserMedia 会立刻失败，黄条保持，不反复弹窗。
+   */
+  async recoverLocalMedia(kinds?: Array<"audio" | "video">): Promise<void> {
+    if (!this.mediaReady || !this.localCaptureSettled || this.closed || !this.sendTransport) return;
+    const wanted = kinds ?? (["audio", "video"] as const);
+    await this.enqueueMediaOp(async () => {
+      const attempted: {
+        audio?: "ok" | "denied" | "missing" | "failed";
+        video?: "ok" | "denied" | "missing" | "failed";
+      } = {};
+      for (const kind of wanted) {
+        if (this.liveLocalTrack(kind)) continue;
+        attempted[kind] = await this.attachLocalTrack(kind);
+      }
+      this.recomputeLocalMediaError(attempted);
+      this.emit();
+    });
   }
 
   async startScreenShare(
@@ -1200,10 +1180,14 @@ export class MediaRoom {
     try {
       // 只调用一次，且必须留在用户点击的手势里。默认不要音频：
       // Chrome 103 / 奇安信在 getDisplayMedia({ audio: true }) 上会卡住选源窗口。
-      // 分辨率不写进采集约束（内核不报错也不缩小，失败重试还会丢掉用户手势），
-      // 改为选源成功后用 scaleResolutionDownBy 把编码收到 1080p。
+      // 只给 ideal、不设 max：整屏会尽量到 1080p；小窗口保持原尺寸，不放大。
+      // 失败不重试，避免第二次选源丢掉用户手势。超过 1080p 再由编码侧缩小。
       stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+        video: {
+          width: { ideal: SCREEN_MAX_WIDTH },
+          height: { ideal: SCREEN_MAX_HEIGHT },
+          frameRate: { ideal: 15 },
+        },
         audio: options?.systemAudio === true,
       });
     } catch (err) {
@@ -1330,7 +1314,7 @@ export class MediaRoom {
       this.localScreenStream = null;
     }
     this.sharingScreen = false;
-    // 共享结束后把摄像头恢复到 720p / 2Mbps（不阻塞关共享）
+    // 共享结束后把摄像头恢复到 720p / 3.5Mbps（不阻塞关共享）
     void this.applyCameraSendProfile();
     if (this.screenFocusPeerId === this.peerId) {
       this.screenFocusPeerId =
@@ -1501,6 +1485,8 @@ export class MediaRoom {
   /** 释放 SFU/媒体资源，但不置 closed，以便后续自动重连复用本实例。 */
   private teardownMedia(): void {
     this.mediaReady = false;
+    this.localCaptureSettled = false;
+    this.mediaDenied = { audio: false, video: false };
     this.stopRttReporting();
     this.peerRtt.clear();
     this.device = null;
@@ -2062,53 +2048,33 @@ export class MediaRoom {
       });
     }
 
-    const { stream, localMediaError } = await this.captureLocalStream();
-    this.localMediaError = localMediaError;
-    if (!stream) {
-      // 纯观看模式：不创建任何本地 producer，本端以头像占位
+    try {
+      const { stream, localMediaError } = await this.captureLocalStream();
+      this.localMediaError = localMediaError;
+      const denied = localMediaError === "media_permission_denied";
+      this.mediaDenied = {
+        audio: denied && !stream?.getAudioTracks().some((t) => t.readyState === "live"),
+        video: denied && !stream?.getVideoTracks().some((t) => t.readyState === "live"),
+      };
+      if (!stream) {
+        // 纯观看模式：不创建任何本地 producer，本端以头像占位。
+        // 会中授权或插入设备后由 recoverLocalMedia 补采。
+        this.emit();
+        return;
+      }
+      this.localStream = stream;
+      this.watchLocalTracks(stream);
+
+      const audioTrack = stream.getAudioTracks()[0];
+      const videoTrack = stream.getVideoTracks()[0];
+
+      if (audioTrack) await this.publishAudioTrack(audioTrack);
+      if (videoTrack) await this.publishVideoTrack(videoTrack);
+
       this.emit();
-      return;
+    } finally {
+      this.localCaptureSettled = true;
     }
-    this.localStream = stream;
-    this.watchLocalTracks(stream);
-
-    const audioTrack = stream.getAudioTracks()[0];
-    const videoTrack = stream.getVideoTracks()[0];
-
-    if (audioTrack) {
-      this.audioProducer = await this.sendTransport.produce({ track: audioTrack });
-      if (!this.micEnabled) {
-        this.audioProducer.pause();
-        this.signal.send({
-          type: "pauseProducer",
-          producerId: this.audioProducer.id,
-          paused: true,
-        });
-      }
-    }
-
-    if (videoTrack) {
-      // 初始化时同步 track.enabled 与 camEnabled，确保 hasActiveCamera 判断正确
-      videoTrack.enabled = this.camEnabled;
-      this.videoProducer = await this.produceVideo({
-        track: videoTrack,
-        maxBitrate: CAMERA_BITRATE,
-        maxFramerate: 24,
-        // videoGoogleStartBitrate 单位 kbps，避免从 ~300kbps 爬坡
-        codecOptions: { videoGoogleStartBitrate: 2000 },
-      });
-      await this.applyCameraSendProfile();
-      if (!this.camEnabled) {
-        this.videoProducer.pause();
-        this.signal.send({
-          type: "pauseProducer",
-          producerId: this.videoProducer.id,
-          paused: true,
-        });
-      }
-    }
-
-    this.emit();
   }
 
   /**
@@ -2166,7 +2132,7 @@ export class MediaRoom {
 
   /**
    * 按当前是否正在共享，收紧或恢复摄像头采集与发送码率。
-   * 共享中：360p15 / 400kbps，给大画面让路；平时：720p24 / 2Mbps。
+   * 共享中：360p15 / 400kbps，给大画面让路；平时：720p24 / 3.5Mbps。
    * 降级偏好保持 maintain-resolution，算力不够时掉帧而不是把分辨率再砍一档。
    */
   private async applyCameraSendProfile(): Promise<void> {
@@ -2187,6 +2153,172 @@ export class MediaRoom {
       maxFramerate: yielding ? 15 : 24,
       degradationPreference: "maintain-resolution",
     });
+  }
+
+  private enqueueMediaOp(fn: () => Promise<void>): Promise<void> {
+    const run = this.mediaOpChain.then(fn, fn);
+    this.mediaOpChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private liveLocalTrack(kind: "audio" | "video"): MediaStreamTrack | null {
+    const track =
+      kind === "audio"
+        ? this.localStream?.getAudioTracks()[0]
+        : this.localStream?.getVideoTracks()[0];
+    return track && track.readyState === "live" ? track : null;
+  }
+
+  /** 有哪一路就清掉对应提示；两路都没有时，拒绝授权和没有设备分开显示。 */
+  private recomputeLocalMediaError(attempted: {
+    audio?: "ok" | "denied" | "missing" | "failed";
+    video?: "ok" | "denied" | "missing" | "failed";
+  }): void {
+    for (const kind of ["audio", "video"] as const) {
+      const result = attempted[kind];
+      if (!result) continue;
+      this.mediaDenied[kind] = result === "denied";
+    }
+    const hasAudio = Boolean(this.liveLocalTrack("audio"));
+    const hasVideo = Boolean(this.liveLocalTrack("video"));
+    if (hasAudio) this.mediaDenied.audio = false;
+    if (hasVideo) this.mediaDenied.video = false;
+    if (hasAudio && hasVideo) {
+      this.localMediaError = null;
+      return;
+    }
+    if (!hasAudio && !hasVideo) {
+      this.localMediaError =
+        this.mediaDenied.audio || this.mediaDenied.video
+          ? "media_permission_denied"
+          : "no_media_devices";
+      return;
+    }
+    if (!hasVideo) {
+      this.localMediaError = "no_camera";
+      return;
+    }
+    this.localMediaError = this.mediaDenied.audio ? "media_permission_denied" : null;
+  }
+
+  /**
+   * 采集一路并发布。已有 producer 则换轨，没有则新建。
+   * 入会时 localStream 为空也能从这里建起来。
+   */
+  private async attachLocalTrack(
+    kind: "audio" | "video",
+    deviceId?: string,
+  ): Promise<"ok" | "denied" | "missing" | "failed"> {
+    const transport = this.sendTransport;
+    if (!transport || this.closed) return "failed";
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(
+        kind === "audio"
+          ? { audio: deviceId ? { deviceId: { exact: deviceId } } : true, video: false }
+          : {
+              audio: false,
+              video: {
+                ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+                ...cameraTrackConstraints(this.sharingScreen, false),
+              },
+            },
+      );
+    } catch (err) {
+      const name = err instanceof Error ? err.name : String(err);
+      if (name === "NotAllowedError" || name === "SecurityError") return "denied";
+      if (name === "NotFoundError" || name === "OverconstrainedError") return "missing";
+      console.warn("[rtc] attach local track failed", name);
+      return "failed";
+    }
+    const next = (kind === "audio" ? stream.getAudioTracks() : stream.getVideoTracks())[0];
+    if (!next) {
+      for (const t of stream.getTracks()) t.stop();
+      return "missing";
+    }
+    if (!this.localStream) this.localStream = new MediaStream();
+    const prev = this.liveLocalTrack(kind);
+    if (prev) this.localStream.removeTrack(prev);
+    this.localStream.addTrack(next);
+    next.enabled = kind === "audio" ? this.micEnabled : this.camEnabled;
+    this.watchLocalTracks(this.localStream);
+    try {
+      if (kind === "audio") {
+        if (this.audioProducer && !this.audioProducer.closed) {
+          await this.audioProducer.replaceTrack({ track: next });
+        } else {
+          await this.publishAudioTrack(next);
+        }
+      } else if (this.videoProducer && !this.videoProducer.closed) {
+        await this.videoProducer.replaceTrack({ track: next });
+        await this.applyCameraSendProfile();
+      } else {
+        await this.publishVideoTrack(next);
+      }
+    } catch (err) {
+      console.warn(
+        "[rtc] publish recovered track failed",
+        err instanceof Error ? err.message : err,
+      );
+      this.localStream.removeTrack(next);
+      try {
+        next.stop();
+      } catch {
+        /* ignore */
+      }
+      if (prev && prev.readyState === "live") this.localStream.addTrack(prev);
+      for (const t of stream.getTracks()) {
+        if (t !== next && t.readyState === "live") t.stop();
+      }
+      return "failed";
+    }
+    if (prev) {
+      try {
+        prev.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    for (const t of stream.getTracks()) {
+      if (t !== next && t.readyState === "live") t.stop();
+    }
+    return "ok";
+  }
+
+  private async publishAudioTrack(track: MediaStreamTrack): Promise<void> {
+    const transport = this.sendTransport;
+    if (!transport) return;
+    this.audioProducer = await transport.produce({ track });
+    if (!this.micEnabled) {
+      this.audioProducer.pause();
+      this.signal.send({
+        type: "pauseProducer",
+        producerId: this.audioProducer.id,
+        paused: true,
+      });
+    }
+  }
+
+  private async publishVideoTrack(track: MediaStreamTrack): Promise<void> {
+    track.enabled = this.camEnabled;
+    this.videoProducer = await this.produceVideo({
+      track,
+      maxBitrate: CAMERA_BITRATE,
+      maxFramerate: 24,
+      codecOptions: { videoGoogleStartBitrate: 3500 },
+    });
+    await this.applyCameraSendProfile();
+    if (!this.camEnabled) {
+      this.videoProducer.pause();
+      this.signal.send({
+        type: "pauseProducer",
+        producerId: this.videoProducer.id,
+        paused: true,
+      });
+    }
   }
 
   /**
@@ -2630,6 +2762,8 @@ export class MediaRoom {
   private cleanup(): void {
     this.closed = true;
     this.mediaReady = false;
+    this.localCaptureSettled = false;
+    this.mediaDenied = { audio: false, video: false };
     this.reconnecting = false;
     // 主动离开/会议结束：停掉 RTT 上报定时器（否则定时器持有实例引用造成累积泄漏）
     this.stopRttReporting();

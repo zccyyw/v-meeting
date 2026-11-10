@@ -1115,6 +1115,9 @@ input:not(.ant-input):not(.ant-input-number-input):focus {
 /* 本地媒体降级提示：画面区顶部居中的黄色警示浮条（不挤压视频布局） */
 .meeting-media-hint { position: absolute; top: 0.5rem; left: 50%; transform: translateX(-50%); z-index: 20; display: inline-flex; align-items: center; gap: 0.4rem; max-width: min(560px, 92%); margin: 0; padding: 0.3rem 0.8rem; border-radius: 999px; background: rgba(0, 0, 0, 0.55); font-size: 0.78rem; line-height: 1.4; color: #faad14; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
 .meeting-media-hint .anticon { font-size: 0.9rem; }
+.meeting-media-hint > span { min-width: 0; }
+.meeting-media-hint-retry { flex-shrink: 0; margin-left: 0.2rem; padding: 0 0.5rem; border: 1px solid rgba(250, 173, 20, 0.75); border-radius: 999px; background: transparent; color: #faad14; font: inherit; line-height: 1.5; white-space: nowrap; cursor: pointer; }
+.meeting-media-hint-retry:hover { background: rgba(250, 173, 20, 0.16); }
 
 /* 两段式控制按钮（对齐腾讯会议）：主操作 + caret 菜单，视觉连体。
    无缝要点：主区去右边框、caret 去左边框（交界只有 1px 边界），
